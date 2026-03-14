@@ -1,0 +1,38 @@
+from datetime import datetime
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, BeforeValidator, Field
+
+StrFromUUID = Annotated[str, BeforeValidator(lambda v: str(v))]
+OptStrFromUUID = Annotated[str | None, BeforeValidator(lambda v: str(v) if v is not None else None)]
+
+
+class CommentCreateIn(BaseModel):
+    target_type: Literal["directory", "material"]
+    target_id: str
+    body: str = Field(min_length=1, max_length=10000)
+
+
+class CommentUpdateIn(BaseModel):
+    body: str = Field(min_length=1, max_length=10000)
+
+
+class CommentAuthor(BaseModel):
+    id: StrFromUUID
+    display_name: str | None
+    avatar_url: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class CommentOut(BaseModel):
+    id: StrFromUUID
+    target_type: str
+    target_id: StrFromUUID
+    author_id: OptStrFromUUID
+    author: CommentAuthor | None = None
+    body: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}

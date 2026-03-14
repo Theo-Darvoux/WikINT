@@ -1,0 +1,76 @@
+from typing import Annotated
+
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt import InvalidTokenError
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.exceptions import ForbiddenError, UnauthorizedError
+from app.core.redis import get_redis
+from app.core.security import decode_token
+from app.models.user import User, UserRole
+from app.services.auth import is_token_blacklisted
+from app.services.user import get_user_by_id
+
+security = HTTPBearer(auto_error=False)
+
+
+async def get_current_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> User:
+    if not credentials:
+        raise UnauthorizedError()
+
+    try:
+        payload = decode_token(credentials.credentials)
+    except InvalidTokenError:
+        raise UnauthorizedError("Invalid token")
+
+    if payload.get("type") != "access":
+        raise UnauthorizedError("Invalid token type")
+
+    jti = payload.get("jti")
+    if jti and await is_token_blacklisted(redis, jti):
+        raise UnauthorizedError("Token has been revoked")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise UnauthorizedError("Invalid token payload")
+
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        raise UnauthorizedError("User not found")
+
+    return user
+
+
+CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def require_role(*roles: UserRole):
+    async def check_role(user: CurrentUser) -> User:
+        if user.role not in roles:
+            raise ForbiddenError("Insufficient permissions")
+        return user
+
+    return check_role
+
+
+def require_onboarded():
+    async def check_onboarded(user: CurrentUser) -> User:
+        if not user.onboarded:
+            raise ForbiddenError("Onboarding required")
+        return user
+
+    return check_onboarded
+
+
+def require_moderator():
+    return require_role(UserRole.MEMBER, UserRole.BUREAU, UserRole.VIEUX)
+
+
+OnboardedUser = Annotated[User, Depends(require_onboarded())]

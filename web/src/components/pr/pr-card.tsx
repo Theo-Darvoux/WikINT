@@ -1,0 +1,149 @@
+"use client";
+
+import Link from "next/link";
+import {
+    GitPullRequest,
+    GitMerge,
+    XCircle,
+    FilePlus,
+    FilePenLine,
+    FileX,
+    FolderPlus,
+    FolderPen,
+    FolderX,
+    ArrowRightLeft,
+    ThumbsUp,
+    ChevronRight,
+} from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+
+const OP_ICONS: Record<string, React.ElementType> = {
+    create_material: FilePlus,
+    edit_material: FilePenLine,
+    delete_material: FileX,
+    create_directory: FolderPlus,
+    edit_directory: FolderPen,
+    delete_directory: FolderX,
+    move_item: ArrowRightLeft,
+};
+
+interface PullRequestProps {
+    pr: {
+        id: string;
+        type: string;
+        status: string;
+        title: string;
+        author: {
+            id: string;
+            display_name: string;
+        } | null;
+        created_at: string;
+        vote_score: number;
+        summary_types?: string[];
+    };
+}
+
+export function PRCard({ pr }: PullRequestProps) {
+    const isApproved = pr.status === "approved";
+    const isOpen = pr.status === "open";
+
+    const summaryTypes =
+        pr.summary_types && pr.summary_types.length > 0
+            ? pr.summary_types
+            : [pr.type];
+
+    const initials = pr.author?.display_name
+        ? pr.author.display_name
+              .split(" ")
+              .map((w) => w[0])
+              .join("")
+              .slice(0, 2)
+              .toUpperCase()
+        : "?";
+
+    const StatusIcon = isOpen
+        ? GitPullRequest
+        : isApproved
+          ? GitMerge
+          : XCircle;
+    const statusColor = isOpen
+        ? "text-green-500"
+        : isApproved
+          ? "text-purple-500"
+          : "text-red-500";
+
+    return (
+        <Link
+            href={`/pull-requests/${pr.id}`}
+            className="flex items-center gap-3 px-4 py-3 bg-background hover:bg-accent/40 transition-colors group border-b last:border-b-0"
+        >
+            {/* Status icon */}
+            <StatusIcon className={`h-5 w-5 shrink-0 ${statusColor}`} />
+
+            {/* Content */}
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm group-hover:underline truncate">
+                        {pr.title}
+                    </span>
+                    {summaryTypes.map((st) => {
+                        const Icon = OP_ICONS[st];
+                        return (
+                            <Badge
+                                key={st}
+                                variant="secondary"
+                                className="shrink-0 gap-0.5 text-[10px] h-5 font-normal"
+                            >
+                                {Icon && <Icon className="h-2.5 w-2.5" />}
+                                {st
+                                    .split("_")
+                                    .map(
+                                        (w) =>
+                                            w.charAt(0).toUpperCase() +
+                                            w.slice(1),
+                                    )
+                                    .join(" ")}
+                            </Badge>
+                        );
+                    })}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    <span className="font-mono opacity-60">
+                        #{pr.id.slice(0, 8)}
+                    </span>
+                    {" · "}
+                    {formatDistanceToNow(new Date(pr.created_at), {
+                        addSuffix: true,
+                    })}
+                </p>
+            </div>
+
+            {/* Vote score pill */}
+            {pr.vote_score !== 0 && (
+                <span
+                    className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums shrink-0 ${
+                        pr.vote_score > 0
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                            : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                    }`}
+                >
+                    <ThumbsUp className="h-3 w-3" />
+                    {pr.vote_score > 0 ? "+" : ""}
+                    {pr.vote_score}
+                </span>
+            )}
+
+            {/* Author avatar */}
+            <Avatar size="sm">
+                <AvatarFallback className="text-[10px]">
+                    {initials}
+                </AvatarFallback>
+            </Avatar>
+
+            {/* Chevron */}
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+        </Link>
+    );
+}

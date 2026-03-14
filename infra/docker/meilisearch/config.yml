@@ -1,0 +1,9 @@
+# Meilisearch does not use a YAML config file in production;
+# configuration is done via environment variables in docker-compose.yml.
+# This file documents the expected settings.
+#
+# MEILI_MASTER_KEY: set via env var
+# MEILI_ENV: production (set via env var in docker-compose for prod)
+# MEILI_DB_PATH: /meili_data (default in container)
+# MEILI_HTTP_ADDR: 0.0.0.0:7700 (default)
+# MEILI_LOG_LEVEL: INFO

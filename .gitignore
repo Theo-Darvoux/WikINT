@@ -1,0 +1,17 @@
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+.pnpm-store/
+
+# Environment
+.env
+.env.*
+!.env.example

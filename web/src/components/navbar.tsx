@@ -1,0 +1,280 @@
+"use client";
+
+import Link from "next/link";
+import { useAuth } from "@/hooks/use-auth";
+import { Button } from "@/components/ui/button";
+import { Bell, GitPullRequest, Search, User, Settings, LogOut } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { SearchModal } from "@/components/search/search-modal";
+import { useNotificationStore } from "@/lib/stores";
+import { useSSE } from "@/hooks/use-sse";
+import { usePathname } from "next/navigation";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { apiFetch } from "@/lib/api-client";
+import { formatDistanceToNow } from "date-fns/formatDistanceToNow";
+
+interface NavbarNotification {
+    id: string;
+    title: string;
+    link?: string;
+    read: boolean;
+    created_at: string;
+}
+
+interface NotificationsResponse {
+    items: NavbarNotification[];
+}
+
+export function Navbar() {
+    const { user, isAuthenticated, logout } = useAuth();
+    const [searchOpen, setSearchOpen] = useState(false);
+    const { unreadCount, setUnreadCount } = useNotificationStore();
+    const pathname = usePathname();
+
+    const [popoverOpen, setPopoverOpen] = useState(false);
+    const [recentNotifications, setRecentNotifications] = useState<NavbarNotification[]>([]);
+    const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+    useSSE();
+
+    useEffect(() => {
+        const down = (e: KeyboardEvent) => {
+            if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                setSearchOpen((open) => !open);
+            }
+        };
+        document.addEventListener("keydown", down);
+        return () => document.removeEventListener("keydown", down);
+    }, []);
+
+    const fetchRecentNotifications = useCallback(async () => {
+        setLoadingNotifications(true);
+        try {
+            const data = await apiFetch<NotificationsResponse>("/notifications?limit=5");
+            setRecentNotifications(data.items || []);
+            const unread = data.items?.filter((n) => !n.read).length || 0;
+            if (unreadCount === 0 && unread > 0) {
+                 // Sync unread count loosely
+                 setUnreadCount(unread);
+            }
+        } catch {
+            // Ignore for popover
+        } finally {
+            setLoadingNotifications(false);
+        }
+    }, [setUnreadCount, unreadCount]);
+
+    useEffect(() => {
+        if (popoverOpen) {
+            fetchRecentNotifications();
+        }
+    }, [popoverOpen, fetchRecentNotifications]);
+
+    const initials = user?.display_name
+        ? user.display_name
+            .split(" ")
+            .map((w) => w[0])
+            .join("")
+            .slice(0, 2)
+            .toUpperCase()
+        : user?.email?.slice(0, 2).toUpperCase() || "?";
+
+    return (
+        <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md print:hidden supports-[backdrop-filter]:bg-background/60">
+            <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6 relative">
+                {/* Left: Brand */}
+                <div className="flex w-1/3 justify-start">
+                    <Link
+                        href="/"
+                        className="text-xl font-extrabold tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
+                    >
+                        WikINT
+                    </Link>
+                </div>
+
+                {/* Center: Search */}
+                {pathname !== "/login" && (
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md px-4 pointer-events-none sm:pointer-events-auto hidden sm:block">
+                        <Button
+                            variant="outline"
+                            className="w-full justify-between text-sm text-muted-foreground bg-white/50 dark:bg-black/20 hover:bg-white/80 dark:hover:bg-black/40 backdrop-blur-md border-white/20 dark:border-white/10 shadow-sm transition-all h-9 px-3 pointer-events-auto rounded-xl"
+                            onClick={() => setSearchOpen(true)}
+                        >
+                            <span className="flex items-center gap-2">
+                                <Search className="h-4 w-4 opacity-70" />
+                                <span className="font-normal">Search materials...</span>
+                            </span>
+                            <kbd className="hidden h-5 select-none items-center gap-1 rounded bg-muted/80 px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex border shadow-sm">
+                                <span className="text-xs">⌘</span>K
+                            </kbd>
+                        </Button>
+                    </div>
+                )}
+                
+                {/* Mobile Search Icon (when centered search is hidden) */}
+                {pathname !== "/login" && (
+                    <div className="sm:hidden flex items-center">
+                         <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 text-muted-foreground"
+                            onClick={() => setSearchOpen(true)}
+                        >
+                            <Search className="h-4 w-4" />
+                        </Button>
+                    </div>
+                )}
+
+                {/* Right: Actions */}
+                <div className="flex w-1/3 justify-end items-center gap-1 sm:gap-2">
+                    {isAuthenticated && user ? (
+                        <>
+                            <Link href="/pull-requests">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Pull Requests"
+                                    className={`rounded-full ${pathname.startsWith("/pull-requests") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                                >
+                                    <GitPullRequest className="h-4 w-4" />
+                                </Button>
+                            </Link>
+
+                            <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className={`relative rounded-full ${pathname.startsWith("/notifications") || popoverOpen ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                                        title="Notifications"
+                                    >
+                                        <Bell className="h-4 w-4" />
+                                        {unreadCount > 0 && (
+                                            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground border-2 border-background">
+                                                {unreadCount > 99 ? "99+" : unreadCount}
+                                            </span>
+                                        )}
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-80 p-0" align="end">
+                                    <div className="flex items-center justify-between border-b px-4 py-3">
+                                        <p className="text-sm font-semibold">Notifications</p>
+                                        <Link
+                                            href="/notifications"
+                                            className="text-xs text-primary hover:underline"
+                                            onClick={() => setPopoverOpen(false)}
+                                        >
+                                            View all
+                                        </Link>
+                                    </div>
+                                    <div className="max-h-[300px] overflow-y-auto">
+                                        {loadingNotifications ? (
+                                            <div className="p-4 text-center text-sm text-muted-foreground">
+                                                Loading...
+                                            </div>
+                                        ) : recentNotifications.length === 0 ? (
+                                            <div className="p-4 text-center text-sm text-muted-foreground">
+                                                No new notifications
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col">
+                                                {recentNotifications.map((n) => (
+                                                    <Link
+                                                        key={n.id}
+                                                        href={n.link || "/notifications"}
+                                                        onClick={() => setPopoverOpen(false)}
+                                                        className={`flex flex-col gap-1 border-b p-3 text-sm transition-colors hover:bg-muted/50 ${n.read ? "opacity-70" : "bg-muted/10 font-medium"}`}
+                                                    >
+                                                        <span className="line-clamp-2">{n.title}</span>
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                                                        </span>
+                                                    </Link>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="border-t p-2">
+                                        <Link href="/notifications" onClick={() => setPopoverOpen(false)}>
+                                            <Button variant="ghost" size="sm" className="w-full text-xs">
+                                                Go to Notifications
+                                            </Button>
+                                        </Link>
+                                    </div>
+                                </PopoverContent>
+                            </Popover>
+
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="gap-2 rounded-full pl-2 pr-3" title="Profile">
+                                        <Avatar size="sm" className="h-6 w-6 border border-border">
+                                            <AvatarImage
+                                                src={
+                                                    user.avatar_url
+                                                        ? `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api"}/users/${user.id}/avatar?v=${encodeURIComponent(user.avatar_url)}`
+                                                        : undefined
+                                                }
+                                            />
+                                            <AvatarFallback className="text-[10px]">
+                                                {initials}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        <span className="hidden sm:inline font-medium">
+                                            {user.display_name ?? user.email}
+                                        </span>
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-56">
+                                    <div className="flex items-center justify-start gap-2 p-2">
+                                        <div className="flex flex-col space-y-1 leading-none">
+                                            {user.display_name && (
+                                                <p className="font-medium">{user.display_name}</p>
+                                            )}
+                                            <p className="w-[200px] truncate text-xs text-muted-foreground">
+                                                {user.email}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem asChild className="cursor-pointer">
+                                        <Link href="/profile">
+                                            <User className="mr-2 h-4 w-4" />
+                                            <span>Profile</span>
+                                        </Link>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem asChild className="cursor-pointer">
+                                        <Link href="/settings">
+                                            <Settings className="mr-2 h-4 w-4" />
+                                            <span>Settings</span>
+                                        </Link>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:bg-destructive/10 focus:text-destructive">
+                                        <LogOut className="mr-2 h-4 w-4" />
+                                        <span>Log out</span>
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </>
+                    ) : (
+                        <Link href="/login">
+                            <Button variant="ghost" size="sm" className="rounded-full">
+                                Login
+                            </Button>
+                        </Link>
+                    )}
+                </div>
+            </div>
+            <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
+        </nav>
+    );
+}
