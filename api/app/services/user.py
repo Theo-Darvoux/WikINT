@@ -266,4 +266,5 @@ async def soft_delete_user(db: AsyncSession, user: User) -> None:
     user.academic_year = None
     user.gdpr_consent = False
     user.gdpr_consent_at = None
+    user.onboarded = False
     await db.flush()

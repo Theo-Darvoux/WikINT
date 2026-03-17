@@ -35,7 +35,7 @@ export function createSSEConnection(options: SSEOptions): SSEConnection {
         if (cancelled) return;
 
         const fullUrl = url.startsWith("http") ? url : `${API_BASE}${url}`;
-        es = new EventSource(fullUrl);
+        es = new EventSource(fullUrl, { withCredentials: true });
 
         for (const [eventName, handler] of Object.entries(listeners)) {
             es.addEventListener(eventName, handler);

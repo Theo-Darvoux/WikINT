@@ -170,4 +170,4 @@ Scan timeouts are configurable via environment variables:
 | `MINIO_ENDPOINT` | `minio:9000` | Internal S3 API endpoint |
 | `MINIO_PUBLIC_ENDPOINT` | `null` | Public-facing endpoint for presigned URLs |
 | `MINIO_BUCKET` | `wikint` | Bucket name |
-| `MINIO_USE_SSL` | `false` | Use HTTPS for S3 connections |
+| `MINIO_USE_SSL` | `false` | Use HTTPS for **internal** S3 connections (keep false if using Docker network) |

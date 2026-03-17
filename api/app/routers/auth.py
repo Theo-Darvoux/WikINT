@@ -25,7 +25,13 @@ from app.services.email import send_verification_code
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-limiter = Limiter(key_func=get_remote_address, enabled=not settings.is_dev)
+def get_client_id(request: Request) -> str:
+    client_id = request.headers.get("x-client-id")
+    if client_id:
+        return client_id
+    return get_remote_address(request)
+
+limiter = Limiter(key_func=get_client_id, enabled=not settings.is_dev)
 
 
 @router.post("/request-code")
@@ -62,9 +68,17 @@ async def verify_code(
     response: Response,
 ) -> TokenResponse:
     email = data.email.strip().lower()
+
+    if not await auth_service.check_verify_rate_limit(redis, email):
+        raise RateLimitError(
+            "Too many verification attempts. Please wait 10 minutes before trying again."
+        )
+
     if not await auth_service.verify_code(redis, email, data.code):
+        await auth_service.increment_verify_rate_limit(redis, email)
         raise BadRequestError("Invalid or expired verification code")
 
+    await auth_service.reset_verify_rate_limit(redis, email)
     user, is_new = await auth_service.get_or_create_user(db, email)
     access_token, refresh_token, _ = auth_service.issue_tokens(user)
 

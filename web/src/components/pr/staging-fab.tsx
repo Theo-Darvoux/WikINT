@@ -1,13 +1,13 @@
 "use client";
 
-import { ShoppingCart, AlertTriangle } from "lucide-react";
+import { ClipboardList, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useStagingStore, isExpired } from "@/lib/staging-store";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-export function CartFab() {
-    const operations = useStagingStore((s) => s.operations);
+export function StagingFab() {
+    const operations = useStagingStore((s) => s.operations) ?? [];
     const setReviewOpen = useStagingStore((s) => s.setReviewOpen);
     const count = operations.length;
     const expiredCount = operations.filter((s) => isExpired(s)).length;
@@ -28,7 +28,7 @@ export function CartFab() {
             {expiredCount > 0 ? (
                 <AlertTriangle className="h-5 w-5" />
             ) : (
-                <ShoppingCart className="h-5 w-5" />
+                <ClipboardList className="h-5 w-5" />
             )}
             <span>{expiredCount > 0 ? "Expired uploads" : "Review Changes"}</span>
             <Badge

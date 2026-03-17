@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const { requestCode, verifyCode, isAuthenticated, user } = useAuth();
     const router = useRouter();
+    const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (isAuthenticated && user?.onboarded) {
@@ -89,21 +90,42 @@ export default function LoginPage() {
                             </Button>
                         </form>
                     ) : (
-                        <form onSubmit={handleVerifyCode} className="space-y-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="code">Verification code</Label>
-                                <Input
-                                    id="code"
-                                    type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]{6}"
-                                    maxLength={6}
-                                    placeholder="000000"
-                                    value={code}
-                                    onChange={(e) => setCode(e.target.value)}
-                                    required
-                                    autoFocus
-                                />
+                        <form onSubmit={handleVerifyCode} className="space-y-6">
+                            <div className="space-y-3">
+                                <Label htmlFor="code" className="text-center block">Verification code</Label>
+                                <div className="relative cursor-text" onClick={() => inputRef.current?.focus()}>
+                                    {/* Invisible actual input */}
+                                    <input
+                                        ref={inputRef}
+                                        id="code"
+                                        type="text"
+                                        maxLength={8}
+                                        value={code}
+                                        onChange={(e) => setCode(e.target.value.toUpperCase())}
+                                        className="absolute inset-0 opacity-0 cursor-text"
+                                        autoFocus
+                                        required
+                                        autoComplete="one-time-code"
+                                    />
+                                    {/* Visual representation */}
+                                    <div className="flex justify-between gap-2" aria-hidden="true">
+                                        {[...Array(8)].map((_, i) => (
+                                            <div
+                                                key={i}
+                                                className={`
+                                                    flex h-12 w-10 items-center justify-center rounded-md border-2 text-lg font-bold transition-all
+                                                    ${code.length === i ? "border-primary ring-2 ring-primary/20 scale-105" : "border-muted"}
+                                                    ${code[i] ? "border-primary/50 bg-primary/5" : ""}
+                                                `}
+                                            >
+                                                {code[i] || ""}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <p className="text-center text-xs text-muted-foreground">
+                                    Check your school email for an 8-character code.
+                                </p>
                             </div>
                             <Button type="submit" className="w-full" disabled={loading}>
                                 {loading ? "Verifying..." : "Verify"}

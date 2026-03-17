@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiRequest } from "@/lib/api-client";
+import { fetchMaterialFile } from "@/lib/api-client";
 
 interface OfficeViewerProps {
     fileKey: string;
@@ -16,7 +16,7 @@ export function OfficeViewer({ materialId, mimeType }: OfficeViewerProps) {
 
     useEffect(() => {
         const loadDocument = async () => {
-            const fetchFile = () => apiRequest(`/materials/${materialId}/file`);
+            const fetchFile = () => fetchMaterialFile(materialId);
             try {
                 if (mimeType.includes("wordprocessingml")) {
                     const mammoth = await import("mammoth");

@@ -224,8 +224,8 @@ export function GlobalDropZone() {
 
     return (
         <>
-            {/* Full-screen overlay when dragging files */}
-            {isDragOver && !drawerOpen && (
+            {/* Full-screen overlay when dragging files (hidden when upload drawer is open or requested) */}
+            {isDragOver && !drawerOpen && !uploadTarget && (
                 <div
                     className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm"
                     onDragOver={handleOverlayDragOver}
@@ -238,7 +238,7 @@ export function GlobalDropZone() {
                                 Drop files to upload
                             </p>
                             <p className="text-sm text-muted-foreground mt-1">
-                                Files will be staged into your cart
+                                Files will be added to your staged changes
                             </p>
                         </div>
                     </div>

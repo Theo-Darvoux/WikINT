@@ -59,7 +59,7 @@ The `POSTGRES_*` variables configure the PostgreSQL container itself. The API on
 | `MINIO_ENDPOINT` | `minio:9000` | Internal S3 API endpoint (container-to-container) |
 | `MINIO_PUBLIC_ENDPOINT` | `null` | Public-facing endpoint for presigned URLs. Set when MinIO is behind a proxy |
 | `MINIO_BUCKET` | `wikint` | S3 bucket name |
-| `MINIO_USE_SSL` | `false` | Use HTTPS for S3 connections |
+| `MINIO_USE_SSL` | `false` | Use HTTPS for **internal** S3 connections (keep false if using Docker network) |
 
 ### Meilisearch
 

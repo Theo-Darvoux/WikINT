@@ -47,12 +47,12 @@ SMTP_HOST=smtp.your-provider.com
 SMTP_PORT=587
 SMTP_USER=noreply@your-domain.com
 SMTP_PASSWORD=<smtp-password>
-SMTP_FROM=noreply@your-domain.com
+SMTP_FROM=noreply@your-domain.com # Must be a valid email format, e.g., noreply@your-domain.com
 SMTP_USE_TLS=true
 
 # Frontend
 FRONTEND_URL=https://your-domain.com
-NEXT_PUBLIC_API_URL=https://your-domain.com/api
+NEXT_PUBLIC_API_URL=/api # Use a relative path so Next.js proxies to the same domain
 
 # Domain
 DOMAIN=your-domain.com

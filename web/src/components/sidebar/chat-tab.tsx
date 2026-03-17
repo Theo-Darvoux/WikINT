@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/stores";
+import { toast } from "sonner";
 
 interface CommentAuthor {
     id: string;
@@ -121,6 +122,8 @@ function CommentItem({
     );
 }
 
+const MAX_COMMENT_LENGTH = 10000;
+
 interface ChatTabProps {
     target: SidebarTarget | null;
 }
@@ -164,6 +167,10 @@ export function ChatTab({ target }: ChatTabProps) {
 
     const handleSubmit = async () => {
         if (!target || !body.trim()) return;
+        if (body.length > MAX_COMMENT_LENGTH) {
+            toast.error(`Comment exceeds ${MAX_COMMENT_LENGTH.toLocaleString()} character limit`);
+            return;
+        }
         setSubmitting(true);
         try {
             await apiFetch<Comment>("/comments", {
@@ -176,8 +183,8 @@ export function ChatTab({ target }: ChatTabProps) {
             });
             setBody("");
             fetchComments(page);
-        } catch {
-            // silent
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to post comment");
         } finally {
             setSubmitting(false);
         }
@@ -185,6 +192,10 @@ export function ChatTab({ target }: ChatTabProps) {
 
     const handleEdit = async (id: string) => {
         if (!editBody.trim()) return;
+        if (editBody.length > MAX_COMMENT_LENGTH) {
+            toast.error(`Comment exceeds ${MAX_COMMENT_LENGTH.toLocaleString()} character limit`);
+            return;
+        }
         try {
             await apiFetch<Comment>(`/comments/${id}`, {
                 method: "PATCH",
@@ -193,8 +204,8 @@ export function ChatTab({ target }: ChatTabProps) {
             setEditingId(null);
             setEditBody("");
             fetchComments(page);
-        } catch {
-            // silent
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to edit comment");
         }
     };
 
@@ -217,7 +228,7 @@ export function ChatTab({ target }: ChatTabProps) {
     }
 
     return (
-        <div className="flex h-full flex-col">
+        <div className="flex flex-col">
             <div className="flex-1 space-y-1">
                 {loading && comments.length === 0 && (
                     <div className="space-y-3 py-2">
@@ -247,11 +258,14 @@ export function ChatTab({ target }: ChatTabProps) {
                                 onChange={(e) => setEditBody(e.target.value)}
                                 className="min-h-[60px] text-sm"
                             />
+                            <span className={`text-[10px] ${editBody.length > MAX_COMMENT_LENGTH ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                                {editBody.length.toLocaleString()}/{MAX_COMMENT_LENGTH.toLocaleString()}
+                            </span>
                             <div className="flex gap-2">
                                 <Button
                                     size="sm"
                                     onClick={() => handleEdit(c.id)}
-                                    disabled={!editBody.trim()}
+                                    disabled={!editBody.trim() || editBody.length > MAX_COMMENT_LENGTH}
                                 >
                                     Save
                                 </Button>
@@ -301,27 +315,32 @@ export function ChatTab({ target }: ChatTabProps) {
                 )}
             </div>
 
-            <div className="mt-3 flex gap-2 border-t pt-3">
-                <Textarea
-                    value={body}
-                    onChange={(e) => setBody(e.target.value)}
-                    placeholder="Write a comment..."
-                    className="min-h-[40px] flex-1 text-sm"
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSubmit();
-                        }
-                    }}
-                />
-                <Button
-                    size="icon"
-                    onClick={handleSubmit}
-                    disabled={submitting || !body.trim()}
-                    className="shrink-0 self-end"
-                >
-                    <Send className="h-4 w-4" />
-                </Button>
+            <div className="sticky bottom-0 mt-3 border-t bg-background pt-3 pb-1 space-y-1">
+                <div className="flex gap-2">
+                    <Textarea
+                        value={body}
+                        onChange={(e) => setBody(e.target.value)}
+                        placeholder="Write a comment..."
+                        className="min-h-[40px] flex-1 text-sm"
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSubmit();
+                            }
+                        }}
+                    />
+                    <Button
+                        size="icon"
+                        onClick={handleSubmit}
+                        disabled={submitting || !body.trim() || body.length > MAX_COMMENT_LENGTH}
+                        className="shrink-0 self-end"
+                    >
+                        <Send className="h-4 w-4" />
+                    </Button>
+                </div>
+                <span className={`text-[10px] ${body.length > MAX_COMMENT_LENGTH ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                    {body.length.toLocaleString()}/{MAX_COMMENT_LENGTH.toLocaleString()}
+                </span>
             </div>
         </div>
     );

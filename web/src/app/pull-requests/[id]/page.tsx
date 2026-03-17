@@ -32,7 +32,6 @@ import { Accordion as AccordionPrimitive } from "radix-ui";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { formatDistanceToNow } from "date-fns";
-import { PRVoteButtons } from "@/components/pr/pr-vote-buttons";
 import { PRComments } from "@/components/pr/pr-comments";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/stores";
@@ -511,53 +510,43 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                     </div>
                 </div>
 
-                {/* Toolbar: Vote + Actions */}
-                <Separator />
-                <div className="flex items-center justify-between px-6 py-3">
-                    <PRVoteButtons
-                        prId={pr.id}
-                        initialScore={pr.vote_score}
-                        initialUserVote={pr.user_vote}
-                        disabled={isAuthor || pr.status !== "open"}
-                        onAutoApprove={() =>
-                            setPr((p) =>
-                                p ? { ...p, status: "approved" } : p,
-                            )
-                        }
-                    />
-
-                    {pr.status === "open" && isModerator && (
-                        <div className="flex items-center gap-2">
-                            <Button
-                                size="sm"
-                                className="gap-1.5 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                                onClick={() => handleAction("approve")}
-                                disabled={acting !== null}
-                            >
-                                {acting === "approve" ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                    <Check className="h-3.5 w-3.5" />
-                                )}
-                                Approve
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="destructive"
-                                className="gap-1.5"
-                                onClick={() => handleAction("reject")}
-                                disabled={acting !== null}
-                            >
-                                {acting === "reject" ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                    <X className="h-3.5 w-3.5" />
-                                )}
-                                Reject
-                            </Button>
+                {/* Toolbar: Approve / Reject (moderators only) */}
+                {pr.status === "open" && isModerator && (
+                    <>
+                        <Separator />
+                        <div className="flex items-center justify-end px-6 py-3">
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    size="sm"
+                                    className="gap-1.5 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                                    onClick={() => handleAction("approve")}
+                                    disabled={acting !== null}
+                                >
+                                    {acting === "approve" ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                        <Check className="h-3.5 w-3.5" />
+                                    )}
+                                    Approve
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    className="gap-1.5"
+                                    onClick={() => handleAction("reject")}
+                                    disabled={acting !== null}
+                                >
+                                    {acting === "reject" ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                        <X className="h-3.5 w-3.5" />
+                                    )}
+                                    Reject
+                                </Button>
+                            </div>
                         </div>
-                    )}
-                </div>
+                    </>
+                )}
             </div>
 
             {/* ─── Operations ─────────────────────────── */}

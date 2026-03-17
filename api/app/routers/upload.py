@@ -148,21 +148,22 @@ async def request_upload_url(
         raise BadRequestError(f"File size exceeds maximum of {settings.max_file_size_mb} MiB")
 
     # Cap pending uploads per user
-    async with get_s3_client() as s3:
-        paginator = s3.get_paginator("list_objects_v2")
-        count = 0
-        async for page in paginator.paginate(
-            Bucket=settings.minio_bucket,
-            Prefix=f"uploads/{user.id}/",
-        ):
-            count += len(page.get("Contents", []))
+    if user.role not in ("member", "bureau", "vieux"):
+        async with get_s3_client() as s3:
+            paginator = s3.get_paginator("list_objects_v2")
+            count = 0
+            async for page in paginator.paginate(
+                Bucket=settings.minio_bucket,
+                Prefix=f"uploads/{user.id}/",
+            ):
+                count += len(page.get("Contents", []))
+                if count >= MAX_PENDING_UPLOADS:
+                    break
             if count >= MAX_PENDING_UPLOADS:
-                break
-        if count >= MAX_PENDING_UPLOADS:
-            raise BadRequestError(
-                f"Too many pending uploads ({MAX_PENDING_UPLOADS} max). "
-                "Complete or wait for existing uploads to expire before uploading more."
-            )
+                raise BadRequestError(
+                    f"Too many pending uploads ({MAX_PENDING_UPLOADS} max). "
+                    "Complete or wait for existing uploads to expire before uploading more."
+                )
 
     # Sanitize filename
     safe_name = os.path.basename(data.filename)
@@ -251,10 +252,13 @@ def guess_mime_from_bytes(data: bytes, default: str = "application/octet-stream"
     if data.startswith(b"RIFF") and len(data) >= 12 and data[8:12] == b"WAVE":
         return "audio/wav"
     if len(data) >= 8 and data[4:8] == b"ftyp":
-        # MP4/M4A container — check brand for audio vs video
+        # MP4/M4A container — check brand to distinguish audio from video
         brand = data[8:12] if len(data) >= 12 else b""
-        if brand in (b"M4A ", b"M4B ", b"isom", b"mp42"):
+        if brand in (b"M4A ", b"M4B "):
+            # Explicitly audio-only brands
             return "audio/mp4"
+        # isom, mp42, avc1, etc. are generic MP4/video brands
+        return "video/mp4"
 
     # Legacy MS Office (OLE2 Compound Binary)
     if data.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
@@ -279,6 +283,8 @@ EXTENSION_MAPPING = {
     ".flac": ["audio/flac", "audio/x-flac"],
     ".aac": ["audio/aac", "audio/x-aac"],
     ".m4a": ["audio/mp4", "audio/x-m4a"],
+    ".mp4": ["video/mp4"],
+    ".webm": ["video/webm"],
     ".docx": ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
     ".xlsx": ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
     ".pptx": ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
@@ -301,6 +307,8 @@ MIME_TO_EXTENSION: dict[str, str] = {
     "audio/ogg": ".ogg",
     "audio/wav": ".wav",
     "audio/mp4": ".m4a",
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
     "application/epub+zip": ".epub",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",

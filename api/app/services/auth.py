@@ -1,4 +1,6 @@
 import random
+import secrets
+import string
 from datetime import UTC, datetime
 
 from redis.asyncio import Redis
@@ -13,6 +15,8 @@ ALLOWED_DOMAINS = ("@telecom-sudparis.eu", "@imt-bs.eu")
 CODE_TTL_SECONDS = 600
 RATE_LIMIT_TTL_SECONDS = 600
 RATE_LIMIT_MAX = 3
+VERIFY_RATE_LIMIT_MAX = 5
+VERIFY_RATE_LIMIT_TTL_SECONDS = 600
 
 
 def validate_email(email: str) -> str:
@@ -25,7 +29,11 @@ def validate_email(email: str) -> str:
 
 
 def generate_code() -> str:
-    return f"{random.randint(0, 999999):06d}"
+    # 8 characters, uppercase alphanumeric (avoiding ambiguous characters like O, 0, I, 1 if needed, but secrets is fine)
+    alphabet = string.ascii_uppercase + string.digits
+    # Remove potentially confusing characters: O, 0, I, 1
+    alphabet = alphabet.replace("O", "").replace("0", "").replace("I", "").replace("1", "")
+    return "".join(secrets.choice(alphabet) for _ in range(8))
 
 
 async def store_code(redis: Redis, email: str, code: str) -> None:
@@ -52,18 +60,52 @@ async def check_rate_limit(redis: Redis, email: str) -> bool:
     if count and int(count) >= RATE_LIMIT_MAX:
         return False
     pipe = redis.pipeline()
-    pipe.incr(key)
-    pipe.expire(key, RATE_LIMIT_TTL_SECONDS)
+    await pipe.incr(key)
+    await pipe.expire(key, RATE_LIMIT_TTL_SECONDS)
     await pipe.execute()
     return True
 
 
+async def check_verify_rate_limit(redis: Redis, email: str) -> bool:
+    if settings.is_dev:
+        return True
+
+    key = f"auth:verify_rate:{email}"
+    count = await redis.get(key)
+    if count and int(count) >= VERIFY_RATE_LIMIT_MAX:
+        return False
+    return True
+
+
+async def increment_verify_rate_limit(redis: Redis, email: str) -> None:
+    if settings.is_dev:
+        return
+    key = f"auth:verify_rate:{email}"
+    pipe = redis.pipeline()
+    await pipe.incr(key)
+    await pipe.expire(key, VERIFY_RATE_LIMIT_TTL_SECONDS)
+    await pipe.execute()
+
+
+async def reset_verify_rate_limit(redis: Redis, email: str) -> None:
+    await redis.delete(f"auth:verify_rate:{email}")
+
+
 async def get_or_create_user(db: AsyncSession, email: str) -> tuple[User, bool]:
-    result = await db.execute(select(User).where(User.email == email, User.deleted_at.is_(None)))
+    result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
+    
     if user:
+        if user.deleted_at is not None:
+            user.deleted_at = None
+            user.onboarded = False
+            user.last_login_at = datetime.now(UTC)
+            await db.flush()
+            return user, True
+            
         user.last_login_at = datetime.now(UTC)
         return user, False
+        
     user = User(email=email, role=UserRole.STUDENT)
     db.add(user)
     await db.flush()

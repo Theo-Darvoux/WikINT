@@ -56,7 +56,7 @@ Five Zustand stores manage global client-side state:
 - `operations: StagedOperation[]` — queued PR operations (persisted to localStorage)
 - `uploads: StagedUpload[]` — active upload progress (not persisted)
 - `reviewOpen: boolean` — review drawer visibility
-- Persisted to `localStorage["wikint-staging-cart"]`
+- Persisted to `localStorage["wikint-staging"]`
 
 ### `useSelectionStore` (`web/src/lib/selection-store.ts`)
 - `selectMode`, `selected: Map`, `clipboard` — multi-select for bulk operations
@@ -94,7 +94,7 @@ LayoutShell
 ├── Main content (page routes)
 ├── Footer
 ├── GlobalFloatingSidebar (mobile sidebar overlay)
-├── CartFab (staging cart button)
+├── StagingFab (staged changes button)
 ├── ReviewDrawer (PR review sheet)
 ├── GlobalDropZone (drag-and-drop file overlay)
 └── CookieBanner (GDPR consent)

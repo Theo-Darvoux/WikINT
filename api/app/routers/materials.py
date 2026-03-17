@@ -1,12 +1,16 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi import APIRouter, Depends, Request, Query
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.database import get_db
-from app.dependencies.auth import CurrentUser
+from app.core.redis import get_redis
+from app.dependencies.auth import CurrentUser, get_user_from_token, security
+from app.models.user import User
 from app.dependencies.rate_limit import rate_limit_downloads
 from app.schemas.material import MaterialDetail, MaterialOut, MaterialVersionOut
 from app.services.audit import record_download
@@ -74,7 +78,7 @@ async def inline_material(
     material_id: str,
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> RedirectResponse:
+):
     data = await get_material_with_version(db, material_id)
     version = data.get("current_version_info")
     if not version or not version.file_key:
@@ -85,29 +89,49 @@ async def inline_material(
     from app.core.minio import generate_presigned_get_url
 
     url = await generate_presigned_get_url(version.file_key)
-    return RedirectResponse(url=url, status_code=302)
+    return {"url": url}
 
 
 @router.get("/{material_id}/file")
 async def stream_material_file(
     material_id: str,
     request: Request,
-    user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> Response:
+    user: Annotated[User | None, Depends(security)] = None,
+    token: Annotated[str | None, Query()] = None,
+    redis: Annotated[Redis | None, Depends(get_redis)] = None,
+) -> StreamingResponse:
     from app.config import settings
     from app.core.minio import get_s3_client
+    from app.core.exceptions import UnauthorizedError, NotFoundError
+
+    # Manual auth check because we want to allow either header OR query token
+    effective_user: User | None = None
+    if user: # security dependency gives HTTPAuthorizationCredentials or None
+        try:
+            from app.dependencies.auth import get_current_user
+            effective_user = await get_current_user(user, db, redis)
+        except Exception:
+            pass
+
+    if not effective_user and token:
+        try:
+            from app.dependencies.auth import get_user_from_token
+            effective_user = await get_user_from_token(db, redis, token)
+        except Exception:
+            pass
+
+    if not effective_user:
+        raise UnauthorizedError()
 
     data = await get_material_with_version(db, material_id)
     version = data.get("current_version_info")
     if not version or not version.file_key:
-        from app.core.exceptions import NotFoundError
-
         raise NotFoundError("No file available")
 
     await record_download(
         db,
-        user.id,
+        effective_user.id,
         uuid.UUID(material_id),
         version.version_number,
         ip_address=request.client.host if request.client else None,
@@ -115,18 +139,12 @@ async def stream_material_file(
     )
     await db.commit()
 
-    async with get_s3_client() as s3:
-        s3_response = await s3.get_object(
-            Bucket=settings.minio_bucket,
-            Key=version.file_key,
-        )
-        content = await s3_response["Body"].read()
+    from app.core.minio import generate_presigned_get_url
 
-    return Response(
-        content=content,
-        media_type=version.file_mime_type or "application/octet-stream",
-        headers={"Content-Disposition": "inline"},
-    )
+    # Redirect to presigned URL. S3/MinIO handles Range requests (206) perfectly,
+    # which is required for browser media players to seek and parse metadata.
+    url = await generate_presigned_get_url(version.file_key)
+    return RedirectResponse(url=url, status_code=302)
 
 
 @router.get("/{material_id}/versions", response_model=list[MaterialVersionOut])

@@ -40,7 +40,7 @@ Next.js pages, React components, and state management.
 - [Authentication](./web/authentication.md) -- Login flow, useAuth hook, AuthGuard, token management
 - [Browse](./web/browse.md) -- Directory listing, caching, material viewer integration
 - [Viewers](./web/viewers.md) -- 9 file viewers (PDF, code, image, video, audio, markdown, etc.)
-- [Pull Requests](./web/pull-requests.md) -- Staging cart, review drawer, upload drawer, drag-and-drop
+- [Pull Requests](./web/pull-requests.md) -- Staging system, review drawer, upload drawer, drag-and-drop
 - [Annotations](./web/annotations.md) -- Text selection tooltip, annotation threads, real-time updates
 - [Sidebar](./web/sidebar.md) -- 5-tab sidebar (details, chat, annotations, edits, actions), responsive behavior
 - [Profiles](./web/profiles.md) -- Profile pages, contributions, reputation, settings

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { apiRequest } from "@/lib/api-client";
+import { fetchMaterialFile } from "@/lib/api-client";
 
 interface EpubViewerProps {
     fileKey: string;
@@ -34,7 +34,7 @@ export function EpubViewer({ materialId }: EpubViewerProps) {
 
                 if (!isMounted) return;
 
-                const response = await apiRequest(`/materials/${materialId}/file`);
+                const response = await fetchMaterialFile(materialId);
                 const arrayBuffer = await response.arrayBuffer();
 
                 if (!viewerRef.current || !isMounted) return;

@@ -487,7 +487,7 @@ function OperationCard({
 
 export function ReviewDrawer() {
     const router = useRouter();
-    const operations = useStagingStore((s) => s.operations);
+    const operations = useStagingStore((s) => s.operations) ?? [];
     const reviewOpen = useStagingStore((s) => s.reviewOpen);
     const setReviewOpen = useStagingStore((s) => s.setReviewOpen);
     const removeOperation = useStagingStore((s) => s.removeOperation);
@@ -547,7 +547,7 @@ export function ReviewDrawer() {
         clearOperations();
         clearUploads();
         setReviewOpen(false);
-        toast("Staging cart cleared");
+        toast("Staged changes cleared");
     };
 
     // Summarize operation types

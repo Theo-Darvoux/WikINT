@@ -141,7 +141,7 @@ class CreateMaterialOp(BaseModel):
     file_mime_type: str | None = Field(None, max_length=200)
     metadata: dict = Field(default_factory=dict)
     parent_material_id: uuid.UUID | str | None = None
-    attachments: list[AttachmentOp] = Field(default_factory=list, max_length=50)
+    attachments: list[AttachmentOp] = Field(default_factory=list)
 
     @field_validator("type")
     @classmethod
@@ -322,7 +322,7 @@ MAX_OPERATIONS = 50
 class PullRequestCreate(BaseModel):
     title: str = Field(..., min_length=3, max_length=300, pattern=r"^\s*\S.*$")
     description: str | None = Field(None, max_length=1000)
-    operations: list[Operation] = Field(..., min_length=1, max_length=MAX_OPERATIONS)
+    operations: list[Operation] = Field(..., min_length=1)
 
     @field_validator("operations")
     @classmethod

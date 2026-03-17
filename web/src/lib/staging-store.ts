@@ -373,7 +373,7 @@ export const useStagingStore = create<StagingState>()(
                 get().operations.filter((s) => isExpiringSoon(s)).length,
         }),
         {
-            name: "wikint-staging-cart",
+            name: "wikint-staging",
             storage: createJSONStorage(() => localStorage),
             // Don't persist uploads (they contain File objects which can't be serialized)
             // or the review drawer state

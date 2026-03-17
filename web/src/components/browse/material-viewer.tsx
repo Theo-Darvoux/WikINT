@@ -91,6 +91,13 @@ const EXT_TO_VIEWER: Record<string, string> = {
 };
 
 function getViewerType(mimeType: string, fileName: string): string {
+    const ext = getFileExtension(fileName);
+
+    // Force video player for video extensions even if mime type is ambiguous (e.g. audio/mp4)
+    if (ext === "mp4" || ext === "webm" || ext === "ogg" || ext === "mov") {
+        return "video";
+    }
+
     // 1. Exact MIME match
     if (MIME_TO_VIEWER[mimeType]) return MIME_TO_VIEWER[mimeType];
 
@@ -101,7 +108,6 @@ function getViewerType(mimeType: string, fileName: string): string {
     if (mimeType.startsWith("text/")) return "code";
 
     // 3. File extension fallback (handles octet-stream / unknown MIME)
-    const ext = getFileExtension(fileName);
     if (EXT_TO_VIEWER[ext]) return EXT_TO_VIEWER[ext];
     if (CODE_EXTENSIONS.has(ext)) return "code";
 

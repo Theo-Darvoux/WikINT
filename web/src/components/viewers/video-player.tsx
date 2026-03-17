@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-media-query";
-import { apiFetchBlob } from "@/lib/api-client";
+import { API_BASE } from "@/lib/api-client";
+import { getAccessToken } from "@/lib/auth-tokens";
 
 interface VideoPlayerProps {
     fileKey: string;
@@ -13,44 +14,22 @@ interface VideoPlayerProps {
 
 export function VideoPlayer({ materialId, material }: VideoPlayerProps) {
     const isMobile = useIsMobile();
-    const [blobUrl, setBlobUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
     const metadata = material.metadata as Record<string, unknown> | null;
     const embedUrl = metadata?.video_url as string | undefined;
 
-    useEffect(() => {
-        if (embedUrl) { queueMicrotask(() => setLoading(false)); return; }
-        let objectUrl: string | null = null;
-        let cancelled = false;
-
-        queueMicrotask(() => {
-            if (cancelled) return;
-            setLoading(true);
-            setBlobUrl(null);
-        });
-
-        apiFetchBlob(`/materials/${materialId}/file`)
-            .then((blob) => {
-                if (cancelled) return;
-                objectUrl = URL.createObjectURL(blob);
-                setBlobUrl(objectUrl);
-            })
-            .catch(console.error)
-            .finally(() => { if (!cancelled) setLoading(false); });
-
-        return () => {
-            cancelled = true;
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-        };
-    }, [materialId, embedUrl]);
+    const token = getAccessToken();
+    const streamUrl = token 
+        ? `${API_BASE}/materials/${materialId}/file?token=${encodeURIComponent(token)}`
+        : `${API_BASE}/materials/${materialId}/file`;
 
     if (embedUrl) {
         return (
             <div className="aspect-video">
                 <iframe
                     src={embedUrl}
-                    className="h-full w-full border-0"
+                    className="h-full w-full border-0 rounded-lg"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                     title="Video Player"
@@ -60,18 +39,24 @@ export function VideoPlayer({ materialId, material }: VideoPlayerProps) {
     }
 
     return (
-        <div className="aspect-video bg-black flex items-center justify-center">
-            {loading && <Loader2 className="h-8 w-8 animate-spin text-white" />}
-            {blobUrl && (
+        <div className="flex h-full w-full flex-col items-center justify-center bg-black/5 p-4 dark:bg-white/5">
+            <div className="relative aspect-video w-full max-w-4xl overflow-hidden rounded-xl bg-black shadow-2xl">
+                {loading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                        <Loader2 className="h-8 w-8 animate-spin text-white" />
+                    </div>
+                )}
                 <video
-                    src={blobUrl}
+                    src={streamUrl}
                     controls
                     className="h-full w-full"
+                    onLoadedData={() => setLoading(false)}
+                    onError={() => setLoading(false)}
                     playsInline={isMobile}
                 >
                     Your browser does not support the video tag.
                 </video>
-            )}
+            </div>
         </div>
     );
 }

@@ -63,6 +63,15 @@ async def get_notifications(
     return list(result.scalars().all()), total
 
 
+async def get_unread_count(db: AsyncSession, user_id: uuid.UUID) -> int:
+    result = await db.execute(
+        select(func.count(Notification.id)).where(
+            Notification.user_id == user_id, Notification.read.is_(False)
+        )
+    )
+    return result.scalar_one()
+
+
 async def mark_read(db: AsyncSession, notification_id: str, user_id: uuid.UUID) -> Notification:
     nid = uuid.UUID(notification_id) if isinstance(notification_id, str) else notification_id
     result = await db.execute(

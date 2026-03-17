@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { apiFetchBlob, apiRequest } from "@/lib/api-client";
+import { fetchMaterialBlob, fetchMaterialFile } from "@/lib/api-client";
 import { isPrintable, printInIframe } from "@/lib/print-utils";
 import { toast } from "sonner";
 
@@ -23,7 +23,7 @@ export function usePrint({ viewerType, materialId, fileName, mimeType }: UsePrin
     try {
       switch (viewerType) {
         case "pdf": {
-          const blob = await apiFetchBlob(`/materials/${materialId}/file`);
+          const blob = await fetchMaterialBlob(materialId);
           const blobUrl = URL.createObjectURL(blob);
           printInIframe(blobUrl, { isBlobUrl: true, title: fileName });
           // Revoke after a delay to allow the iframe to use it
@@ -32,7 +32,7 @@ export function usePrint({ viewerType, materialId, fileName, mimeType }: UsePrin
         }
 
         case "image": {
-          const blob = await apiFetchBlob(`/materials/${materialId}/file`);
+          const blob = await fetchMaterialBlob(materialId);
           const blobUrl = URL.createObjectURL(blob);
           const html = `
             <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;">
@@ -45,7 +45,7 @@ export function usePrint({ viewerType, materialId, fileName, mimeType }: UsePrin
         }
 
         case "code": {
-          const response = await apiRequest(`/materials/${materialId}/file`);
+          const response = await fetchMaterialFile(materialId);
           const text = await response.text();
           // Escape HTML in the source code
           const escaped = text
@@ -62,7 +62,7 @@ export function usePrint({ viewerType, materialId, fileName, mimeType }: UsePrin
         }
 
         case "markdown": {
-          const response = await apiRequest(`/materials/${materialId}/file`);
+          const response = await fetchMaterialFile(materialId);
           const text = await response.text();
           const html = `<pre style="white-space:pre-wrap;">${text
             .replace(/&/g, "&amp;")
@@ -73,7 +73,7 @@ export function usePrint({ viewerType, materialId, fileName, mimeType }: UsePrin
         }
 
         case "office": {
-          const fetchFile = () => apiRequest(`/materials/${materialId}/file`);
+          const fetchFile = () => fetchMaterialFile(materialId);
           let html = "";
 
           if (mimeType.includes("wordprocessingml")) {

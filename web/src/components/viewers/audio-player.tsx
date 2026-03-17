@@ -20,7 +20,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
-import { apiFetchBlob } from "@/lib/api-client";
+import { API_BASE, fetchMaterialBlob } from "@/lib/api-client";
+import { getAccessToken } from "@/lib/auth-tokens";
 
 interface AudioPlayerProps {
     fileKey: string;
@@ -30,7 +31,6 @@ interface AudioPlayerProps {
 export function AudioPlayer({ materialId }: AudioPlayerProps) {
     const { resolvedTheme } = useTheme();
     const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
@@ -38,7 +38,11 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
     const [isMuted, setIsMuted] = useState(false);
     const [playbackRate, setPlaybackRate] = useState(1);
     const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
-    const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+    const token = getAccessToken();
+    const streamUrl = token 
+        ? `${API_BASE}/materials/${materialId}/file?token=${encodeURIComponent(token)}`
+        : `${API_BASE}/materials/${materialId}/file`;
 
     const audioRef = useRef<HTMLAudioElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,33 +52,36 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
 
     useEffect(() => {
         let cancelled = false;
-        let objectUrl: string | null = null;
 
         const loadAudio = async () => {
             try {
                 setIsLoading(true);
-                const blob = await apiFetchBlob(`/materials/${materialId}/file`);
+                // We still fetch the blob for waveform analysis, but play from streamUrl
+                const blob = await fetchMaterialBlob(materialId);
                 if (cancelled) return;
-
-                objectUrl = URL.createObjectURL(blob);
-                setBlobUrl(objectUrl);
 
                 const arrayBuffer = await blob.arrayBuffer();
                 if (cancelled) return;
 
                 // OfflineAudioContext decodes without requiring a user gesture
                 // (unlike AudioContext which triggers the autoplay-policy warning).
-                const offlineCtx = new OfflineAudioContext(1, 1, 44100);
-                const decodedData = await offlineCtx.decodeAudioData(arrayBuffer);
-                if (cancelled) return;
+                try {
+                    const offlineCtx = new OfflineAudioContext(1, 1, 44100);
+                    const decodedData = await offlineCtx.decodeAudioData(arrayBuffer);
+                    if (cancelled) return;
 
-                setAudioBuffer(decodedData);
-                setDuration(decodedData.duration);
+                    setAudioBuffer(decodedData);
+                    setDuration(decodedData.duration);
+                } catch (decodeErr) {
+                    console.error("Waveform decode failed (falling back to standard audio playback):", decodeErr);
+                    // Non-fatal, we can still play it via HTML5 <audio>
+                }
+                
                 setIsLoading(false);
             } catch (error) {
-                console.error("Failed to load audio:", error);
+                console.error("Failed to load audio waveform:", error);
                 if (!cancelled) {
-                    setError(error instanceof Error ? error.message : "Failed to load audio");
+                    // Not fatal for playback, but we should stop loading
                     setIsLoading(false);
                 }
             }
@@ -84,7 +91,6 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
 
         return () => {
             cancelled = true;
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
     }, [materialId]);
 
@@ -204,6 +210,15 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
         }
     };
 
+    // Sync initial state when loading finishes and ref is attached
+    useEffect(() => {
+        if (!isLoading && audioRef.current) {
+            audioRef.current.playbackRate = playbackRate;
+            audioRef.current.volume = volume;
+            audioRef.current.muted = isMuted;
+        }
+    }, [isLoading, playbackRate, volume, isMuted]);
+
     return (
         <div className="flex flex-col items-center justify-center p-4 md:p-8 w-full max-w-4xl mx-auto h-full" ref={containerRef}>
             {isLoading ? (
@@ -218,21 +233,6 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                         <p className="text-sm font-semibold">Preparing audio engine</p>
                         <p className="text-xs text-muted-foreground animate-pulse">Analyzing frequencies & building waveform...</p>
                     </div>
-                </div>
-            ) : error ? (
-                <div className="w-full bg-card p-10 rounded-[2.5rem] border border-destructive/20 text-center space-y-4 shadow-xl">
-                    <div className="flex justify-center">
-                        <div className="h-16 w-16 rounded-2xl bg-destructive/10 flex items-center justify-center border border-destructive/20">
-                            <VolumeX className="h-8 w-8 text-destructive" />
-                        </div>
-                    </div>
-                    <div className="space-y-1">
-                        <p className="font-bold text-destructive">Playback Blocked</p>
-                        <p className="text-sm text-muted-foreground">{error}</p>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => window.location.reload()} className="rounded-xl">
-                        Try Again
-                    </Button>
                 </div>
             ) : (
                 <div className="w-full relative overflow-hidden bg-card text-card-foreground rounded-[2.5rem] border shadow-2xl transition-colors duration-300 border-border/50 dark:border-white/5">
@@ -254,22 +254,34 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                                 </div>
                             </div>
 
-                            <div className="relative h-24 md:h-32 transition-transform duration-300 group-hover:scale-[1.01]">
-                                {/* Background Waveform */}
-                                <canvas ref={canvasRef} className="w-full h-full block" />
-                                
-                                {/* Progress Waveform (Primary Color) */}
-                                <div 
-                                    className="absolute inset-0 pointer-events-none overflow-hidden transition-[clip-path] duration-150 ease-out"
-                                    style={{ clipPath: `inset(0 ${100 - (currentTime / duration) * 100}% 0 0)` }}
-                                >
-                                     <canvas 
-                                        className="w-full h-full block" 
-                                        ref={(el) => {
-                                            if (el && audioBuffer) drawWaveform(audioBuffer, "#3b82f6", el);
-                                        }} 
-                                    />
-                                </div>
+                            <div className="relative h-24 md:h-32 transition-transform duration-300 group-hover:scale-[1.01] rounded-xl overflow-hidden">
+                                {audioBuffer ? (
+                                    <>
+                                        {/* Background Waveform */}
+                                        <canvas ref={canvasRef} className="w-full h-full block" />
+                                        
+                                        {/* Progress Waveform (Primary Color) */}
+                                        <div 
+                                            className="absolute inset-0 pointer-events-none overflow-hidden transition-[clip-path] duration-150 ease-out"
+                                            style={{ clipPath: `inset(0 ${100 - (currentTime / duration) * 100}% 0 0)` }}
+                                        >
+                                            <canvas 
+                                                className="w-full h-full block" 
+                                                ref={(el) => {
+                                                    if (el && audioBuffer) drawWaveform(audioBuffer, "#3b82f6", el);
+                                                }} 
+                                            />
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="w-full h-full flex flex-col items-center justify-center bg-muted/20 relative">
+                                        <div 
+                                            className="absolute left-0 top-0 bottom-0 bg-primary/20 transition-all duration-150 ease-out pointer-events-none"
+                                            style={{ width: duration ? `${(currentTime / duration) * 100}%` : "0%" }}
+                                        />
+                                        <Music className="h-8 w-8 text-muted-foreground/30 z-10" />
+                                    </div>
+                                )}
 
                                 {/* Hover Seeker Line */}
                                 <div className="absolute inset-y-0 w-px bg-foreground/20 dark:bg-white/20 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity" id="hover-line" />
@@ -388,7 +400,7 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                     {/* Hidden Audio Element */}
                     <audio
                         ref={audioRef}
-                        src={blobUrl || undefined}
+                        src={streamUrl}
                         onTimeUpdate={handleTimeUpdate}
                         onLoadedMetadata={handleLoadedMetadata}
                         onEnded={() => setIsPlaying(false)}

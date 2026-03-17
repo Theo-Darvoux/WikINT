@@ -59,6 +59,9 @@ async def rate_limit_uploads(
     db: Annotated[AsyncSession, Depends(get_db)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> None:
+    if user.role in ("member", "bureau", "vieux"):
+        return
+
     minute_limit = 100 if settings.is_dev else 10
     daily_limit = 1000 if settings.is_dev else 100
 

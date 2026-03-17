@@ -131,7 +131,12 @@ export function AnnotationSelectionTooltip({
                             }
                         }}
                     />
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-1 flex items-center justify-between">
+                        <span className="text-[10px] text-muted-foreground">
+                            {body.length}/1,000
+                        </span>
+                    </div>
+                    <div className="mt-1 flex gap-2">
                         <Button
                             size="sm"
                             onClick={handleSubmit}

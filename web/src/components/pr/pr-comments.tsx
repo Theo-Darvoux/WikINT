@@ -6,19 +6,29 @@ import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { MessageSquare, Send } from "lucide-react";
+import { Edit2, MessageSquare, Send } from "lucide-react";
+import { toast } from "sonner";
+import { useAuthStore } from "@/lib/stores";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { FlagButton } from "@/components/flags/flag-button";
 
 interface PRComment {
     id: string;
     body: string;
+    author_id: string | null;
     author: { id: string; display_name: string } | null;
     created_at: string;
 }
 
+const MAX_COMMENT_LENGTH = 10000;
+
 export function PRComments({ prId }: { prId: string }) {
+    const { user } = useAuthStore();
     const [comments, setComments] = useState<PRComment[]>([]);
     const [body, setBody] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editBody, setEditBody] = useState("");
 
     const fetchComments = async () => {
         try {
@@ -36,6 +46,10 @@ export function PRComments({ prId }: { prId: string }) {
 
     const handleSubmit = async () => {
         if (!body.trim()) return;
+        if (body.length > MAX_COMMENT_LENGTH) {
+            toast.error(`Comment exceeds ${MAX_COMMENT_LENGTH.toLocaleString()} character limit`);
+            return;
+        }
         setSubmitting(true);
         try {
             await apiFetch(`/pull-requests/${prId}/comments`, {
@@ -44,9 +58,44 @@ export function PRComments({ prId }: { prId: string }) {
             });
             setBody("");
             fetchComments();
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to post comment");
         } finally {
             setSubmitting(false);
         }
+    };
+
+    const handleEdit = async (id: string) => {
+        if (!editBody.trim()) return;
+        if (editBody.length > MAX_COMMENT_LENGTH) {
+            toast.error(`Comment exceeds ${MAX_COMMENT_LENGTH.toLocaleString()} character limit`);
+            return;
+        }
+        try {
+            await apiFetch(`/pr-comments/${id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ body: editBody.trim() }),
+            });
+            setEditingId(null);
+            setEditBody("");
+            fetchComments();
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to edit comment");
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        try {
+            await apiFetch(`/pr-comments/${id}`, { method: "DELETE" });
+            fetchComments();
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to delete comment");
+        }
+    };
+
+    const startEdit = (id: string, currentBody: string) => {
+        setEditingId(id);
+        setEditBody(currentBody);
     };
 
     const getInitials = (name: string) =>
@@ -56,6 +105,13 @@ export function PRComments({ prId }: { prId: string }) {
             .join("")
             .slice(0, 2)
             .toUpperCase();
+
+    const currentUserId = user?.id ?? null;
+    const currentUserRole = user?.role ?? null;
+    const isModerator =
+        currentUserRole === "member" ||
+        currentUserRole === "bureau" ||
+        currentUserRole === "vieux";
 
     return (
         <div className="space-y-4">
@@ -68,32 +124,104 @@ export function PRComments({ prId }: { prId: string }) {
                 </div>
             )}
 
-            {comments.map((c) => (
-                <div key={c.id} className="flex gap-3">
-                    <Avatar size="sm" className="mt-0.5 shrink-0">
-                        <AvatarFallback className="text-[10px]">
-                            {c.author?.display_name
-                                ? getInitials(c.author.display_name)
-                                : "?"}
-                        </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-sm font-medium">
-                                {c.author?.display_name || "[deleted]"}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                                {formatDistanceToNow(new Date(c.created_at), {
-                                    addSuffix: true,
-                                })}
-                            </span>
+            {comments.map((c) => {
+                const isAuthor = currentUserId && c.author_id === currentUserId;
+                const canEdit = isAuthor;
+                const canDelete = isAuthor || isModerator;
+
+                if (editingId === c.id) {
+                    return (
+                        <div key={c.id} className="flex gap-3">
+                            <Avatar size="sm" className="mt-0.5 shrink-0">
+                                <AvatarFallback className="text-[10px]">
+                                    {c.author?.display_name
+                                        ? getInitials(c.author.display_name)
+                                        : "?"}
+                                </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1 space-y-2">
+                                <Textarea
+                                    value={editBody}
+                                    onChange={(e) => setEditBody(e.target.value)}
+                                    className="min-h-[60px] text-sm"
+                                />
+                                <span className={`text-[10px] ${editBody.length > MAX_COMMENT_LENGTH ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                                    {editBody.length.toLocaleString()}/{MAX_COMMENT_LENGTH.toLocaleString()}
+                                </span>
+                                <div className="flex gap-2">
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleEdit(c.id)}
+                                        disabled={!editBody.trim() || editBody.length > MAX_COMMENT_LENGTH}
+                                    >
+                                        Save
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => setEditingId(null)}
+                                    >
+                                        Cancel
+                                    </Button>
+                                </div>
+                            </div>
                         </div>
-                        <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap">
-                            {c.body}
-                        </p>
+                    );
+                }
+
+                return (
+                    <div key={c.id} className="group flex gap-3">
+                        <Avatar size="sm" className="mt-0.5 shrink-0">
+                            <AvatarFallback className="text-[10px]">
+                                {c.author?.display_name
+                                    ? getInitials(c.author.display_name)
+                                    : "?"}
+                            </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-sm font-medium">
+                                    {c.author?.display_name || "[deleted]"}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                    {formatDistanceToNow(new Date(c.created_at), {
+                                        addSuffix: true,
+                                    })}
+                                </span>
+                            </div>
+                            <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap">
+                                {c.body}
+                            </p>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                                {canEdit && (
+                                    <button
+                                        onClick={() => startEdit(c.id, c.body)}
+                                        className="flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                                    >
+                                        <Edit2 className="h-3 w-3" />
+                                        Edit
+                                    </button>
+                                )}
+                                {canDelete ? (
+                                    <ConfirmDeleteDialog
+                                        onConfirm={() => handleDelete(c.id)}
+                                        title="Delete comment"
+                                        description="Are you sure you want to delete this comment? This action cannot be undone."
+                                    />
+                                ) : (
+                                    <FlagButton
+                                        targetType="pr_comment"
+                                        targetId={c.id}
+                                        variant="ghost"
+                                        className="h-auto p-0 px-1 py-0.5 text-[10px] font-normal text-muted-foreground hover:bg-muted hover:text-foreground gap-1"
+                                        iconClassName="h-3 w-3"
+                                    />
+                                )}
+                            </div>
+                        </div>
                     </div>
-                </div>
-            ))}
+                );
+            })}
 
             {/* Comment form */}
             <div className="space-y-2 pt-2">
@@ -104,10 +232,13 @@ export function PRComments({ prId }: { prId: string }) {
                     rows={2}
                     className="resize-none"
                 />
-                <div className="flex justify-end">
+                <div className="flex items-center justify-between">
+                    <span className={`text-[10px] ${body.length > MAX_COMMENT_LENGTH ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                        {body.length.toLocaleString()}/{MAX_COMMENT_LENGTH.toLocaleString()}
+                    </span>
                     <Button
                         size="sm"
-                        disabled={!body.trim() || submitting}
+                        disabled={!body.trim() || submitting || body.length > MAX_COMMENT_LENGTH}
                         onClick={handleSubmit}
                         className="gap-1.5"
                     >

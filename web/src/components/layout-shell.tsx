@@ -8,7 +8,7 @@ import { Footer } from "@/components/footer";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { GlobalFloatingSidebar } from "@/components/sidebar/global-floating-sidebar";
 import { CookieBanner } from "@/components/cookie-banner";
-import { CartFab } from "@/components/pr/cart-fab";
+import { StagingFab } from "@/components/pr/staging-fab";
 import { ReviewDrawer } from "@/components/pr/review-drawer";
 import { GlobalDropZone } from "@/components/pr/global-drop-zone";
 import { useAuth } from "@/hooks/use-auth";
@@ -54,7 +54,7 @@ export function LayoutShell({ children }: { children: ReactNode }) {
             <MobileBottomBar />
             <ConfirmDialog />
             <GlobalFloatingSidebar />
-            <CartFab />
+            <StagingFab />
             <ReviewDrawer />
             <GlobalDropZone />
             <CookieBanner />

@@ -115,5 +115,6 @@ async def material_event_stream(material_id: str) -> EventSourceResponse:
         sse_event_stream(
             queue,
             cleanup=lambda: unregister_topic_queue(material_id, queue),
-        )
+        ),
+        headers={"X-Accel-Buffering": "no"},
     )

@@ -47,7 +47,14 @@ A high-quality audio player featuring:
 - **Lazy Fetching**: Only fetches and decodes the audio file when the viewer is mounted. Uses a short-lived blob URL for the underlying `<audio>` element.
 
 ### MarkdownViewer (`markdown-viewer.tsx`)
-Fetches file content via `apiRequest()` from `api-client.ts`, which handles Bearer token injection and 401 refresh. Renders as text in a `<pre>` tag with prose styling.
+Full-featured markdown renderer using `react-markdown` with GFM support. Fetches content via `fetchMaterialFile()`.
+
+- **Plugins**: `remark-gfm` (tables, task lists, strikethrough, autolinks), `rehype-raw` (inline HTML passthrough), `rehype-sanitize` (XSS-safe HTML allowlist based on GitHub's schema), `rehype-highlight` (syntax-highlighted code blocks via highlight.js)
+- **Inline images**: `<img>` tags render with lazy loading, rounded corners, and `max-w-full` for responsive sizing
+- **Tables**: Wrapped in `overflow-x-auto` for horizontal scrolling on narrow viewports
+- **Links**: External links open in a new tab with `rel="noopener noreferrer"`
+- **Theming**: Uses `@tailwindcss/typography` prose classes with `dark:prose-invert` and custom hljs dark overrides in `globals.css`
+- **Performance**: Rendered output is memoized with `useMemo` to avoid re-parsing on re-renders
 
 ### OfficeViewer (`office-viewer.tsx`)
 Fetches file via `apiRequest()` (same centralized auth as other viewers). Dynamic imports for format-specific libraries:

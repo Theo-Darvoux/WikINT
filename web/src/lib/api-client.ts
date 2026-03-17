@@ -25,12 +25,24 @@ function refreshTokenOnce(): Promise<string | null> {
     return refreshPromise;
 }
 
+function getClientId(): string {
+    if (typeof window === "undefined") return "server-client";
+    let clientId = localStorage.getItem("wikint_client_id");
+    if (!clientId) {
+        clientId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+        localStorage.setItem("wikint_client_id", clientId);
+    }
+    return clientId;
+}
+
 export async function apiRequest(
     path: string,
     options: FetchOptions = {},
 ): Promise<Response> {
     const { skipAuth, ...fetchOptions } = options;
     const headers = new Headers(fetchOptions.headers);
+
+    headers.set("X-Client-ID", getClientId());
 
     if (!skipAuth) {
         const token = getAccessToken();
@@ -84,6 +96,24 @@ export async function apiFetchBlob(
     options: FetchOptions = {},
 ): Promise<Blob> {
     const res = await apiRequest(path, options);
+    return res.blob();
+}
+
+/**
+ * Fetch material file content via a two-step presigned URL flow.
+ * Step 1: authenticated call to /inline to get a short-lived presigned URL.
+ * Step 2: plain fetch (no Authorization header) to the presigned URL.
+ * This avoids the S3 400 caused by forwarding auth headers on same-origin redirects.
+ */
+export async function fetchMaterialFile(materialId: string): Promise<Response> {
+    const { url } = await apiFetch<{ url: string }>(`/materials/${materialId}/inline`);
+    const res = await fetch(url);
+    if (!res.ok) throw new ApiError(res.status, `Failed to fetch file: ${res.statusText}`);
+    return res;
+}
+
+export async function fetchMaterialBlob(materialId: string): Promise<Blob> {
+    const res = await fetchMaterialFile(materialId);
     return res.blob();
 }
 

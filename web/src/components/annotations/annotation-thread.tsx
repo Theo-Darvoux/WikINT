@@ -7,6 +7,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { toast } from "sonner";
 import type { AnnotationData, ThreadData } from "@/hooks/use-annotations";
 
 function getInitials(name: string | null): string {
@@ -190,6 +191,8 @@ export function AnnotationForm({
         try {
             await onSubmit(body.trim());
             setBody("");
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to submit");
         } finally {
             setSubmitting(false);
         }

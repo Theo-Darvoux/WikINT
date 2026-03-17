@@ -55,7 +55,8 @@ def mock_redis() -> AsyncMock:
     pipe.expire = AsyncMock()
     pipe.execute = AsyncMock(return_value=[1, True, 1, True])
     pipe.__aenter__ = AsyncMock(return_value=pipe)
-    redis.pipeline = lambda **kwargs: pipe
+    from unittest.mock import MagicMock
+    redis.pipeline = MagicMock(return_value=pipe)
     return redis
 
 

@@ -133,7 +133,24 @@ Verify `.env` settings:
 - `SMTP_HOST`, `SMTP_PORT` -- correct server and port
 - `SMTP_USE_TLS=true` for port 587, or adjust for your provider
 - `SMTP_USER` and `SMTP_PASSWORD` -- valid credentials
-- `SMTP_FROM` -- must be an authorized sender address
+- `SMTP_FROM` -- must be an authorized, valid email format (e.g., `noreply@your-domain.com` or `"WikINT <noreply@your-domain.com>`). A bare string like `WikINT` will cause a 501 Syntax Error on some SMTP servers.
+
+---
+
+## Reverse Proxy & Networking Issues
+
+### 502 Bad Gateway / Frontend not loading
+
+If your outer reverse proxy is returning a 502 error and `docker compose logs web` shows `sh: next: not found`, ensure your `docker-compose.yml` does **not** override the Next.js standalone startup command. 
+
+Remove `command: npm start` from the `web` service in `docker-compose.yml`. The standalone build defined in the Dockerfile correctly uses `node server.js`.
+
+### MinIO Content-Security-Policy (CSP) Errors / connect-src block
+
+If uploads or avatars fail with a CSP error blocking `http://your-domain.com/s3/...` on an `https://` site:
+1. Ensure your `.env` has `MINIO_PUBLIC_ENDPOINT=your-domain.com/s3` (without `http://` or `https://`).
+2. Do **not** set `MINIO_USE_SSL=true`. That variable controls *internal* connections between the API and MinIO containers. If you are using the default Docker setup, the internal connection must remain HTTP (`false`).
+3. The backend automatically forces `https://` for the generated pre-signed URLs if `MINIO_PUBLIC_ENDPOINT` is not `localhost`.
 
 ---
 

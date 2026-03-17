@@ -14,11 +14,15 @@ _s3_config = BotocoreConfig(signature_version="s3v4")
 
 
 def _rewrite_host(url: str) -> str:
-    """Swap the internal MinIO host with the public endpoint, touching only the netloc."""
+    """Swap the internal MinIO host with the public endpoint, touching only the netloc and enforcing https in production."""
     if not settings.minio_public_endpoint:
         return url
     parsed = urlparse(url)
-    return urlunparse(parsed._replace(netloc=settings.minio_public_endpoint))
+    
+    # If the public endpoint is not localhost, enforce https to avoid CSP errors.
+    scheme = "https" if "localhost" not in settings.minio_public_endpoint else "http"
+    
+    return urlunparse(parsed._replace(netloc=settings.minio_public_endpoint, scheme=scheme))
 
 
 @asynccontextmanager

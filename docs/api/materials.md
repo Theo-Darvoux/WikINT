@@ -60,12 +60,12 @@ Increments `download_count`, records a download audit entry, generates a presign
 ### GET `/api/materials/{material_id}/inline`
 **Auth**: Required (CurrentUser)
 
-Same as download but without incrementing the counter. Used for in-browser preview (PDF viewer, etc.).
+Returns a JSON object `{"url": "..."}` with a presigned S3 GET URL (15-minute TTL) without incrementing the download counter. Used by frontend viewers (PDF, code, image, etc.) to fetch file content via a two-step flow: first get the presigned URL from `/inline`, then fetch the file directly from S3 without auth headers. This avoids the S3 400 error caused by forwarding `Authorization` headers on same-origin redirects.
 
 ### GET `/api/materials/{material_id}/file`
-**Auth**: Required (CurrentUser)
+**Auth**: Required (CurrentUser or query `?token=`)
 
-Streams the file content directly through the API. Returns the raw bytes with the correct `Content-Type` and `Content-Disposition: inline`. Used when presigned URLs aren't suitable.
+Redirects (302) to a presigned S3 GET URL. Used by native HTML elements (`<video>`, `<audio>`) that need direct URL access with Range request support. Not suitable for `fetch()` calls — use `/inline` instead to avoid auth header conflicts with presigned URLs.
 
 ### GET `/api/materials/{material_id}/versions`
 **Auth**: Required (CurrentUser)

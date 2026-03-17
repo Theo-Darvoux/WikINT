@@ -1,14 +1,14 @@
 # Pull Requests (Frontend)
 
-The PR frontend consists of a staging cart system for building batch operations, an upload system, and pages for listing/reviewing PRs. Users stage changes while browsing, then submit them as a PR.
+The PR frontend consists of a staging system for building batch operations, an upload system, and pages for listing/reviewing PRs. Users stage changes while browsing, then submit them as a PR.
 
 **Key files**: `web/src/lib/staging-store.ts`, `web/src/components/pr/`, `web/src/hooks/use-upload.ts`, `web/src/app/pull-requests/`
 
 ---
 
-## Staging Cart
+## Staging System
 
-The `useStagingStore` (`web/src/lib/staging-store.ts`) is a Zustand store persisted to `localStorage["wikint-staging-cart"]`. It accumulates operations as users interact with the browse interface.
+The `useStagingStore` (`web/src/lib/staging-store.ts`) is a Zustand store persisted to `localStorage["wikint-staging"]`. It accumulates operations as users interact with the browse interface.
 
 ### Operation Types
 Each staged operation wraps a PR operation with a `stagedAt` timestamp:
@@ -42,7 +42,7 @@ Files uploaded to MinIO are cleaned up after 24 hours by the server. The staging
 
 ## UI Components
 
-### CartFab (`cart-fab.tsx`)
+### StagingFab (`staging-fab.tsx`)
 Fixed bottom-right button that appears when operations are staged. Shows:
 - Operation count badge
 - Warning icon if any uploads are expired

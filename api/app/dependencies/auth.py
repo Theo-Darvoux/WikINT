@@ -79,12 +79,12 @@ def require_moderator():
 OnboardedUser = Annotated[User, Depends(require_onboarded())]
 
 
-async def get_sse_user(
+async def get_user_from_token(
     db: Annotated[AsyncSession, Depends(get_db)],
     redis: Annotated[Redis, Depends(get_redis)],
     token: Annotated[str | None, Query()] = None,
 ) -> User:
-    """Authenticate via query-param JWT (EventSource cannot send headers)."""
+    """Authenticate via query-param JWT (useful when headers can't be set)."""
     if not token:
         raise UnauthorizedError("Token required as query parameter")
 
@@ -112,6 +112,18 @@ async def get_sse_user(
         raise UnauthorizedError("Account has been deleted")
 
     return user
+
+
+async def get_sse_user(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+    token: Annotated[str | None, Query()] = None,
+) -> User:
+    """Authenticate via query-param JWT (EventSource cannot send headers)."""
+    return await get_user_from_token(db, redis, token)
+
+
+QueryTokenUser = Annotated[User, Depends(get_user_from_token)]
 
 
 SSEUser = Annotated[User, Depends(get_sse_user)]

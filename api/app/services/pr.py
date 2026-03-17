@@ -418,7 +418,12 @@ async def _exec_create_directory(
     db: AsyncSession, p: dict, pr: PullRequest, id_map: dict[str, uuid.UUID]
 ) -> uuid.UUID:
     tags = p.get("tags", [])
-    await get_or_create_tags(db, tags)
+    tag_objs = []
+    if tags:
+        await get_or_create_tags(db, tags)
+        normalized = [t.strip().lower() for t in tags if t.strip()]
+        tag_result = await db.execute(select(Tag).where(Tag.name.in_(normalized)))
+        tag_objs = list(tag_result.scalars().all())
 
     dir_id = uuid.uuid4()
     parent_id = _resolve(str(p["parent_id"]) if p.get("parent_id") else None, id_map)
@@ -430,7 +435,7 @@ async def _exec_create_directory(
         type=p.get("type", "folder"),
         description=p.get("description"),
         parent_id=parent_id,
-        tags=tags,
+        tags=tag_objs,
         metadata_=p.get("metadata", {}),
         created_by=pr.author_id,
     )

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
-import { apiRequest } from "@/lib/api-client";
+import { fetchMaterialFile } from "@/lib/api-client";
 import hljs from "highlight.js/lib/common";
 
 /* highlight.js/lib/common includes: bash, c, cpp, csharp, css, diff,
@@ -109,7 +109,7 @@ export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
             setContent("");
         });
 
-        apiRequest(`/materials/${materialId}/file`)
+        fetchMaterialFile(materialId)
             .then((res) => res.text())
             .then((text) => {
                 if (!cancelled) setContent(text);

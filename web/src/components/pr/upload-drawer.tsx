@@ -551,6 +551,8 @@ export function UploadDrawer({
             <SheetContent
                 side="right"
                 className="flex w-full flex-col overflow-hidden sm:max-w-lg"
+                onInteractOutside={(e) => e.preventDefault()}
+                onPointerDownOutside={(e) => e.preventDefault()}
             >
                 <SheetHeader>
                     <SheetTitle>{parentMaterialId ? "Upload Attachments" : "Upload Files"}</SheetTitle>
@@ -561,7 +563,7 @@ export function UploadDrawer({
                                 <span className="font-medium text-foreground">
                                     {directoryName || "this material"}
                                 </span>
-                                . They&apos;ll be staged in your cart.
+                                . They&apos;ll appear in your staged changes.
                             </>
                         ) : (
                             <>

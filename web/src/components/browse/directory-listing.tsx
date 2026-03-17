@@ -148,7 +148,7 @@ export function DirectoryListing({
             ? ghostDirStack[ghostDirStack.length - 1]
             : null;
 
-    const operations = useStagingStore((s) => s.operations);
+    const operations = useStagingStore((s) => s.operations) ?? [];
     const addOperations = useStagingStore((s) => s.addOperations);
     const setReviewOpen = useStagingStore((s) => s.setReviewOpen);
 

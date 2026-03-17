@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import type { ThreadData } from "@/hooks/use-annotations";
-import { apiFetchBlob } from "@/lib/api-client";
+import { fetchMaterialBlob } from "@/lib/api-client";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -229,7 +229,7 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
             setNumPages(0);
             setError(null);
         });
-        apiFetchBlob(`/materials/${materialId}/file`)
+        fetchMaterialBlob(materialId)
             .then(blob => {
                 if (cancelled) return;
                 objectUrl = URL.createObjectURL(blob);

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 
 class DirectoryOut(BaseModel):
@@ -16,6 +16,13 @@ class DirectoryOut(BaseModel):
     is_system: bool
     tags: list[str] = []
     created_at: datetime
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def extract_tag_names(cls, v: list | None) -> list[str]:
+        if not v:
+            return []
+        return [tag.name if hasattr(tag, "name") else str(tag) for tag in v]
 
     model_config = {"from_attributes": True}
 

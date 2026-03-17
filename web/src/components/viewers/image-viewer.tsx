@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { apiFetchBlob } from "@/lib/api-client";
+import { fetchMaterialBlob } from "@/lib/api-client";
 
 interface ImageViewerProps {
     fileKey: string;
@@ -26,7 +26,7 @@ export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
             setBlobUrl(null);
         });
 
-        apiFetchBlob(`/materials/${materialId}/file`)
+        fetchMaterialBlob(materialId)
             .then((blob) => {
                 if (cancelled) return;
                 objectUrl = URL.createObjectURL(blob);

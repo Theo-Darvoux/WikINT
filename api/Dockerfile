@@ -4,14 +4,17 @@ WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-COPY pyproject.toml uv.lock ./
+# Create user early and take ownership of the working directory
+RUN groupadd -r appuser && useradd -r -g appuser -m appuser && chown appuser:appuser /app
+
+# Switch to non-root user before installing dependencies
+USER appuser
+
+COPY --chown=appuser:appuser pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-COPY . .
+COPY --chown=appuser:appuser . .
 RUN chmod +x start.sh worker-start.sh
-
-RUN groupadd -r appuser && useradd -r -g appuser -m appuser && chown -R appuser:appuser /app
-USER appuser
 
 EXPOSE 8000
 

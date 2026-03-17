@@ -485,61 +485,6 @@ class TestListAndGet:
         assert resp.status_code == 404
 
 
-class TestVoting:
-    async def test_vote_on_pr(self, client: AsyncClient, db_session: AsyncSession) -> None:
-        author = await _create_user(db_session)
-        voter = await _create_user(db_session)
-        await db_session.commit()
-
-        resp = await client.post(
-            "/api/pull-requests",
-            json={
-                "title": "VoteMe Long",
-                "operations": [{"op": "create_directory", "name": "D"}],
-            },
-            headers=_auth_headers(author),
-        )
-        pr_id = resp.json()["id"]
-
-        # Upvote
-        resp = await client.post(
-            f"/api/pull-requests/{pr_id}/vote",
-            json={"value": 1},
-            headers=_auth_headers(voter),
-        )
-        assert resp.status_code == 200
-        assert resp.json()["vote_score"] == 1
-
-        # Downvote
-        resp = await client.post(
-            f"/api/pull-requests/{pr_id}/vote",
-            json={"value": -1},
-            headers=_auth_headers(voter),
-        )
-        assert resp.json()["vote_score"] == -1
-
-    async def test_cannot_vote_own_pr(self, client: AsyncClient, db_session: AsyncSession) -> None:
-        author = await _create_user(db_session)
-        await db_session.commit()
-
-        resp = await client.post(
-            "/api/pull-requests",
-            json={
-                "title": "MyPR Long",
-                "operations": [{"op": "create_directory", "name": "D"}],
-            },
-            headers=_auth_headers(author),
-        )
-        pr_id = resp.json()["id"]
-
-        resp = await client.post(
-            f"/api/pull-requests/{pr_id}/vote",
-            json={"value": 1},
-            headers=_auth_headers(author),
-        )
-        assert resp.status_code == 403
-
-
 class TestComments:
     async def test_add_comment(self, client: AsyncClient, db_session: AsyncSession) -> None:
         user = await _create_user(db_session)

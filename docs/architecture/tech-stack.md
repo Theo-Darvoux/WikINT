@@ -50,7 +50,7 @@ WikINT is built with a modern async Python backend and a React-based frontend, o
 | **Next.js** | 16.1+ | React framework with App Router, SSR, standalone output for Docker |
 | **React** | 19.2+ | UI library |
 | **TypeScript** | 5.x | Type safety across all frontend code |
-| **Zustand** | 5.0+ | Lightweight state management. 5 stores: auth, UI, notifications, staging cart, selection |
+| **Zustand** | 5.0+ | Lightweight state management. 5 stores: auth, UI, notifications, staging, selection |
 | **shadcn/ui** | new-york style | UI component library built on Radix UI primitives |
 | **Tailwind CSS** | 4.x | Utility-first CSS with OKLch color space variables |
 | **Lucide React** | 0.575+ | Icon library (~200 icons used across the app) |
@@ -92,7 +92,7 @@ WikINT is built with a modern async Python backend and a React-based frontend, o
 The platform handles file uploads, search queries, and real-time SSE — all I/O-bound operations that benefit from async. FastAPI's native async support with Pydantic validation and auto-generated OpenAPI docs made it a natural fit.
 
 ### Why Zustand over Redux/Context?
-Zustand provides minimal boilerplate for 5 small, focused stores. The staging cart store uses localStorage persistence — a built-in Zustand middleware. No need for Redux's ceremony for this scale.
+Zustand provides minimal boilerplate for 5 small, focused stores. The staging store uses localStorage persistence — a built-in Zustand middleware. No need for Redux's ceremony for this scale.
 
 ### Why MinIO over cloud S3?
 Self-hosted for data sovereignty (academic institution context). MinIO is S3-compatible, so the codebase can migrate to AWS S3 by changing endpoint configuration.

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -183,3 +184,44 @@
   0%, 100% { border-color: var(--color-destructive); opacity: 1; }
   50% { border-color: oklch(0.55 0.22 27); opacity: 0.85; }
 }
+
+/* ─── highlight.js dark mode overrides ─── */
+
+.dark .hljs {
+  background: transparent !important;
+  color: inherit;
+}
+
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-deletion { color: #ff7b72; }
+
+.dark .hljs-string,
+.dark .hljs-attr,
+.dark .hljs-template-tag,
+.dark .hljs-addition { color: #a5d6ff; }
+
+.dark .hljs-comment,
+.dark .hljs-quote { color: #8b949e; }
+
+.dark .hljs-number,
+.dark .hljs-literal,
+.dark .hljs-variable,
+.dark .hljs-template-variable,
+.dark .hljs-link { color: #79c0ff; }
+
+.dark .hljs-title,
+.dark .hljs-title\.class_,
+.dark .hljs-title\.function_ { color: #d2a8ff; }
+
+.dark .hljs-built_in,
+.dark .hljs-type,
+.dark .hljs-params { color: #ffa657; }
+
+.dark .hljs-meta,
+.dark .hljs-symbol { color: #79c0ff; }
+
+.dark .hljs-regexp { color: #7ee787; }
+
+.dark .hljs-section,
+.dark .hljs-name { color: #ff7b72; }

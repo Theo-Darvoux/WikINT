@@ -37,6 +37,13 @@ async def create_pull_request(
     current_user: Annotated[User, Depends(get_current_user)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> PullRequestOut:
+    if current_user.role not in (UserRole.MEMBER, UserRole.BUREAU, UserRole.VIEUX):
+        if len(data.operations) > 50:
+            raise BadRequestError("Operations list should have at most 50 items")
+        for op in data.operations:
+            if getattr(op, "op", None) == "create_material" and len(getattr(op, "attachments", [])) > 50:
+                raise BadRequestError("Attachments list should have at most 50 items")
+
     # Check 5 open PR limit for non-privileged users
     if current_user.role not in [UserRole.BUREAU, UserRole.VIEUX]:
         open_count = await db.scalar(
@@ -318,56 +325,7 @@ async def vote_pull_request(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
-    value = data.value
-    if value not in [-1, 0, 1]:
-        raise BadRequestError("Vote value must be -1, 0, or 1")
-
-    pr = await db.scalar(select(PullRequest).where(PullRequest.id == id))
-    if not pr:
-        raise NotFoundError("Pull request not found")
-
-    if pr.author_id == current_user.id:
-        raise ForbiddenError("You cannot vote on your own pull request")
-
-    if pr.status != PRStatus.OPEN:
-        raise BadRequestError("Cannot vote on a closed pull request")
-
-    vote = await db.scalar(
-        select(PRVote).where(PRVote.pr_id == id, PRVote.user_id == current_user.id)
-    )
-    if vote:
-        vote.value = value
-    else:
-        vote = PRVote(id=uuid.uuid4(), pr_id=id, user_id=current_user.id, value=value)
-        db.add(vote)
-
-    await db.flush()
-
-    score = await db.scalar(select(func.sum(PRVote.value)).where(PRVote.pr_id == pr.id)) or 0
-
-    if pr.author_id and pr.author_id != current_user.id:
-        await notify_user(
-            db,
-            pr.author_id,
-            "pr_voted",
-            f'Your PR "{pr.title}" received a vote',
-            link=f"/pull-requests/{pr.id}",
-        )
-
-    if score >= 5:
-        pr.status = PRStatus.APPROVED
-        pr.reviewed_by = None
-        await apply_pr(db, pr, current_user.id)
-        if pr.author_id:
-            await notify_user(
-                db,
-                pr.author_id,
-                "pr_approved",
-                f'Your PR "{pr.title}" was auto-approved',
-                link=f"/pull-requests/{pr.id}",
-            )
-
-    return {"status": "ok", "vote_score": score}
+    raise BadRequestError("Voting on pull requests has been disabled. Only moderators can approve or reject PRs.")
 
 
 @router.post("/{id}/approve")

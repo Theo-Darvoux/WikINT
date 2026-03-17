@@ -135,6 +135,9 @@ export function AnnotationsTab({ target }: AnnotationsTabProps) {
                         onChange={(e) => setEditBody(e.target.value.slice(0, 1000))}
                         className="min-h-[60px] text-sm"
                     />
+                    <span className="text-[10px] text-muted-foreground">
+                        {editBody.length}/1,000
+                    </span>
                     <div className="flex gap-2">
                         <Button size="sm" onClick={handleSaveEdit} disabled={!editBody.trim()}>
                             Save
