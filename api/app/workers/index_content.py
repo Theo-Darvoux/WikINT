@@ -14,12 +14,13 @@ logger = logging.getLogger("wikint.workers.index_content")
 
 def split_identifiers(text: str) -> str:
     import re
+
     if not text:
         return ""
     # Add space between letters and digits
-    s = re.sub(r'([a-zA-Z]+)(\d+)', r'\1 \2', text)
+    s = re.sub(r"([a-zA-Z]+)(\d+)", r"\1 \2", text)
     # Add space between digits and letters
-    s = re.sub(r'(\d+)([a-zA-Z]+)', r'\1 \2', s)
+    s = re.sub(r"(\d+)([a-zA-Z]+)", r"\1 \2", s)
     return s
 
 
@@ -37,7 +38,7 @@ async def index_material(ctx: dict, material_id: uuid.UUID) -> None:
             return
 
         from app.services.directory import get_directory_path
-        
+
         ancestor_path = ""
         browse_path = "/browse"
         if material.directory_id:
@@ -45,7 +46,7 @@ async def index_material(ctx: dict, material_id: uuid.UUID) -> None:
             if path_parts:
                 ancestor_path = " ".join(p["name"] for p in path_parts)
                 browse_path += "/" + "/".join(p["slug"] for p in path_parts)
-        
+
         browse_path += f"/{material.slug}"
 
         # Build extra searchable fields (identifiers)
@@ -83,7 +84,7 @@ async def index_directory(ctx: dict, directory_id: uuid.UUID) -> None:
             return
 
         from app.services.directory import get_directory_path
-        
+
         ancestor_path = ""
         browse_path = "/browse"
         if directory.parent_id:
@@ -91,12 +92,12 @@ async def index_directory(ctx: dict, directory_id: uuid.UUID) -> None:
             if path_parts:
                 ancestor_path = " ".join(p["name"] for p in path_parts)
                 browse_path += "/" + "/".join(p["slug"] for p in path_parts)
-        
+
         browse_path += f"/{directory.slug}"
 
         metadata = directory.metadata_ or {}
         code = metadata.get("code") or ""
-        
+
         # Build extra searchable fields (identifiers)
         extra = f"{split_identifiers(directory.name)} {split_identifiers(code)} {split_identifiers(ancestor_path)}"
 
@@ -125,4 +126,3 @@ async def delete_indexed_item(ctx: dict, index_name: str, item_id: str) -> None:
         logger.info(f"Deleted {item_id} from {index_name}")
     except Exception as e:
         logger.error(f"Failed to delete {item_id} from {index_name}: {e}")
-

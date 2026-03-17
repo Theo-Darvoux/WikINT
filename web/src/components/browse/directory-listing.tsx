@@ -175,18 +175,22 @@ export function DirectoryListing({
         return () => setBrowseContext(null);
     }, [dirId, dirName, setBrowseContext]);
 
-    // Ghost items: staged creates targeting the current effective directory
+    // Ghost items: staged creates targeting the current effective directory.
+    // At root, dirId is "" but parent_id is null — treat both as "root".
+    const isRoot = !dirId;
     const ghostDirs = operations
         .map((s) => unwrapOp(s))
         .filter(
             (op): op is CreateDirectoryOp =>
-                op.op === "create_directory" && op.parent_id === dirId,
+                op.op === "create_directory" &&
+                (isRoot ? !op.parent_id : op.parent_id === dirId),
         );
     const ghostMaterials = operations
         .map((s) => unwrapOp(s))
         .filter(
             (op): op is CreateMaterialOp =>
-                op.op === "create_material" && op.directory_id === dirId,
+                op.op === "create_material" &&
+                (isRoot ? !op.directory_id : op.directory_id === dirId),
         );
 
     // When inside a ghost dir, there are no real items

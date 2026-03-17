@@ -23,7 +23,11 @@ async def _create_user(db: AsyncSession, role: UserRole = UserRole.STUDENT) -> U
 
 
 async def _create_directory(
-    db: AsyncSession, user: User, parent_id: uuid.UUID | None = None, name: str = "Dir", slug: str = "dir"
+    db: AsyncSession,
+    user: User,
+    parent_id: uuid.UUID | None = None,
+    name: str = "Dir",
+    slug: str = "dir",
 ) -> Directory:
     directory = Directory(
         id=uuid.uuid4(),
@@ -38,9 +42,7 @@ async def _create_directory(
     return directory
 
 
-async def _create_material(
-    db: AsyncSession, directory, user
-) -> Material:
+async def _create_material(db: AsyncSession, directory, user) -> Material:
     material = Material(
         id=uuid.uuid4(),
         directory_id=directory.id,
@@ -56,6 +58,7 @@ async def _create_material(
 
 def _auth_headers(user: User) -> dict[str, str]:
     from app.core.security import create_access_token
+
     token, _ = create_access_token(str(user.id), user.role.value, user.email)
     return {"Authorization": f"Bearer {token}"}
 
@@ -74,11 +77,15 @@ async def test_get_directory_by_id(client: AsyncClient, db_session: AsyncSession
 async def test_get_directory_children(client: AsyncClient, db_session: AsyncSession) -> None:
     user = await _create_user(db_session)
     parent = await _create_directory(db_session, user)
-    child_dir = await _create_directory(db_session, user, parent_id=parent.id, slug="child-dir", name="Child Dir")
+    child_dir = await _create_directory(
+        db_session, user, parent_id=parent.id, slug="child-dir", name="Child Dir"
+    )
     child_mat = await _create_material(db_session, parent, user)
     await db_session.commit()
 
-    response = await client.get(f"/api/directories/{parent.id}/children", headers=_auth_headers(user))
+    response = await client.get(
+        f"/api/directories/{parent.id}/children", headers=_auth_headers(user)
+    )
     assert response.status_code == 200
     data = response.json()
     assert len(data["directories"]) == 1

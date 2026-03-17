@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiRequest } from "@/lib/api-client";
 
 interface MarkdownViewerProps {
     fileKey: string;
@@ -14,7 +15,7 @@ export function MarkdownViewer({ materialId }: MarkdownViewerProps) {
     useEffect(() => {
         const fetchContent = async () => {
             try {
-                const response = await fetch(`/api/materials/${materialId}/download`);
+                const response = await apiRequest(`/materials/${materialId}/file`);
                 const text = await response.text();
                 setContent(text);
             } catch {

@@ -2,7 +2,7 @@
 
 The notification system provides real-time updates via Server-Sent Events with multi-tab coordination. Notifications appear in the navbar bell icon and on a dedicated page.
 
-**Key files**: `web/src/hooks/use-sse.ts`, `web/src/app/notifications/page.tsx`, `web/src/components/navbar.tsx`, `web/src/components/mobile-bottom-bar.tsx`, `web/src/lib/stores.ts`
+**Key files**: `web/src/hooks/use-sse.ts`, `web/src/lib/sse-client.ts`, `web/src/app/notifications/page.tsx`, `web/src/components/navbar.tsx`, `web/src/components/mobile-bottom-bar.tsx`, `web/src/lib/stores.ts`
 
 ---
 
@@ -22,21 +22,23 @@ graph TD
     API -->|"event: notification"| T1
 ```
 
-The `useSSE` hook (`web/src/hooks/use-sse.ts`) uses the **BroadcastChannel API** to coordinate across browser tabs:
+The `useSSE` hook (`web/src/hooks/use-sse.ts`) uses the **BroadcastChannel API** to coordinate across browser tabs. The actual EventSource connection is managed by `createSSEConnection` from `web/src/lib/sse-client.ts`, a shared utility that handles reconnection logic (also used by the annotation SSE).
 
-1. When a tab loads, it broadcasts a "ping" on the channel
-2. If no "pong" comes back within a timeout, this tab becomes the **leader** and opens the `EventSource`
-3. If another tab responds with "pong", this tab becomes a **follower** and listens via BroadcastChannel
-4. The leader forwards all SSE events to the BroadcastChannel
-5. If the leader tab closes, another tab will detect the absence and take over
+1. When a tab loads, it broadcasts a "ping" (`leader-check`) on the channel.
+2. If no "pong" (`leader-alive`) comes back within a timeout, this tab becomes the **leader** and opens the `EventSource`.
+3. If another tab responds with "pong", this tab becomes a **follower** and listens via BroadcastChannel.
+4. The leader sends a **heartbeat** every 10 seconds. Followers maintain a **fallback timer** (25s) that resets on every heartbeat.
+5. If the leader tab closes gracefully, it broadcasts `leader-closing`, and followers immediately initiate a new election.
+6. If the leader tab crashes, followers' fallback timers will expire after 25s, triggering a takeover.
+7. The leader forwards all SSE events to the BroadcastChannel.
 
-This prevents duplicate SSE connections when multiple tabs are open.
+This prevents duplicate SSE connections when multiple tabs are open and ensures high availability.
 
 ### Initial Load
 On first connection, fetches `GET /api/notifications?read=false&limit=1` to set the initial unread count.
 
 ### Event Handling
-When a `notification` event arrives (via SSE or BroadcastChannel), `useNotificationStore.increment()` updates the badge count across all tabs.
+When a `notification` event arrives (via SSE or BroadcastChannel), `useNotificationStore.increment()` updates the badge count across all tabs. Opening the notification popover in the navbar also performs a fresh fetch of the unread count to ensure accuracy.
 
 ---
 

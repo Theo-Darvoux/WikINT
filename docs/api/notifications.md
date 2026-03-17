@@ -2,7 +2,7 @@
 
 WikINT provides in-app notifications delivered via REST endpoints and real-time Server-Sent Events. Notifications are triggered by PR actions, annotation replies, flag resolutions, and other collaborative events.
 
-**Key files**: `api/app/routers/notifications.py`, `api/app/services/notification.py`, `api/app/models/notification.py`, `api/app/schemas/notification.py`
+**Key files**: `api/app/routers/notifications.py`, `api/app/services/notification.py`, `api/app/core/sse.py`, `api/app/dependencies/auth.py` (SSEUser), `api/app/models/notification.py`, `api/app/schemas/notification.py`
 
 ---
 
@@ -63,7 +63,7 @@ Real-time notification stream. The JWT token is passed as a **query parameter** 
 **Event stream**:
 ```
 event: notification
-data: {"id":"uuid","type":"pr_approved","title":"...","link":"/pull-requests/uuid"}
+data: {"id":"uuid","type":"pr_approved","title":"...","body":"...","link":"/pull-requests/uuid"}
 
 event: ping
 data: {}
@@ -75,31 +75,35 @@ The endpoint keeps the connection open, sending `ping` events every 30 seconds a
 
 ## SSE Architecture
 
+SSE queue management lives in `api/app/core/sse.py`, separated from notification business logic in `api/app/services/notification.py`. Authentication for the SSE endpoint uses the `SSEUser` dependency from `api/app/dependencies/auth.py`, which validates a JWT passed as a query parameter (since `EventSource` cannot send headers).
+
 ```mermaid
 graph TD
-    subgraph "api/app/services/notification.py"
-        Q["_sse_queues<br/>Dict[user_id → asyncio.Queue]"]
+    subgraph "api/app/core/sse.py"
+        Q["_user_queues<br/>Dict[user_id → List[asyncio.Queue]]"]
     end
 
-    R1["/notifications/sse"] -->|register_sse| Q
-    R2["/notifications/sse"] -->|register_sse| Q
+    R1["/notifications/sse (Tab 1)"] -->|register_user_queue| Q
+    R2["/notifications/sse (Tab 2)"] -->|register_user_queue| Q
 
-    S1["create_notification()"] -->|_broadcast()| Q
+    S1["create_notification()"] -->|broadcast_to_user()| Q
     S2["notify_user()"] -->|create_notification()| S1
-    S3["notify_moderators()"] -->|for each mod| S2
+    S3["notify_moderators()"] -->|batch add| DB[(Database)]
+    S3 -->|for each mod| S2
 
-    Q -->|event| R1
-    Q -->|event| R2
+    Q -->|sse_event_stream()| R1
+    Q -->|sse_event_stream()| R2
 ```
 
-- `register_sse(user_id)`: Creates a new `asyncio.Queue`, stores in `_sse_queues`. If a queue already exists for this user (e.g., stale connection), sends a `close` event to the old queue first.
-- `unregister_sse(user_id)`: Removes from `_sse_queues` on connection close.
-- `_broadcast(user_id, event)`: Puts event dict into user's queue if registered. Fire-and-forget (`put_nowait`).
+- `register_user_queue(user_id)`: Creates a new `asyncio.Queue` and adds it to the list for that user in `_user_queues`. Supports multiple concurrent connections per user.
+- `unregister_user_queue(user_id, queue)`: Removes the specific queue from the user's list on connection close.
+- `broadcast_to_user(user_id, event)`: Puts event dict into **all** registered queues for the user. Fire-and-forget (`put_nowait`).
+- `sse_event_stream(queue, cleanup, event_name, keepalive_seconds)`: Reusable async generator shared by all SSE endpoints. Yields events from the queue, sends `ping` keepalives on timeout, and calls `cleanup` on disconnect.
 
 ### Helper Functions
 
-| Function | Purpose |
-|----------|---------|
-| `create_notification(db, user_id, type, title, body, link)` | Persists to DB + broadcasts via SSE |
-| `notify_user(db, user_id, type, title, body, link)` | Convenience wrapper around `create_notification` |
-| `notify_moderators(db, type, title, body, link)` | Fetches all MEMBER/BUREAU/VIEUX users, calls `create_notification` for each |
+| Function | Location | Purpose |
+|----------|----------|---------|
+| `create_notification(db, user_id, type, title, body, link)` | `notification.py` | Persists to DB + broadcasts via SSE |
+| `notify_user(db, user_id, type, title, body, link)` | `notification.py` | Convenience wrapper around `create_notification` |
+| `notify_moderators(db, type, title, body, link)` | `notification.py` | Fetches all MEMBER/BUREAU/VIEUX users, batches DB inserts, and broadcasts to each |

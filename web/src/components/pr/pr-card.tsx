@@ -42,6 +42,7 @@ interface PullRequestProps {
         created_at: string;
         vote_score: number;
         summary_types?: string[];
+        virus_scan_result?: string;
     };
 }
 

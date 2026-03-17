@@ -68,7 +68,9 @@ graph TD
 
 ## Startup Order
 
-Docker Compose `depends_on` with `condition: service_healthy` enforces this boot sequence:
+All long-running services have `restart: unless-stopped` to auto-recover from crashes and transient failures. Init-only containers (`minio-setup`, `certbot`) do not restart.
+
+Docker Compose `depends_on` with `condition: service_healthy` enforces this boot sequence (in both production and development):
 
 ```
 1. postgres, redis, minio, meilisearch, clamav  (infrastructure, parallel)
@@ -89,7 +91,7 @@ Docker Compose `depends_on` with `condition: service_healthy` enforces this boot
 | `redis` | `redis-cli ping` | 5s | default |
 | `minio` | `mc ready local` | 5s | default |
 | `meilisearch` | `curl -f http://localhost:7700/health` | 5s | default |
-| `clamav` | `clamdcheck` | 30s | **120s** (signature download) |
+| `clamav` | `echo 'PING' | nc -w 5 127.0.0.1 3310 | grep PONG` | 30s | **120s** (signature download) |
 | `api` | Python `urllib.request.urlopen('http://localhost:8000/api/health')` | 10s | default |
 
 ClamAV has a 120-second start period because it must download virus signature databases before becoming ready.
@@ -123,12 +125,12 @@ The `run.sh` script controls which mode runs:
 
 ### Development Overlay (`docker-compose.dev.yml`)
 
-The dev compose file overrides three services:
+The dev compose file overrides four services:
 
-- **api**: Bind-mounts `./api`, runs `uvicorn --reload`, exposes port 8000, loads `.env` directly
-- **worker**: Bind-mounts `./api`, re-syncs deps on start
+- **api**: Bind-mounts `./api`, runs `uvicorn --reload`, exposes port 8000, loads `.env` directly. Same `depends_on` healthchecks as production (postgres, redis, minio).
+- **worker**: Bind-mounts `./api`, re-syncs deps on start. Same `depends_on` healthchecks as production (postgres, redis).
 - **web**: Targets `deps` build stage, runs `pnpm dev`, bind-mounts `./web` (excluding `node_modules`), exposes port 3000
-- **nginx**: Generates a self-signed cert on startup, uses `nginx.dev.conf` (HTTP only, no TLS redirect)
+- **nginx**: Uses `nginx.dev.conf` (HTTP only, no TLS redirect)
 
 ---
 
@@ -149,6 +151,6 @@ All persistent data lives in Docker named volumes. Removing these volumes destro
 
 ## Networking
 
-All services communicate over the default Docker Compose network. Service names are used as hostnames (e.g., `postgres`, `redis`, `minio`). No custom networks are defined.
+Services communicate over two Docker networks (`frontend` and `backend`). Service names are used as hostnames (e.g., `postgres`, `redis`, `minio`).
 
 External access enters through nginx on ports 80/443. In dev mode, api (8000) and web (3000) are also directly accessible.

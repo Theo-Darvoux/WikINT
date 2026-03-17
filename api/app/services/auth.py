@@ -11,7 +11,7 @@ from app.models.user import User, UserRole
 
 ALLOWED_DOMAINS = ("@telecom-sudparis.eu", "@imt-bs.eu")
 CODE_TTL_SECONDS = 600
-RATE_LIMIT_TTL_SECONDS = 900
+RATE_LIMIT_TTL_SECONDS = 600
 RATE_LIMIT_MAX = 3
 
 

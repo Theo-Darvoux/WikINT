@@ -74,4 +74,3 @@ async def setup_meilisearch() -> None:
     await meili_client.index("directories").update_settings(directories_settings)
 
     logger.info("Meilisearch settings applied.")
-

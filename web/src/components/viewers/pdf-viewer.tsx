@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import type { ThreadData } from "@/hooks/use-annotations";
-import { printBlobUrl } from "@/lib/file-utils";
+import { apiFetchBlob } from "@/lib/api-client";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -18,8 +18,8 @@ if (typeof window !== "undefined") {
     const originalWarn = console.warn;
     const filterArgs = (args: unknown[]) => {
         const msg = args[0];
-        if (typeof msg === "string" && msg.includes("AbortException")) return true;
-        if (msg instanceof Error && msg.name === "AbortException") return true;
+        if (typeof msg === "string" && (msg.includes("AbortException") || msg.includes("InvalidPDFException"))) return true;
+        if (msg instanceof Error && (msg.name === "AbortException" || msg.name === "InvalidPDFException")) return true;
         return false;
     };
     console.error = (...args) => {
@@ -151,7 +151,7 @@ function AnnotatedPage({ pageNumber, width, annotations, onAnnotationClick }: An
     }, [scheduleRecalc]);
 
     return (
-        <div ref={pageRef} style={{ position: "relative" }} className="print:break-inside-avoid">
+        <div ref={pageRef} style={{ position: "relative" }}>
             <Page
                 pageNumber={pageNumber}
                 width={width}
@@ -180,9 +180,9 @@ function AnnotatedPage({ pageNumber, width, annotations, onAnnotationClick }: An
     );
 }
 
-function LazyBlock({ estimatedHeight, scrollRoot, children }: {
+function LazyBlock({ estimatedHeight, scrollRootRef, children }: {
     estimatedHeight: number;
-    scrollRoot?: HTMLElement | null;
+    scrollRootRef?: React.RefObject<HTMLElement | null>;
     children: React.ReactNode;
 }) {
     const sentinelRef = useRef<HTMLDivElement>(null);
@@ -191,13 +191,14 @@ function LazyBlock({ estimatedHeight, scrollRoot, children }: {
     useEffect(() => {
         const el = sentinelRef.current;
         if (!el) return;
+        const rootAttr = scrollRootRef?.current ?? null;
         const io = new IntersectionObserver(
             ([entry]) => setIsNear(entry.isIntersecting),
-            { root: scrollRoot ?? null, rootMargin: "600px 0px" }
+            { root: rootAttr, rootMargin: "600px 0px" }
         );
         io.observe(el);
         return () => io.disconnect();
-    }, [scrollRoot]);
+    }, [scrollRootRef]);
 
     return (
         <div ref={sentinelRef} style={isNear ? undefined : { height: estimatedHeight }}>
@@ -211,41 +212,38 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
     const scrollRef = useRef<HTMLDivElement>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [zoom, setZoom] = useState(100);
-    const [blobUrl, setBlobUrl] = useState<string | null>(null);
     const [fileBlob, setFileBlob] = useState<Blob | null>(null);
     const [loading, setLoading] = useState(true);
     const [numPages, setNumPages] = useState<number>(0);
     const [currentPage, setCurrentPage] = useState(1);
     const [containerWidth, setContainerWidth] = useState<number>(800);
     const [twoPageView, setTwoPageView] = useState(false);
-
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         let objectUrl: string | null = null;
         let cancelled = false;
-        // Reset loading state via a microtask to satisfy react-hooks/set-state-in-effect.
         Promise.resolve().then(() => {
             if (cancelled) return;
             setLoading(true);
-            setBlobUrl(null);
             setNumPages(0);
+            setError(null);
         });
-        fetch(`${apiBase}/materials/${materialId}/file`, { credentials: "include" })
-            .then(res => res.blob())
+        apiFetchBlob(`/materials/${materialId}/file`)
             .then(blob => {
                 if (cancelled) return;
                 objectUrl = URL.createObjectURL(blob);
-                setBlobUrl(objectUrl);
                 setFileBlob(blob);
             })
-            .catch(console.error)
+            .catch(err => {
+                if (!cancelled) setError(err.message ?? "Failed to load PDF");
+            })
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => {
             cancelled = true;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [materialId, apiBase]);
+    }, [materialId]);
 
     useEffect(() => {
         const el = scrollRef.current ?? containerRef.current;
@@ -282,11 +280,6 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === "p" && blobUrl) {
-                e.preventDefault();
-                e.stopPropagation();
-                printBlobUrl(blobUrl);
-            }
             // Zoom keyboard shortcuts
             if ((e.ctrlKey || e.metaKey) && (e.key === "=" || e.key === "+")) {
                 e.preventDefault();
@@ -303,10 +296,14 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [blobUrl]);
+    }, []);
 
     const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
         setNumPages(numPages);
+    }, []);
+
+    const onDocumentLoadError = useCallback((err: Error) => {
+        setError(err.message ?? "Failed to parse PDF");
     }, []);
 
     // Scroll-based page tracking
@@ -353,8 +350,8 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
     }));
 
     return (
-        <div ref={containerRef} className={`relative print:static flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}>
-            <div className="sticky top-0 z-10 flex-none flex items-center justify-between gap-1 rounded-t-lg bg-background/80 px-2 py-1 backdrop-blur border-b print:hidden">
+        <div ref={containerRef} className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}>
+            <div className="sticky top-0 z-10 flex-none flex items-center justify-between gap-1 rounded-t-lg bg-background/80 px-2 py-1 backdrop-blur border-b">
                 <div className="flex items-center gap-1">
                     <button
                         onClick={() => setTwoPageView(!twoPageView)}
@@ -383,7 +380,7 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
                     <button
                         onClick={() => setZoom(100)}
                         disabled={loading}
-                        className="min-w-[3rem] rounded-md px-2 py-1 text-center text-xs font-medium tabular-nums transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-40"
+                        className="min-w-12 rounded-md px-2 py-1 text-center text-xs font-medium tabular-nums transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-40"
                         title="Reset zoom (Ctrl+0)"
                     >
                         {zoom}%
@@ -409,10 +406,15 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
 
             <div
                 ref={scrollRef}
-                className={`overflow-auto bg-muted/20 flex flex-col print:h-auto print:overflow-visible print:block print:bg-transparent ${isFullscreen ? "flex-1" : "flex-1"
+                className={`overflow-auto bg-muted/20 flex flex-col ${isFullscreen ? "flex-1" : "flex-1"
                     }`}
             >
-                {loading && (
+                {error && (
+                    <div className="flex w-full flex-col items-center justify-center p-8 text-center">
+                        <p className="text-sm text-destructive">{error}</p>
+                    </div>
+                )}
+                {loading && !error && (
                     <div className="flex w-full flex-col items-center justify-start p-4 md:py-8">
                         {/* A4 proportioned paper skeleton */}
                         <div className="flex w-full max-w-4xl aspect-[1/1.414] flex-col rounded bg-white p-8 shadow-sm dark:bg-zinc-950/50">
@@ -433,10 +435,11 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
                         </div>
                     </div>
                 )}
-                {!loading && fileBlob && (
+                {!loading && !error && fileBlob && (
                     <Document
                         file={fileBlob}
                         onLoadSuccess={onDocumentLoadSuccess}
+                        onLoadError={onDocumentLoadError}
                         loading={
                             <div className="flex w-full flex-col items-center justify-start p-4 md:py-8">
                                 <div className="flex w-full max-w-4xl aspect-[1/1.414] flex-col rounded bg-white p-8 shadow-sm dark:bg-zinc-950/50">
@@ -466,7 +469,7 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
                                 const leftAnns = allAnnotations.filter(a => a.page === left || a.page == null);
                                 const rightAnns = allAnnotations.filter(a => a.page === right || a.page == null);
                                 return (
-                                    <LazyBlock key={rowIdx} estimatedHeight={pageWidth * 1.414} scrollRoot={scrollRef.current}>
+                                    <LazyBlock key={rowIdx} estimatedHeight={pageWidth * 1.414} scrollRootRef={scrollRef}>
                                         <div className="grid grid-cols-2 gap-4 place-items-center">
                                             <div data-page={left}>
                                                 <AnnotatedPage pageNumber={left} width={pageWidth} annotations={leftAnns} onAnnotationClick={onAnnotationClick} />
@@ -485,7 +488,7 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
                                 const pageAnnotations = allAnnotations.filter(a => a.page === pageNum || a.page == null);
                                 return (
                                     <div key={pageNum} data-page={pageNum}>
-                                        <LazyBlock estimatedHeight={pageWidth * 1.414} scrollRoot={scrollRef.current}>
+                                        <LazyBlock estimatedHeight={pageWidth * 1.414} scrollRootRef={scrollRef}>
                                             <AnnotatedPage pageNumber={pageNum} width={pageWidth} annotations={pageAnnotations} onAnnotationClick={onAnnotationClick} />
                                         </LazyBlock>
                                     </div>

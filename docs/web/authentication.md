@@ -38,6 +38,11 @@ The login page (`web/src/app/login/page.tsx`) has two steps:
 1. **Email step**: Input field with submit button. Shows link to Zimbra webmail.
 2. **Code step**: 6-digit input. Option to return to email step.
 
+### Automatic Redirect
+If an already authenticated user visits the `/login` page, they are automatically redirected:
+- To `/browse` if they are already onboarded.
+- To `/onboarding` if they have not yet completed onboarding.
+
 ---
 
 ## Token Management
@@ -47,7 +52,7 @@ The login page (`web/src/app/login/page.tsx`) has two steps:
 - `setAccessToken(token)` — stores token
 - `clearAccessToken()` — removes token
 
-The API client (`web/src/lib/api-client.ts`) auto-injects the token as a `Bearer` header. On 401 responses, it attempts a refresh via `POST /auth/refresh` (using the HTTP-only cookie). If refresh succeeds, it retries the original request with the new token. If refresh fails, it clears the token and throws.
+The API client (`web/src/lib/api-client.ts`) auto-injects the token as a `Bearer` header on every request. All three exported functions — `apiFetch` (JSON), `apiFetchBlob` (binary), and `apiRequest` (raw Response) — share this auth logic. On 401 responses, the client attempts a refresh via `POST /auth/refresh` (using the HTTP-only cookie). If refresh succeeds, it retries the original request with the new token. If refresh fails, it clears the token and throws.
 
 ---
 

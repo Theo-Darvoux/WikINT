@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { clearAccessToken, setAccessToken } from "@/lib/auth-tokens";
-import { useAuthStore } from "@/lib/stores";
+import { useAuthStore, UserBrief } from "@/lib/stores";
 
 export function useAuth() {
     const { user, isAuthenticated, isLoading, setUser, setLoading, logout: storeLogout } = useAuthStore();
@@ -19,13 +19,7 @@ export function useAuth() {
     const verifyCode = useCallback(async (email: string, code: string) => {
         const data = await apiFetch<{
             access_token: string;
-            user: {
-                id: string;
-                email: string;
-                display_name: string | null;
-                role: string;
-                onboarded: boolean;
-            };
+            user: UserBrief;
             is_new_user: boolean;
         }>("/auth/verify-code", {
             method: "POST",
@@ -51,13 +45,7 @@ export function useAuth() {
     const fetchMe = useCallback(async () => {
         setLoading(true);
         try {
-            const me = await apiFetch<{
-                id: string;
-                email: string;
-                display_name: string | null;
-                role: string;
-                onboarded: boolean;
-            }>("/users/me");
+            const me = await apiFetch<UserBrief>("/users/me");
             setUser(me);
         } catch (err) {
             if (err instanceof ApiError && err.status === 401) {

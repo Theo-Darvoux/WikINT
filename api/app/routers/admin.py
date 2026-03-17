@@ -24,16 +24,20 @@ async def admin_stats(
     _user: Annotated[User, Depends(require_moderator())],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    user_count = await db.scalar(
-        select(func.count()).select_from(User).where(User.deleted_at.is_(None))
-    ) or 0
+    user_count = (
+        await db.scalar(select(func.count()).select_from(User).where(User.deleted_at.is_(None)))
+        or 0
+    )
     material_count = await db.scalar(select(func.count()).select_from(Material)) or 0
-    open_pr_count = await db.scalar(
-        select(func.count()).select_from(PullRequest).where(PullRequest.status == PRStatus.OPEN)
-    ) or 0
-    open_flag_count = await db.scalar(
-        select(func.count()).select_from(Flag).where(Flag.status == "open")
-    ) or 0
+    open_pr_count = (
+        await db.scalar(
+            select(func.count()).select_from(PullRequest).where(PullRequest.status == PRStatus.OPEN)
+        )
+        or 0
+    )
+    open_flag_count = (
+        await db.scalar(select(func.count()).select_from(Flag).where(Flag.status == "open")) or 0
+    )
     return {
         "user_count": user_count,
         "material_count": material_count,
@@ -56,9 +60,7 @@ async def admin_list_users(
         base = base.where(User.role == role)
     if search:
         pattern = f"%{search}%"
-        base = base.where(
-            User.email.ilike(pattern) | User.display_name.ilike(pattern)
-        )
+        base = base.where(User.email.ilike(pattern) | User.display_name.ilike(pattern))
 
     count_result = await db.execute(select(func.count()).select_from(base.subquery()))
     total = count_result.scalar_one()
@@ -111,6 +113,7 @@ async def admin_delete_user(
     db: Annotated[AsyncSession, Depends(get_db)] = None,  # type: ignore[assignment]
 ) -> dict:
     from datetime import UTC, datetime
+
     target = await db.scalar(select(User).where(User.id == user_id))
     if not target:
         raise NotFoundError("User not found")
@@ -124,9 +127,7 @@ async def admin_list_directories(
     _user: Annotated[User, Depends(require_moderator())],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[dict]:
-    result = await db.execute(
-        select(Directory).order_by(Directory.sort_order, Directory.name)
-    )
+    result = await db.execute(select(Directory).order_by(Directory.sort_order, Directory.name))
     dirs = result.scalars().all()
     return [
         {

@@ -14,12 +14,13 @@ from app.schemas.pull_request import PRCommentCreate, PRCommentOut
 
 router = APIRouter(prefix="/api/pr-comments", tags=["pr-comments"])
 
+
 @router.patch("/{id}", response_model=PRCommentOut)
 async def update_pr_comment(
     id: uuid.UUID,
     data: PRCommentCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> PRCommentOut:
     comment = await db.scalar(select(PRComment).where(PRComment.id == id))
     if not comment:
@@ -33,19 +34,24 @@ async def update_pr_comment(
 
     await db.flush()
     await db.refresh(comment, ["author"])
-    return comment
+    return PRCommentOut.model_validate(comment)
+
 
 @router.delete("/{id}")
 async def delete_pr_comment(
     id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
     comment = await db.scalar(select(PRComment).where(PRComment.id == id))
     if not comment:
         raise NotFoundError("PR comment not found")
 
-    if comment.author_id != current_user.id and current_user.role not in [UserRole.MEMBER, UserRole.BUREAU, UserRole.VIEUX]:
+    if comment.author_id != current_user.id and current_user.role not in [
+        UserRole.MEMBER,
+        UserRole.BUREAU,
+        UserRole.VIEUX,
+    ]:
         raise ForbiddenError("Not authorized to delete this comment")
 
     await db.delete(comment)

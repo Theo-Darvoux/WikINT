@@ -14,6 +14,7 @@ class DirectoryOut(BaseModel):
     metadata: dict = Field(validation_alias=AliasChoices("metadata_", "metadata"))
     sort_order: int
     is_system: bool
+    tags: list[str] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}

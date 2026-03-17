@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     from app.core.meilisearch import setup_meilisearch
     from app.core.redis import close_arq_pool, init_arq_pool
+
     try:
         await setup_meilisearch()
         await init_arq_pool()

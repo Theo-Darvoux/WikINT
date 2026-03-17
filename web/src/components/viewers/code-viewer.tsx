@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
+import { apiRequest } from "@/lib/api-client";
 import hljs from "highlight.js/lib/common";
 
 /* highlight.js/lib/common includes: bash, c, cpp, csharp, css, diff,
@@ -98,7 +99,6 @@ export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
     const codeRef = useRef<HTMLElement>(null);
 
     const lang = useMemo(() => getLang(fileName), [fileName]);
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
     // Fetch source text
     useEffect(() => {
@@ -109,7 +109,7 @@ export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
             setContent("");
         });
 
-        fetch(`${apiBase}/materials/${materialId}/file`, { credentials: "include" })
+        apiRequest(`/materials/${materialId}/file`)
             .then((res) => res.text())
             .then((text) => {
                 if (!cancelled) setContent(text);
@@ -122,7 +122,7 @@ export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
             });
 
         return () => { cancelled = true; };
-    }, [materialId, apiBase]);
+    }, [materialId]);
 
     // Apply highlight.js after content renders
     useEffect(() => {

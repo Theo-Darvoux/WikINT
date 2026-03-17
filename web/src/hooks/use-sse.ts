@@ -2,11 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import { getAccessToken } from "@/lib/auth-tokens";
-import { useAuthStore, useNotificationStore } from "@/lib/stores";
 import { apiFetch } from "@/lib/api-client";
+import { useAuthStore, useNotificationStore } from "@/lib/stores";
+import { createSSEConnection, SSEConnection } from "@/lib/sse-client";
 
 const CHANNEL_NAME = "wikint-sse-leader";
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
 interface UnreadResponse {
     total: number;
@@ -15,7 +15,7 @@ interface UnreadResponse {
 export function useSSE() {
     const { isAuthenticated } = useAuthStore();
     const { increment, setUnreadCount } = useNotificationStore();
-    const eventSourceRef = useRef<EventSource | null>(null);
+    const connectionRef = useRef<SSEConnection | null>(null);
     const channelRef = useRef<BroadcastChannel | null>(null);
     const isLeaderRef = useRef(false);
 
@@ -36,46 +36,74 @@ export function useSSE() {
             connectSSE();
         }, 200);
 
+        let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
+
+        const resetFallback = () => {
+            if (fallbackTimeout) clearTimeout(fallbackTimeout);
+            fallbackTimeout = setTimeout(() => {
+                if (!isLeaderRef.current) {
+                    isLeaderRef.current = true;
+                    connectSSE();
+                }
+            }, 25000); // Take over if leader is silent for 25s
+        };
+
         channel.onmessage = (event: MessageEvent) => {
             if (event.data?.type === "leader-check" && isLeaderRef.current) {
                 channel.postMessage({ type: "leader-alive" });
             }
-            if (event.data?.type === "leader-alive" && !isLeaderRef.current) {
+            if (
+                (event.data?.type === "leader-alive" || event.data?.type === "leader-heartbeat") &&
+                !isLeaderRef.current
+            ) {
                 clearTimeout(leaderTimeout);
+                resetFallback();
+            }
+            if (event.data?.type === "leader-closing" && !isLeaderRef.current) {
+                if (fallbackTimeout) clearTimeout(fallbackTimeout);
+                isLeaderRef.current = true;
+                connectSSE();
             }
             if (event.data?.type === "notification") {
                 increment();
             }
         };
 
+        let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
         function connectSSE() {
+            if (fallbackTimeout) clearTimeout(fallbackTimeout);
             const token = getAccessToken();
             if (!token) return;
 
-            const es = new EventSource(
-                `${API_BASE}/notifications/sse?token=${encodeURIComponent(token)}`
-            );
-
-            es.addEventListener("notification", () => {
-                increment();
-                channelRef.current?.postMessage({ type: "notification" });
+            connectionRef.current?.close();
+            connectionRef.current = createSSEConnection({
+                url: `/notifications/sse?token=${encodeURIComponent(token)}`,
+                listeners: {
+                    notification: () => {
+                        increment();
+                        channelRef.current?.postMessage({ type: "notification" });
+                    },
+                },
             });
 
-            es.onerror = () => {
-                es.close();
-                setTimeout(() => {
-                    if (isLeaderRef.current) connectSSE();
-                }, 5000);
-            };
-
-            eventSourceRef.current = es;
+            // Set up heartbeat
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            heartbeatInterval = setInterval(() => {
+                channelRef.current?.postMessage({ type: "leader-heartbeat" });
+            }, 10000);
         }
 
         return () => {
             clearTimeout(leaderTimeout);
+            if (fallbackTimeout) clearTimeout(fallbackTimeout);
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            if (isLeaderRef.current) {
+                channel.postMessage({ type: "leader-closing" });
+            }
             isLeaderRef.current = false;
-            eventSourceRef.current?.close();
-            eventSourceRef.current = null;
+            connectionRef.current?.close();
+            connectionRef.current = null;
             channel.close();
             channelRef.current = null;
         };

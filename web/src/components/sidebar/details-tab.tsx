@@ -14,7 +14,7 @@ import {
     HardDrive,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { formatFileSize } from "@/lib/file-utils";
+import { formatFileSize, getFileBadgeColor, getFileBadgeLabel } from "@/lib/file-utils";
 import { apiFetch } from "@/lib/api-client";
 
 /* -------------------------------------------------------------------------- */
@@ -121,7 +121,10 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
     const examFormatFileKey = metadata.exam_format_file_key
         ? String(metadata.exam_format_file_key)
         : null;
-    const tags = Array.isArray(data.tags) ? (data.tags as string[]) : [];
+    const rawTags = (data.tags ?? []) as unknown[];
+    const tags = Array.isArray(rawTags)
+        ? rawTags.map(String).filter(Boolean)
+        : [];
 
     return (
         <div className="space-y-3">
@@ -254,7 +257,10 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
     const parentMaterialId = data.parent_material_id
         ? String(data.parent_material_id)
         : null;
-    const tags = Array.isArray(data.tags) ? (data.tags as string[]) : [];
+    const rawTags = (data.tags ?? []) as unknown[];
+    const tags = Array.isArray(rawTags)
+        ? rawTags.map(String).filter(Boolean)
+        : [];
     const attachmentCount = Number(data.attachment_count ?? 0);
 
     const versionInfo = data.current_version_info as Record<
@@ -262,6 +268,8 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
         unknown
     > | null;
     const fileSize = versionInfo ? Number(versionInfo.file_size ?? 0) : 0;
+    const fileName = versionInfo ? String(versionInfo.file_name ?? "") : "";
+    const fileMimeType = versionInfo ? String(versionInfo.file_mime_type ?? "") : "";
 
     return (
         <div className="space-y-3">
@@ -272,12 +280,9 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
                 </div>
                 <div className="min-w-0 flex-1">
                     <h3 className="font-semibold leading-tight">{title}</h3>
-                    <Badge
-                        variant="outline"
-                        className="mt-1.5 capitalize text-xs"
-                    >
-                        {type}
-                    </Badge>
+                    <span className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${fileName ? getFileBadgeColor(fileName) : "bg-gray-100 text-gray-800 dark:bg-gray-800/40 dark:text-gray-300"}`}>
+                        {fileName ? getFileBadgeLabel(fileName, fileMimeType) : type}
+                    </span>
                 </div>
             </div>
 

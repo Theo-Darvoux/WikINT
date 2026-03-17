@@ -30,7 +30,8 @@ async def add_flag(
         description=data.description,
     )
     await notify_moderators(
-        db, "new_flag",
+        db,
+        "new_flag",
         f"New flag: {data.reason} on {data.target_type}",
         link="/admin/flags",
     )
@@ -68,9 +69,12 @@ async def patch_flag(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FlagOut:
     flag = await update_flag(db, flag_id, user, data.status)
-    await notify_user(
-        db, flag.reporter_id, "flag_resolved",
-        f"Your report was {data.status}",
-        link="/notifications",
-    )
+    if flag.reporter_id:
+        await notify_user(
+            db,
+            flag.reporter_id,
+            "flag_resolved",
+            f"Your report was {data.status}",
+            link="/notifications",
+        )
     return FlagOut.model_validate(flag)

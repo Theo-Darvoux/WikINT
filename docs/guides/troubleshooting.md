@@ -18,6 +18,27 @@ docker compose logs clamav
 
 Common causes: network restrictions blocking signature downloads, insufficient disk space.
 
+### ClamAV remains "unhealthy" after initialization
+
+If the logs show `Clamd is up` but the container is still marked as `unhealthy`, the health check command might be failing to contact the daemon. 
+
+1. **Verify Socket**: Ensure your `clamd.conf` includes `LocalSocket /tmp/clamd.socket`. Many images require this for internal health scripts.
+2. **Robust Check**: If `clamdcheck.sh` fails, use a direct TCP ping in `docker-compose.yml`:
+   ```yaml
+   healthcheck:
+     test: ["CMD-SHELL", "echo 'PING' | nc -w 5 127.0.0.1 3310 | grep PONG"]
+   ```
+3. **Check Resolution**: Some health check scripts fail to resolve `localhost`. Using `127.0.0.1` explicitly is more reliable.
+
+### API or Worker fails with "Permission denied" on `.venv`
+
+If you see errors like `failed to remove file /app/.venv/.gitignore: Permission denied (os error 13)`, it means the host environment's `.venv` directory was shadowing the container's environment. 
+
+This issue is mitigated by an anonymous volume in `docker-compose.dev.yml` (`- /app/.venv`), but if it still occurs:
+1. Ensure your local `docker-compose.dev.yml` includes the anonymous volume for `/app/.venv` for both `api` and `worker` services.
+2. Stop the containers: `docker compose down`
+3. Restart and force volume recreation: `./run.sh --dev` (which rebuilds and recreates).
+
 ### API fails to connect to PostgreSQL
 
 Ensure the `DATABASE_URL` in `.env` uses the Docker service name as host (`postgres`, not `localhost`):
@@ -41,6 +62,17 @@ The setup script is idempotent (`mc mb --ignore-existing`), so re-running is saf
 
 ```bash
 docker compose restart minio-setup
+```
+
+### Worker crashes with "redis.exceptions.ConnectionError"
+
+If the worker logs show `Error -3 connecting to redis:6379. Temporary failure in name resolution`, this is a startup race condition — the worker started before Redis was ready. Both compose files have `depends_on` with healthcheck conditions and `restart: unless-stopped`, so the worker will automatically restart and connect successfully. No manual intervention needed.
+
+If it persists, check that Redis is healthy:
+
+```bash
+docker compose ps redis
+docker compose logs redis
 ```
 
 ### Meilisearch won't start
@@ -82,7 +114,7 @@ If SSE drops sooner, check that `proxy_buffering off` is set in the nginx config
 
 ### File uploads fail
 
-1. **413 Request Entity Too Large**: The file exceeds nginx's `client_max_body_size` (1 GB). This limit also applies to presigned URLs if they pass through nginx.
+1. **413 Request Entity Too Large**: The file exceeds nginx's `client_max_body_size` (must match `MAX_FILE_SIZE_MB` in `.env`, default 100 MiB). This limit also applies to presigned URLs if they pass through nginx.
 2. **Presigned URL expired**: URLs are valid for 1 hour (PUT) or 15 minutes (GET). If the upload takes too long, request a new URL.
 3. **ClamAV scan fails**: Check ClamAV is running and accessible on port 3310:
    ```bash

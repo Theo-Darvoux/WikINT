@@ -44,9 +44,9 @@ Opened via `openSidebar(tab, target)` from browse pages, viewer FAB, etc.
 
 ### Details Tab (`details-tab.tsx`)
 
-**For materials**: Author link, file size, download count, created date, tags list, attachment card (with count and link)
+**For materials**: Author link, file size, download count, created date, pill-based tags list, attachment card (with count and link)
 
-**For directories**: Item count, difficulty rating (DifficultyDots component), syllabus link, exam format link, tags
+**For directories**: Item count, difficulty rating (DifficultyDots component), syllabus link, exam format link, pill-based tags
 
 Uses reusable `SidebarSection` and `MetaRow` sub-components for organized layout.
 
@@ -75,10 +75,10 @@ Shows open pull requests affecting the selected item:
 
 Quick actions organized in groups:
 
-**Quick Actions**: Download, Share (copies link), Print (opens print dialog)
+**Quick Actions**: Download (via `useDownload` hook — opens presigned URL in new tab), Share (copies link)
 
 **Editing**: Edit (opens EditItemDialog to stage changes), Delete (stages delete operation)
 
 **Moderation**: Flag button (opens flag dialog)
 
-**Version History** (materials only): Expandable `VersionHistoryList` sub-component that fetches and displays all versions from `GET /api/materials/{id}/versions` with download links for each.
+**Version History** (materials only): Expandable `VersionHistoryList` sub-component that fetches and displays all versions from `GET /api/materials/{id}/versions`. Each version has a download button that uses the `useDownload` hook (`GET /materials/{id}/versions/{n}/download-url`).

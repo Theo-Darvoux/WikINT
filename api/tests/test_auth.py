@@ -26,6 +26,6 @@ async def test_request_code_plus_alias(client: AsyncClient) -> None:
 async def test_verify_code_invalid(client: AsyncClient) -> None:
     response = await client.post(
         "/api/auth/verify-code",
-        json={"email": "test@telecom-sudparis.eu", "code": "000000"},
+        json={"email": "test@telecom-sudparis.eu", "code": "111111"},
     )
     assert response.status_code == 400

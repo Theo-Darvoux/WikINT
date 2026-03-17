@@ -25,10 +25,11 @@ async def year_rollover(ctx: dict) -> None:
         users = result.scalars().all()
         count = 0
         for user in users:
-            new_year = ROLLOVER_MAP.get(user.academic_year)
-            if new_year and new_year != user.academic_year:
-                user.academic_year = new_year
-                count += 1
+            if user.academic_year:
+                new_year = ROLLOVER_MAP.get(user.academic_year)
+                if new_year and new_year != user.academic_year:
+                    user.academic_year = new_year
+                    count += 1
 
         await db.commit()
         logger.info("Year rollover: updated %d users", count)

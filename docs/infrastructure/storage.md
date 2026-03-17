@@ -25,14 +25,21 @@ minio:
 
 The `minio-setup` service runs once after MinIO is healthy:
 
-```bash
-# infra/docker/minio/setup.sh
-mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
-mc mb --ignore-existing local/wikint
-mc anonymous set download local/wikint
-```
+1. **Alias Setup**: Sets an internal alias for the MinIO server.
+2. **Bucket Creation**: Creates the `wikint` bucket if missing.
+3. **Privacy**: Sets the anonymous access policy to **none** (private).
+4. **Global CORS**: Applies a global CORS policy to the MinIO instance using `mc admin config set local/ api cors_allow_origin="..."`. This is required for open-source MinIO versions to allow the frontend to perform multi-part uploads and authenticated fetches.
 
-This creates the `wikint` bucket and sets its anonymous access policy to `download`, enabling direct browser access to files via presigned GET URLs.
+All file access must be performed via cryptographically signed URLs or authenticated API calls.
+
+### Access & Proxying
+
+While the API interacts with MinIO internally at `http://minio:9000`, client-side access (for downloads and previews) is routed through the Nginx reverse proxy at `/s3/`.
+
+- **Internal Flow**: `API -> MinIO (9000)`
+- **External Flow**: `Browser -> Nginx (:443/s3/) -> MinIO (9000)`
+
+By proxying storage, we can intercept technical XML errors (like "Request has expired") and serve branded HTML error pages instead. See [reverse-proxy.md](./reverse-proxy.md) for details on error interception.
 
 ---
 
@@ -41,6 +48,8 @@ This creates the `wikint` bucket and sets its anonymous access policy to `downlo
 `api/app/core/minio.py` provides an async S3 client via aioboto3:
 
 ```python
+_s3_config = BotocoreConfig(signature_version="s3v4")
+
 @asynccontextmanager
 async def get_s3_client() -> AsyncGenerator:
     async with _session.client(
@@ -48,11 +57,15 @@ async def get_s3_client() -> AsyncGenerator:
         endpoint_url=f"{'https' if settings.minio_use_ssl else 'http'}://{settings.minio_endpoint}",
         aws_access_key_id=settings.minio_root_user,
         aws_secret_access_key=settings.minio_root_password,
+        region_name="us-east-1",
+        config=_s3_config,
     ) as client:
         yield client
 ```
 
 The client is created per-operation as a context manager (no persistent connection pool for S3).
+
+> **SigV4 required**: MinIO dropped SigV2 support. All presigned URLs use AWS Signature Version 4 (`X-Amz-Algorithm=AWS4-HMAC-SHA256`). SigV4 signs the `host` header, so nginx **must** forward `Host: minio:9000` (matching the signing endpoint) to MinIO — not the client's original `Host` header.
 
 ---
 
@@ -83,7 +96,7 @@ Objects in the `wikint` bucket follow this key structure:
 |--------|---------|-----------|
 | `uploads/` | Temporary client uploads (pre-validation) | Cleaned after 24h by `cleanup_uploads` cron |
 | `materials/` | Finalized material files | Permanent (versioned) |
-| `avatars/` | User profile pictures | Replaced on re-upload |
+| `avatars/` | User profile pictures | Permanent (replaced/deleted on update) |
 | `attachments/` | Material attachment files | Permanent |
 
 ---
@@ -123,12 +136,19 @@ Virus scanning is performed via a separate ClamAV service (see [caching-and-queu
 ```
 TCPSocket 3310
 TCPAddr 0.0.0.0
-MaxFileSize 1073741824       # 1 GB
-MaxScanSize 1073741824       # 1 GB
-StreamMaxLength 1073741824   # 1 GB
+LocalSocket /tmp/clamd.socket
+MaxFileSize 104857600        # 100 MiB — must match MAX_FILE_SIZE_MB
+MaxScanSize 104857600        # 100 MiB
+StreamMaxLength 104857600    # 100 MiB
+
+# Zip-bomb & DoS Protection
+MaxRecursion 16              # Max nested archive depth
+MaxFiles 10000               # Max files per archive
+MaxEmbeddedArchives 10MB     # Limit for embedded objects
+AlertExceedsMax yes          # Fail-closed if limits are exceeded
 ```
 
-The 1 GB limits match the nginx `client_max_body_size` setting, ensuring any file that can be uploaded can also be scanned.
+These limits must match the `MAX_FILE_SIZE_MB` setting in `.env` (default 100 MiB) and the nginx `client_max_body_size`, ensuring any file that can be uploaded can also be scanned. The added recursion and file count limits protect the scanner from "zip-bombs" and decompression-based Denial of Service (DoS) attacks.
 
 ### Timeouts
 

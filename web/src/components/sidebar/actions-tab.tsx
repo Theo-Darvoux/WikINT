@@ -5,13 +5,13 @@ import {
     Download,
     Edit,
     Share2,
-    History,
-    Printer,
     ChevronDown,
     ChevronUp,
     FileText,
+    Loader2,
     Trash2,
     Settings,
+    Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,8 +19,9 @@ import { FlagButton } from "@/components/flags/flag-button";
 import { EditItemDialog } from "@/components/pr/edit-item-dialog";
 import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
-import { printBlobUrl } from "@/lib/file-utils";
 import { useStagingStore } from "@/lib/staging-store";
+import { useDownload } from "@/hooks/use-download";
+import { usePrint } from "@/hooks/use-print";
 
 interface SidebarTarget {
     type: "directory" | "material";
@@ -111,6 +112,7 @@ function VersionHistoryList({ materialId }: { materialId: string }) {
     const [versions, setVersions] = useState<MaterialVersion[]>([]);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(false);
+    const { downloadMaterial, isDownloading } = useDownload();
 
     useEffect(() => {
         let mounted = true;
@@ -131,8 +133,6 @@ function VersionHistoryList({ materialId }: { materialId: string }) {
             mounted = false;
         };
     }, [materialId]);
-
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
     if (loading) return <Skeleton className="h-20 w-full rounded-lg" />;
     if (versions.length === 0) {
@@ -168,15 +168,18 @@ function VersionHistoryList({ materialId }: { materialId: string }) {
                             </p>
                         )}
                     </div>
-                    <a
-                        href={`${apiBase}/materials/${materialId}/versions/${v.version_number}/download`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    <button
+                        onClick={() => downloadMaterial(materialId, v.version_number)}
+                        disabled={isDownloading}
+                        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
                         title={`Download v${v.version_number}`}
                     >
-                        <Download className="h-3.5 w-3.5" />
-                    </a>
+                        {isDownloading ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                            <Download className="h-3.5 w-3.5" />
+                        )}
+                    </button>
                 </div>
             ))}
             {versions.length > 3 && (
@@ -214,6 +217,23 @@ export function ActionsTab({ target }: ActionsTabProps) {
     const addOperation = useStagingStore((s) => s.addOperation);
     const [editDialogOpen, setEditDialogOpen] = useState(false);
 
+    const { downloadMaterial, isDownloading } = useDownload();
+    
+    // Derive print capability early for unconditional hook call
+    const isMaterial = target?.type === "material";
+    const materialId = isMaterial ? target?.id : "";
+    const viewerType = String(target?.data?.__viewerType ?? "");
+    const versionInfo = target?.data?.current_version_info as Record<string, unknown> | null;
+    const fileName = String(versionInfo?.file_name ?? "");
+    const mimeType = String(versionInfo?.file_mime_type ?? "");
+
+    const { print, isPrinting, canPrint } = usePrint({
+        viewerType,
+        materialId: materialId ?? "",
+        fileName,
+        mimeType,
+    });
+
     if (!target) {
         return (
             <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -225,33 +245,13 @@ export function ActionsTab({ target }: ActionsTabProps) {
         );
     }
 
-    const isMaterial = target.type === "material";
-    const materialId = isMaterial ? target.id : null;
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
-
     const handleShare = () => {
         navigator.clipboard.writeText(window.location.href).then(() => {
             toast.success("Link copied to clipboard");
         });
     };
 
-    const handlePrint = async () => {
-        if (!materialId) {
-            window.print();
-            return;
-        }
-        try {
-            const res = await fetch(
-                `${apiBase}/materials/${materialId}/file`,
-                { credentials: "include" }
-            );
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            printBlobUrl(url, blob.type);
-        } catch {
-            window.print();
-        }
-    };
+
 
     const handleDelete = () => {
         if (isMaterial) {
@@ -277,11 +277,20 @@ export function ActionsTab({ target }: ActionsTabProps) {
         <div className="space-y-4">
             {/* Quick actions */}
             <ActionGroup label="Quick Actions">
-                {isMaterial && (
+                {isMaterial && materialId && (
                     <ActionRow
-                        icon={Download}
+                        icon={isDownloading ? Loader2 : Download}
                         label="Download"
-                        href={`${apiBase}/materials/${materialId}/download`}
+                        onClick={() => downloadMaterial(materialId)}
+                        iconClassName={isDownloading ? "animate-spin" : ""}
+                    />
+                )}
+                {isMaterial && canPrint && (
+                    <ActionRow
+                        icon={isPrinting ? Loader2 : Printer}
+                        label="Print"
+                        onClick={print}
+                        iconClassName={isPrinting ? "animate-spin" : ""}
                     />
                 )}
                 <ActionRow
@@ -289,13 +298,6 @@ export function ActionsTab({ target }: ActionsTabProps) {
                     label="Copy link"
                     onClick={handleShare}
                 />
-                {isMaterial && (
-                    <ActionRow
-                        icon={Printer}
-                        label="Print"
-                        onClick={handlePrint}
-                    />
-                )}
             </ActionGroup>
 
             {/* Editing */}

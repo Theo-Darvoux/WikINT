@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,16 @@ export default function LoginPage() {
     const [email, setEmail] = useState("");
     const [code, setCode] = useState("");
     const [loading, setLoading] = useState(false);
-    const { requestCode, verifyCode } = useAuth();
+    const { requestCode, verifyCode, isAuthenticated, user } = useAuth();
     const router = useRouter();
+
+    useEffect(() => {
+        if (isAuthenticated && user?.onboarded) {
+            router.replace("/browse");
+        } else if (isAuthenticated && !user?.onboarded) {
+            router.replace("/onboarding");
+        }
+    }, [isAuthenticated, user, router]);
 
     const handleRequestCode = async (e: FormEvent) => {
         e.preventDefault();

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AnnotationThread, AnnotationForm } from "@/components/annotations/annotation-thread";
-import { useAnnotations } from "@/hooks/use-annotations";
+import { useAnnotationsContext } from "@/hooks/use-annotations";
 import { useAuthStore } from "@/lib/stores";
 
 interface SidebarTarget {
@@ -21,21 +21,20 @@ interface AnnotationsTabProps {
 
 export function AnnotationsTab({ target }: AnnotationsTabProps) {
     const { user } = useAuthStore();
-    const materialId = target?.type === "material" ? target.id : null;
-    const { threads, loading, page, pages, fetchAnnotations, createAnnotation, editAnnotation, deleteAnnotation } =
-        useAnnotations(materialId);
-
+    const ctx = useAnnotationsContext();
     const [replyingTo, setReplyingTo] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editBody, setEditBody] = useState("");
 
-    if (!target || target.type !== "material") {
+    if (!ctx || !target || target.type !== "material") {
         return (
             <p className="text-sm text-muted-foreground">
                 Annotations are only available for materials.
             </p>
         );
     }
+
+    const { threads, loading, page, pages, fetchAnnotations, createAnnotation, editAnnotation, deleteAnnotation } = ctx;
 
     const handleReply = (annotationId: string) => {
         setReplyingTo(annotationId);

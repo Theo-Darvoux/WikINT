@@ -1,6 +1,6 @@
 import { clearAccessToken, getAccessToken, setAccessToken } from "./auth-tokens";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
 type FetchOptions = RequestInit & {
     skipAuth?: boolean;
@@ -16,10 +16,19 @@ async function refreshToken(): Promise<string | null> {
     return data.access_token as string;
 }
 
-export async function apiFetch<T>(
+let refreshPromise: Promise<string | null> | null = null;
+
+function refreshTokenOnce(): Promise<string | null> {
+    if (!refreshPromise) {
+        refreshPromise = refreshToken().finally(() => { refreshPromise = null; });
+    }
+    return refreshPromise;
+}
+
+export async function apiRequest(
     path: string,
     options: FetchOptions = {},
-): Promise<T> {
+): Promise<Response> {
     const { skipAuth, ...fetchOptions } = options;
     const headers = new Headers(fetchOptions.headers);
 
@@ -38,7 +47,7 @@ export async function apiFetch<T>(
     let res = await fetch(url, { ...fetchOptions, headers, credentials: "include" });
 
     if (res.status === 401 && !skipAuth) {
-        const newToken = await refreshToken();
+        const newToken = await refreshTokenOnce();
         if (newToken) {
             setAccessToken(newToken);
             headers.set("Authorization", `Bearer ${newToken}`);
@@ -58,8 +67,24 @@ export async function apiFetch<T>(
         throw new ApiError(res.status, message);
     }
 
+    return res;
+}
+
+export async function apiFetch<T>(
+    path: string,
+    options: FetchOptions = {},
+): Promise<T> {
+    const res = await apiRequest(path, options);
     if (res.status === 204) return undefined as T;
     return res.json() as Promise<T>;
+}
+
+export async function apiFetchBlob(
+    path: string,
+    options: FetchOptions = {},
+): Promise<Blob> {
+    const res = await apiRequest(path, options);
+    return res.blob();
 }
 
 export class ApiError extends Error {

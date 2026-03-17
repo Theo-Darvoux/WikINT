@@ -1,16 +1,20 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.exceptions import NotFoundError
+from app.core.minio import generate_presigned_get_url
 from app.dependencies.auth import CurrentUser
 from app.dependencies.pagination import PaginationParams
+from app.schemas.annotation import AnnotationOut
 from app.schemas.common import PaginatedResponse
 from app.schemas.material import MaterialOut
+from app.schemas.pull_request import PullRequestOut
 from app.schemas.user import OnboardIn, UserOut, UserProfileOut, UserUpdateIn
+from app.services.directory import get_directory_paths
 from app.services.material import material_orm_to_dict
 from app.services.user import (
     export_user_data,
@@ -22,7 +26,6 @@ from app.services.user import (
     soft_delete_user,
     update_user_profile,
 )
-from app.services.directory import get_directory_paths
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -44,7 +47,7 @@ async def get_me(
 ) -> UserProfileOut:
     stats = await get_user_stats(db, str(user.id))
     user_data = UserOut.model_validate(user).model_dump()
-    return UserProfileOut(**user_data, **stats)
+    return UserProfileOut.model_validate({**user_data, **stats})
 
 
 @router.patch("/me", response_model=UserOut)
@@ -70,11 +73,16 @@ async def recently_viewed(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[MaterialOut]:
     materials = await get_recently_viewed(db, str(user.id))
-    
+
     dir_ids = {m.directory_id for m in materials}
     paths = await get_directory_paths(db, dir_ids)
-    
-    return [MaterialOut.model_validate(material_orm_to_dict(m, directory_path=paths.get(m.directory_id))) for m in materials]
+
+    return [
+        MaterialOut.model_validate(
+            material_orm_to_dict(m, directory_path=paths.get(m.directory_id))
+        )
+        for m in materials
+    ]
 
 
 @router.get("/me/data-export")
@@ -104,14 +112,8 @@ async def get_user_profile(
         raise NotFoundError("User not found")
     stats = await get_user_stats(db, user_id)
     user_data = UserOut.model_validate(target).model_dump()
-    return UserProfileOut(**user_data, **stats)
+    return UserProfileOut.model_validate({**user_data, **stats})
 
-
-from app.schemas.pull_request import PullRequestOut
-from app.schemas.annotation import AnnotationOut
-
-from fastapi.responses import RedirectResponse
-from app.core.minio import generate_presigned_get_url
 
 @router.get("/{user_id}/avatar")
 async def get_user_avatar(
@@ -123,6 +125,7 @@ async def get_user_avatar(
         raise NotFoundError("Avatar not found")
     url = await generate_presigned_get_url(target.avatar_url)
     return RedirectResponse(url)
+
 
 @router.get("/{user_id}/contributions")
 async def get_contributions(
@@ -141,18 +144,34 @@ async def get_contributions(
         limit=pagination.limit,
         offset=pagination.offset,
     )
-    
+
     directory_paths = {}
     if type == "materials":
-        dir_ids = {m.directory_id for m in items}
+        from typing import cast
+
+        from app.models.material import Material
+
+        materials_list = cast(list[Material], items)
+        dir_ids = {m.directory_id for m in materials_list}
         directory_paths = await get_directory_paths(db, dir_ids)
-    
-    serialized_items = []
+
+    serialized_items: list[PullRequestOut | MaterialOut | AnnotationOut] = []
     for item in items:
         if type == "prs":
             serialized_items.append(PullRequestOut.model_validate(item))
         elif type == "materials":
-            serialized_items.append(MaterialOut.model_validate(material_orm_to_dict(item, directory_path=directory_paths.get(item.directory_id))))
+            from typing import cast
+
+            from app.models.material import Material
+
+            m_item = cast(Material, item)
+            serialized_items.append(
+                MaterialOut.model_validate(
+                    material_orm_to_dict(
+                        m_item, directory_path=directory_paths.get(m_item.directory_id)
+                    )
+                )
+            )
         elif type == "annotations":
             serialized_items.append(AnnotationOut.model_validate(item))
 
@@ -162,4 +181,3 @@ async def get_contributions(
         page=pagination.page,
         pages=(total + pagination.limit - 1) // pagination.limit if total > 0 else 1,
     )
-

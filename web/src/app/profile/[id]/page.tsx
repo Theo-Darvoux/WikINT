@@ -35,7 +35,7 @@ export default function PublicProfilePage({
             <div className="flex flex-col items-center justify-center p-20 text-center">
                 <p className="text-lg font-medium text-muted-foreground">User not found</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                    This profile doesn't exist or has been deleted.
+                    This profile doesn&apos;t exist or has been deleted.
                 </p>
             </div>
         );

@@ -1,10 +1,19 @@
+from __future__ import annotations
+
 import enum
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Enum, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.annotation import Annotation
+    from app.models.comment import Comment
+    from app.models.notification import Notification
+    from app.models.pull_request import PullRequest
 
 
 class UserRole(enum.StrEnum):
@@ -30,16 +39,17 @@ class User(UUIDMixin, Base):
     gdpr_consent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     gdpr_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     onboarded: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    is_flagged: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    pull_requests: Mapped[list["PullRequest"]] = relationship(  # noqa: F821
+    pull_requests: Mapped[list[PullRequest]] = relationship(  # noqa: F821
         back_populates="author",
         foreign_keys="PullRequest.author_id",
     )
-    annotations: Mapped[list["Annotation"]] = relationship(back_populates="author")  # noqa: F821
-    comments: Mapped[list["Comment"]] = relationship(back_populates="author")  # noqa: F821
-    notifications: Mapped[list["Notification"]] = relationship(  # noqa: F821
+    annotations: Mapped[list[Annotation]] = relationship(back_populates="author")  # noqa: F821
+    comments: Mapped[list[Comment]] = relationship(back_populates="author")  # noqa: F821
+    notifications: Mapped[list[Notification]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"
     )

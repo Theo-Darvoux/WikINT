@@ -1,34 +1,55 @@
 services:
   api:
+    restart: unless-stopped
     build:
       context: ./api
       dockerfile: Dockerfile
     env_file:
       - .env
-    command: >
-      sh -c "rm -rf .venv && uv sync --frozen --no-dev && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     volumes:
       - ./api:/app
+      - /app/.venv
     ports:
       - "8000:8000"
+    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   worker:
+    restart: unless-stopped
     build:
       context: ./api
       dockerfile: Dockerfile
+    entrypoint: ["./worker-start.sh"]
     env_file:
       - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     command: >
-      sh -c "rm -rf .venv && uv sync --frozen --no-dev && uv run arq app.workers.settings.WorkerSettings"
+      sh -c "uv run arq app.workers.settings.WorkerSettings"
     volumes:
       - ./api:/app
+      - /app/.venv
 
   web:
     build:
       context: ./web
       dockerfile: Dockerfile
       target: deps
+    restart: unless-stopped
     command: sh -c "CI=true pnpm install && pnpm dev"
+    environment:
+      # Route browser API calls through nginx (port 80) so SSE works correctly.
+      # Next.js dev-server rewrites buffer streaming responses and break SSE.
+      - NEXT_PUBLIC_API_URL=http://localhost/api
     volumes:
       - ./web:/app
       - /app/node_modules
@@ -36,12 +57,15 @@ services:
       - "3000:3000"
 
   nginx:
+    restart: unless-stopped
     image: nginx:alpine
     profiles: []
-    command: >
-      sh -c "apk add --no-cache openssl &&
-             mkdir -p /etc/nginx/ssl &&
-             openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/nginx/ssl/nginx.key -out /etc/nginx/ssl/nginx.crt -subj '/CN=localhost' &&
-             nginx -g 'daemon off;'"
+    command: nginx -g 'daemon off;'
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+      - web
     volumes:
       - ./infra/nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/error-expired.html:/etc/nginx/html/error-expired.html:ro

@@ -53,8 +53,9 @@ def mock_redis() -> AsyncMock:
     pipe = AsyncMock()
     pipe.incr = AsyncMock()
     pipe.expire = AsyncMock()
-    pipe.execute = AsyncMock(return_value=[1, True])
-    redis.pipeline = lambda: pipe
+    pipe.execute = AsyncMock(return_value=[1, True, 1, True])
+    pipe.__aenter__ = AsyncMock(return_value=pipe)
+    redis.pipeline = lambda **kwargs: pipe
     return redis
 
 

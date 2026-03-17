@@ -1,7 +1,15 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Column, ForeignKey, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.directory import Directory
+    from app.models.material import Material
 
 material_tags = Table(
     "material_tags",
@@ -24,9 +32,9 @@ class Tag(UUIDMixin, Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     category: Mapped[str | None] = mapped_column(String(50))
 
-    materials: Mapped[list["Material"]] = relationship(  # noqa: F821
+    materials: Mapped[list[Material]] = relationship(  # noqa: F821
         secondary=material_tags, back_populates="tags"
     )
-    directories: Mapped[list["Directory"]] = relationship(  # noqa: F821
+    directories: Mapped[list[Directory]] = relationship(  # noqa: F821
         secondary=directory_tags, back_populates="tags"
     )

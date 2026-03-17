@@ -17,10 +17,10 @@ def _to_uuid(value: str | uuid.UUID) -> uuid.UUID:
     return uuid.UUID(value)
 
 
-async def _get_material_current_version(db: AsyncSession, material_id: uuid.UUID) -> MaterialVersion:
-    result = await db.execute(
-        select(Material).where(Material.id == material_id)
-    )
+async def _get_material_current_version(
+    db: AsyncSession, material_id: uuid.UUID
+) -> MaterialVersion:
+    result = await db.execute(select(Material).where(Material.id == material_id))
     material = result.scalar_one_or_none()
     if not material:
         raise NotFoundError("Material not found")
@@ -47,8 +47,8 @@ async def get_annotations(
 ) -> tuple[list[Annotation], int]:
     mid = _to_uuid(material_id)
 
-    result = await db.execute(select(Material).where(Material.id == mid))
-    if not result.scalar_one_or_none():
+    mat_res = await db.execute(select(Material).where(Material.id == mid))
+    if not mat_res.scalar_one_or_none():
         raise NotFoundError("Material not found")
 
     base = select(Annotation).where(
@@ -73,13 +73,13 @@ async def get_annotations(
     count_result = await db.execute(select(func.count()).select_from(base.subquery()))
     total = count_result.scalar_one()
 
-    result = await db.execute(
+    ann_result = await db.execute(
         base.options(joinedload(Annotation.author))
         .order_by(Annotation.created_at.asc())
         .offset(offset)
         .limit(limit)
     )
-    root_annotations = list(result.scalars().unique().all())
+    root_annotations = list(ann_result.scalars().unique().all())
 
     if root_annotations:
         thread_ids = [a.id for a in root_annotations]
@@ -123,9 +123,7 @@ async def create_annotation(
 
     if reply_to_id:
         rtid = _to_uuid(reply_to_id)
-        rt_result = await db.execute(
-            select(Annotation).where(Annotation.id == rtid)
-        )
+        rt_result = await db.execute(select(Annotation).where(Annotation.id == rtid))
         reply_target = rt_result.scalar_one_or_none()
         if not reply_target:
             raise NotFoundError("Annotation to reply to not found")
@@ -163,16 +161,26 @@ async def create_annotation(
         annotation.thread_id = annotation.id
         await db.flush()
 
-    if reply_to_id and reply_target and reply_target.author_id != author_id:
+    if (
+        reply_to_id
+        and reply_target
+        and reply_target.author_id
+        and reply_target.author_id != author_id
+    ):
         from app.services.notification import notify_user
+
         await notify_user(
-            db, reply_target.author_id, "annotation_reply",
+            db,
+            reply_target.author_id,
+            "annotation_reply",
             "Someone replied to your annotation",
             link=f"/browse?material={material_id}",
         )
 
     result = await db.execute(
-        select(Annotation).options(joinedload(Annotation.author)).where(Annotation.id == annotation.id)
+        select(Annotation)
+        .options(joinedload(Annotation.author))
+        .where(Annotation.id == annotation.id)
     )
     return result.scalar_one()
 
@@ -238,4 +246,3 @@ async def delete_annotation(
     await db.delete(annotation)
     await db.flush()
     return annotation
-

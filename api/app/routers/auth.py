@@ -37,7 +37,9 @@ async def request_code(
 ) -> dict[str, str]:
     email = data.email
     if not await auth_service.check_rate_limit(redis, email):
-        raise RateLimitError("Too many code requests. Try again in 15 minutes.")
+        raise RateLimitError(
+            "Too many code requests. You can request up to 3 codes per 10 minutes. Please wait before trying again."
+        )
 
     code = auth_service.generate_code()
     await auth_service.store_code(redis, email, code)
@@ -46,6 +48,7 @@ async def request_code(
         await send_verification_code(email, code)
     except Exception as e:
         import logging
+
         logging.getLogger("wikint").error(f"Failed to send verification email: {e}", exc_info=True)
 
     return {"message": "Verification code sent"}
@@ -81,6 +84,7 @@ async def verify_code(
             id=str(user.id),
             email=user.email,
             display_name=user.display_name,
+            avatar_url=user.avatar_url,
             role=user.role.value,
             onboarded=user.onboarded,
         ),

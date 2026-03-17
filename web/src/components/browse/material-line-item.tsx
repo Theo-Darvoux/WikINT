@@ -10,6 +10,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useUIStore } from "@/lib/stores";
+import { EXT_BADGE_COLORS } from "@/lib/file-utils";
 
 const TYPE_COLORS: Record<string, string> = {
     polycopie: "bg-blue-100 text-blue-800",
@@ -79,39 +80,6 @@ const EXT_ICONS: Record<string, React.ElementType> = {
     json: FileCode,
 };
 
-const EXT_COLORS: Record<string, string> = {
-    pdf: "bg-red-100 text-red-800",
-    doc: "bg-blue-100 text-blue-800",
-    docx: "bg-blue-100 text-blue-800",
-    txt: "bg-slate-100 text-slate-800",
-    xls: "bg-emerald-100 text-emerald-800",
-    xlsx: "bg-emerald-100 text-emerald-800",
-    csv: "bg-emerald-100 text-emerald-800",
-    png: "bg-purple-100 text-purple-800",
-    jpg: "bg-purple-100 text-purple-800",
-    jpeg: "bg-purple-100 text-purple-800",
-    gif: "bg-purple-100 text-purple-800",
-    webp: "bg-purple-100 text-purple-800",
-    svg: "bg-purple-100 text-purple-800",
-    mp4: "bg-pink-100 text-pink-800",
-    avi: "bg-pink-100 text-pink-800",
-    mkv: "bg-pink-100 text-pink-800",
-    webm: "bg-pink-100 text-pink-800",
-    mp3: "bg-amber-100 text-amber-800",
-    wav: "bg-amber-100 text-amber-800",
-    ogg: "bg-amber-100 text-amber-800",
-    zip: "bg-orange-100 text-orange-800",
-    rar: "bg-orange-100 text-orange-800",
-    "7z": "bg-orange-100 text-orange-800",
-    tar: "bg-orange-100 text-orange-800",
-    gz: "bg-orange-100 text-orange-800",
-    js: "bg-yellow-100 text-yellow-800",
-    ts: "bg-blue-100 text-blue-800",
-    py: "bg-sky-100 text-sky-800",
-    html: "bg-orange-100 text-orange-800",
-    css: "bg-blue-100 text-blue-800",
-    json: "bg-zinc-100 text-zinc-800",
-};
 
 interface MaterialLineItemProps {
     material: Record<string, unknown>;
@@ -155,8 +123,8 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
             if (EXT_ICONS[ext]) {
                 Icon = EXT_ICONS[ext];
             }
-            if (EXT_COLORS[ext]) {
-                badgeColor = EXT_COLORS[ext];
+            if (EXT_BADGE_COLORS[ext]) {
+                badgeColor = EXT_BADGE_COLORS[ext];
             }
         }
     }

@@ -25,7 +25,11 @@ export function SearchModal({
     const [query, setQuery] = React.useState("");
     const { results, loading } = useSearch(query);
 
-    const onSelect = (result: any) => {
+    const onSelect = (result: {
+        browse_path?: string;
+        search_type?: string;
+        id?: string;
+    }) => {
         onOpenChange(false);
         if (result.browse_path) {
             router.push(result.browse_path);

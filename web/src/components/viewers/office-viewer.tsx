@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiRequest } from "@/lib/api-client";
 
 interface OfficeViewerProps {
     fileKey: string;
@@ -13,20 +14,19 @@ export function OfficeViewer({ materialId, mimeType }: OfficeViewerProps) {
     const [content, setContent] = useState<string>("");
     const [loading, setLoading] = useState(true);
 
-    const downloadUrl = `/api/materials/${materialId}/download`;
-
     useEffect(() => {
         const loadDocument = async () => {
+            const fetchFile = () => apiRequest(`/materials/${materialId}/file`);
             try {
                 if (mimeType.includes("wordprocessingml")) {
                     const mammoth = await import("mammoth");
-                    const response = await fetch(downloadUrl);
+                    const response = await fetchFile();
                     const arrayBuffer = await response.arrayBuffer();
                     const result = await mammoth.convertToHtml({ arrayBuffer });
                     setContent(result.value);
                 } else if (mimeType.includes("spreadsheet") || mimeType === "application/vnd.ms-excel") {
                     const XLSX = await import("xlsx");
-                    const response = await fetch(downloadUrl);
+                    const response = await fetchFile();
                     const arrayBuffer = await response.arrayBuffer();
                     const workbook = XLSX.read(arrayBuffer, { type: "array" });
                     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -54,7 +54,7 @@ export function OfficeViewer({ materialId, mimeType }: OfficeViewerProps) {
             }
         };
         loadDocument();
-    }, [downloadUrl, mimeType]);
+    }, [materialId, mimeType]);
 
     if (loading) {
         return (

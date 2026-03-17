@@ -7,6 +7,7 @@ Create Date: 2026-03-11
 - Convert pull_requests.payload from single dict to array of dicts
 - Change type column from PRType enum to varchar 'batch'
 """
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -81,8 +82,13 @@ def downgrade() -> None:
 
     # Recreate enum
     prtype_enum = sa.Enum(
-        "create_material", "edit_material", "delete_material",
-        "create_directory", "edit_directory", "delete_directory", "move_item",
+        "create_material",
+        "edit_material",
+        "delete_material",
+        "create_directory",
+        "edit_directory",
+        "delete_directory",
+        "move_item",
         name="prtype",
     )
     prtype_enum.create(op.get_bind(), checkfirst=True)

@@ -28,6 +28,7 @@ interface PullRequest {
     vote_score: number;
     user_vote: number;
     summary_types?: string[];
+    virus_scan_result?: string;
 }
 
 type StatusFilter = "open" | "approved" | "rejected" | null;

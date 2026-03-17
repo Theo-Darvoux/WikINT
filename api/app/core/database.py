@@ -20,10 +20,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
-            
+
             jobs = session.info.get("post_commit_jobs", [])
             if jobs:
                 import app.core.redis as redis_core
+
                 if redis_core.arq_pool:
                     for job in jobs:
                         await redis_core.arq_pool.enqueue_job(*job)

@@ -1,4 +1,3 @@
-import asyncio
 import math
 from typing import Annotated
 
@@ -7,6 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.core.database import get_db
+from app.core.sse import (
+    broadcast_to_topic,
+    register_topic_queue,
+    sse_event_stream,
+    unregister_topic_queue,
+)
 from app.dependencies.auth import CurrentUser, OnboardedUser
 from app.dependencies.pagination import PaginationParams
 from app.schemas.annotation import (
@@ -21,11 +26,6 @@ from app.services.annotation import (
     delete_annotation,
     get_annotations,
     update_annotation,
-)
-from app.services.notification import (
-    broadcast_material_event,
-    register_material_watcher,
-    unregister_material_watcher,
 )
 
 material_annotations_router = APIRouter(prefix="/api/materials", tags=["annotations"])
@@ -82,7 +82,7 @@ async def add_annotation(
         data.page,
         data.reply_to_id,
     )
-    broadcast_material_event(material_id, {"type": "annotation_created"})
+    broadcast_to_topic(material_id, {"type": "annotation_created"})
     return AnnotationOut.model_validate(annotation)
 
 
@@ -105,24 +105,15 @@ async def remove_annotation(
 ) -> None:
     annotation = await delete_annotation(db, annotation_id, user)
     if annotation:
-        broadcast_material_event(str(annotation.material_id), {"type": "annotation_deleted"})
+        broadcast_to_topic(str(annotation.material_id), {"type": "annotation_deleted"})
 
 
 @material_annotations_router.get("/{material_id}/sse")
 async def material_event_stream(material_id: str) -> EventSourceResponse:
-    q = register_material_watcher(material_id)
-
-    async def event_generator():
-        try:
-            while True:
-                try:
-                    event = await asyncio.wait_for(q.get(), timeout=30.0)
-                    if event.get("type") == "close":
-                        break
-                    yield {"event": event["type"], "data": ""}
-                except TimeoutError:
-                    yield {"event": "ping", "data": ""}
-        finally:
-            unregister_material_watcher(material_id, q)
-
-    return EventSourceResponse(event_generator())
+    queue = register_topic_queue(material_id)
+    return EventSourceResponse(
+        sse_event_stream(
+            queue,
+            cleanup=lambda: unregister_topic_queue(material_id, queue),
+        )
+    )

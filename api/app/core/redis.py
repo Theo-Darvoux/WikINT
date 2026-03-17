@@ -12,9 +12,11 @@ arq_pool: ArqRedis | None = None
 async def get_redis() -> AsyncGenerator[Redis, None]:
     yield redis_client
 
+
 async def init_arq_pool() -> None:
     global arq_pool
     arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+
 
 async def close_arq_pool() -> None:
     if arq_pool:

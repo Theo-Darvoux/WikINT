@@ -96,7 +96,9 @@ async def test_create_flag_duplicate(client: AsyncClient, db_session: AsyncSessi
     assert res.status_code == 400
 
 
-async def test_create_flag_nonexistent_target(client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_create_flag_nonexistent_target(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
     user = await _create_user(db_session)
     await db_session.commit()
 

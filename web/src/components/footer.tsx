@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export function Footer() {
     return (
-        <footer className="border-t py-6 print:hidden">
+        <footer className="border-t py-6">
             <div className="w-full px-4 text-center text-sm text-muted-foreground space-y-2">
                 <div className="flex items-center justify-center gap-4">
                     <Link href="/privacy" className="hover:text-foreground transition-colors">

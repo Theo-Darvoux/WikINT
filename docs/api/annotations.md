@@ -2,7 +2,7 @@
 
 Annotations are position-anchored discussions on materials — similar to Google Docs comments. Users can highlight text in a document and start threaded conversations. Changes are broadcast in real-time via Server-Sent Events.
 
-**Key files**: `api/app/routers/annotations.py`, `api/app/services/annotation.py`, `api/app/services/notification.py`, `api/app/models/annotation.py`, `api/app/schemas/annotation.py`
+**Key files**: `api/app/routers/annotations.py`, `api/app/services/annotation.py`, `api/app/core/sse.py`, `api/app/models/annotation.py`, `api/app/schemas/annotation.py`
 
 ---
 
@@ -111,13 +111,13 @@ sequenceDiagram
     participant Q as Material Queue
 
     C1->>A: GET /materials/{id}/sse
-    A->>Q: register_material_watcher(id)
+    A->>Q: register_topic_queue(id)
     C2->>A: GET /materials/{id}/sse
-    A->>Q: register_material_watcher(id)
+    A->>Q: register_topic_queue(id)
 
     Note over A: Another user creates annotation
 
-    A->>Q: broadcast_material_event(id, event)
+    A->>Q: broadcast_to_topic(id, event)
     Q-->>C1: event: annotation_created
     Q-->>C2: event: annotation_created
 
@@ -126,11 +126,12 @@ sequenceDiagram
     A-->>C2: event: ping
 ```
 
-**Architecture** (in `api/app/services/notification.py`):
-- `_material_queues: Dict[material_id → list[asyncio.Queue]]` — module-level state
-- `register_material_watcher(material_id)` → creates and returns a new `asyncio.Queue`
-- `unregister_material_watcher(material_id, queue)` → removes queue from list
-- `broadcast_material_event(material_id, event)` → puts event in all registered queues (fire-and-forget)
+**Architecture** (in `api/app/core/sse.py`):
+- `_topic_queues: Dict[topic → list[asyncio.Queue]]` — module-level state
+- `register_topic_queue(topic)` → creates and returns a new `asyncio.Queue`
+- `unregister_topic_queue(topic, queue)` → removes queue from list
+- `broadcast_to_topic(topic, event)` → puts event in all registered queues (fire-and-forget)
+- `sse_event_stream(queue, cleanup)` → reusable async generator shared with the notifications SSE endpoint
 
 **Events**:
 - `annotation_created` — data contains the full annotation

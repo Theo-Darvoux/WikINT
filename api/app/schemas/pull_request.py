@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Discriminator, Field, Tag, field_validator
 
+from app.models.security import VirusScanResult
 from app.schemas.user import UserOut
 
 # ---------------------------------------------------------------------------
@@ -11,12 +12,19 @@ from app.schemas.user import UserOut
 # ---------------------------------------------------------------------------
 
 ALLOWED_MATERIAL_TYPES = {
-    "polycopie", "annal", "cheatsheet", "tip", "review",
-    "discussion", "video", "document", "other",
+    "polycopie",
+    "annal",
+    "cheatsheet",
+    "tip",
+    "review",
+    "discussion",
+    "video",
+    "document",
+    "other",
 }
 ALLOWED_DIRECTORY_TYPES = {"folder", "course", "year", "semester", "other"}
 MAX_TAGS = 20
-MAX_TAG_LENGTH = 80
+MAX_TAG_LENGTH = 20
 MAX_METADATA_KEYS = 20
 MAX_FILE_NAME_LENGTH = 255
 MAX_DIFF_SUMMARY_LENGTH = 2000
@@ -73,6 +81,45 @@ def _validate_file_name(file_name: str | None) -> str | None:
 # Individual operation payloads (discriminated on `op`)
 # ---------------------------------------------------------------------------
 
+
+class AttachmentOp(BaseModel):
+    title: str = Field(..., min_length=1, max_length=100, pattern=r"^\s*\S.*$")
+    type: str
+    file_key: str | None = None
+    file_name: str | None = None
+    file_size: int | None = Field(None, ge=0)
+    file_mime_type: str | None = Field(None, max_length=200)
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, v: str) -> str:
+        if v not in ALLOWED_MATERIAL_TYPES:
+            raise ValueError(f"Invalid material type: {v}")
+        return v
+
+    @field_validator("file_key")
+    @classmethod
+    def validate_file_key(cls, v: str | None) -> str | None:
+        return _validate_file_key(v)
+
+    @field_validator("file_name")
+    @classmethod
+    def validate_file_name(cls, v: str | None) -> str | None:
+        return _validate_file_name(v)
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: list[str]) -> list[str]:
+        return _validate_tags(v) or []
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata(cls, v: dict) -> dict:
+        return _validate_metadata(v) or {}
+
+
 class CreateMaterialOp(BaseModel):
     op: Literal["create_material"] = "create_material"
     temp_id: str | None = Field(
@@ -90,11 +137,11 @@ class CreateMaterialOp(BaseModel):
     tags: list[str] = Field(default_factory=list)
     file_key: str | None = None
     file_name: str | None = None
-    file_size: int | None = Field(None, ge=0, le=1_073_741_824)
+    file_size: int | None = Field(None, ge=0)  # upper bound enforced via MAX_FILE_SIZE_MB setting
     file_mime_type: str | None = Field(None, max_length=200)
     metadata: dict = Field(default_factory=dict)
     parent_material_id: uuid.UUID | str | None = None
-    attachments: list[dict] = Field(default_factory=list, max_length=50)
+    attachments: list[AttachmentOp] = Field(default_factory=list, max_length=50)
 
     @field_validator("type")
     @classmethod
@@ -133,7 +180,7 @@ class EditMaterialOp(BaseModel):
     tags: list[str] | None = None
     file_key: str | None = None
     file_name: str | None = None
-    file_size: int | None = Field(None, ge=0, le=1_073_741_824)
+    file_size: int | None = Field(None, ge=0)  # upper bound enforced via MAX_FILE_SIZE_MB setting
     file_mime_type: str | None = Field(None, max_length=200)
     diff_summary: str | None = Field(None, max_length=MAX_DIFF_SUMMARY_LENGTH)
     metadata: dict | None = None
@@ -250,7 +297,13 @@ def _get_op_discriminator(v: dict | BaseModel) -> str:
 
 
 Operation = Annotated[
-    Annotated[CreateMaterialOp, Tag("create_material")] | Annotated[EditMaterialOp, Tag("edit_material")] | Annotated[DeleteMaterialOp, Tag("delete_material")] | Annotated[CreateDirectoryOp, Tag("create_directory")] | Annotated[EditDirectoryOp, Tag("edit_directory")] | Annotated[DeleteDirectoryOp, Tag("delete_directory")] | Annotated[MoveItemOp, Tag("move_item")],
+    Annotated[CreateMaterialOp, Tag("create_material")]
+    | Annotated[EditMaterialOp, Tag("edit_material")]
+    | Annotated[DeleteMaterialOp, Tag("delete_material")]
+    | Annotated[CreateDirectoryOp, Tag("create_directory")]
+    | Annotated[EditDirectoryOp, Tag("edit_directory")]
+    | Annotated[DeleteDirectoryOp, Tag("delete_directory")]
+    | Annotated[MoveItemOp, Tag("move_item")],
     Discriminator(_get_op_discriminator),
 ]
 
@@ -269,9 +322,7 @@ MAX_OPERATIONS = 50
 class PullRequestCreate(BaseModel):
     title: str = Field(..., min_length=3, max_length=300, pattern=r"^\s*\S.*$")
     description: str | None = Field(None, max_length=1000)
-    operations: list[Operation] = Field(
-        ..., min_length=1, max_length=MAX_OPERATIONS
-    )
+    operations: list[Operation] = Field(..., min_length=1, max_length=MAX_OPERATIONS)
 
     @field_validator("operations")
     @classmethod
@@ -296,6 +347,7 @@ class PullRequestOut(BaseModel):
     summary_types: list[str] = Field(default_factory=list)
     author_id: uuid.UUID | None
     reviewed_by: uuid.UUID | None
+    virus_scan_result: VirusScanResult
     author: UserOut | None
     created_at: datetime
     updated_at: datetime
@@ -303,6 +355,10 @@ class PullRequestOut(BaseModel):
     user_vote: int | None = None
 
     model_config = {"from_attributes": True}
+
+
+class PRVoteIn(BaseModel):
+    value: int = Field(..., ge=-1, le=1)
 
 
 class PRVoteOut(BaseModel):
@@ -316,7 +372,7 @@ class PRVoteOut(BaseModel):
 
 
 class PRCommentCreate(BaseModel):
-    body: str
+    body: str = Field(..., min_length=1, max_length=10000)
     parent_id: uuid.UUID | None = None
 
 

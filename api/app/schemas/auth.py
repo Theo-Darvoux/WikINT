@@ -35,6 +35,7 @@ class UserBrief(BaseModel):
     id: str
     email: str
     display_name: str | None
+    avatar_url: str | None
     role: str
     onboarded: bool
 

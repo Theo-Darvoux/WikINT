@@ -4,6 +4,7 @@ import uuid
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
 from app.models.directory import Directory
@@ -16,21 +17,25 @@ def slugify(text: str) -> str:
     return re.sub(r"[-\s]+", "-", text).strip("-")
 
 
-async def get_directory_paths(db: AsyncSession, directory_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+async def get_directory_paths(
+    db: AsyncSession, directory_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, str]:
     if not directory_ids:
         return {}
-    
+
     from sqlalchemy import String
     from sqlalchemy.orm import aliased
-    
-    base_case = select(
-        Directory.id,
-        Directory.slug,
-        Directory.parent_id,
-        Directory.slug.cast(String).label("full_path")
-    ).where(
-        Directory.parent_id.is_(None)
-    ).cte(name="dir_path_cte", recursive=True)
+
+    base_case = (
+        select(
+            Directory.id,
+            Directory.slug,
+            Directory.parent_id,
+            Directory.slug.cast(String).label("full_path"),
+        )
+        .where(Directory.parent_id.is_(None))
+        .cte(name="dir_path_cte", recursive=True)
+    )
 
     base_alias = aliased(base_case, name="p")
     dir_alias = aliased(Directory, name="d")
@@ -39,10 +44,8 @@ async def get_directory_paths(db: AsyncSession, directory_ids: set[uuid.UUID]) -
         dir_alias.id,
         dir_alias.slug,
         dir_alias.parent_id,
-        (base_alias.c.full_path + "/" + dir_alias.slug).label("full_path")
-    ).join(
-        base_alias, dir_alias.parent_id == base_alias.c.id
-    )
+        (base_alias.c.full_path + "/" + dir_alias.slug).label("full_path"),
+    ).join(base_alias, dir_alias.parent_id == base_alias.c.id)
 
     cte = base_case.union_all(recursive_case)
     stmt = select(cte.c.id, cte.c.full_path).where(cte.c.id.in_(directory_ids))
@@ -54,6 +57,7 @@ async def get_directory_paths(db: AsyncSession, directory_ids: set[uuid.UUID]) -
 async def get_root_directories(db: AsyncSession) -> list[dict]:
     stmt = (
         select(Directory)
+        .options(selectinload(Directory.tags))
         .where(Directory.parent_id.is_(None), Directory.is_system.is_(False))
         .order_by(Directory.sort_order, Directory.name)
     )
@@ -68,10 +72,9 @@ async def get_root_directories(db: AsyncSession) -> list[dict]:
             .where(Directory.parent_id == d.id, Directory.is_system.is_(False))
         )
         mat_count = await db.scalar(
-            select(func.count()).select_from(Material).where(
-                Material.directory_id == d.id,
-                Material.parent_material_id.is_(None)
-            )
+            select(func.count())
+            .select_from(Material)
+            .where(Material.directory_id == d.id, Material.parent_material_id.is_(None))
         )
         item = {
             "id": str(d.id),
@@ -83,6 +86,7 @@ async def get_root_directories(db: AsyncSession) -> list[dict]:
             "metadata": d.metadata_,
             "sort_order": d.sort_order,
             "is_system": d.is_system,
+            "tags": [t.name for t in d.tags],
             "created_at": d.created_at,
             "child_directory_count": dir_count or 0,
             "child_material_count": mat_count or 0,
@@ -97,7 +101,9 @@ async def get_directory_by_id(db: AsyncSession, directory_id: str | uuid.UUID) -
         import uuid
 
         directory_id = uuid.UUID(directory_id)
-    result = await db.execute(select(Directory).where(Directory.id == directory_id))
+    result = await db.execute(
+        select(Directory).options(selectinload(Directory.tags)).where(Directory.id == directory_id)
+    )
     directory = result.scalar_one_or_none()
     if not directory:
         raise NotFoundError("Directory not found")
@@ -114,6 +120,7 @@ async def get_directory_children(db: AsyncSession, directory_id: str | uuid.UUID
 
     dir_stmt = (
         select(Directory)
+        .options(selectinload(Directory.tags))
         .where(Directory.parent_id == directory.id, Directory.is_system.is_(False))
         .order_by(Directory.sort_order, Directory.name)
     )
@@ -128,10 +135,9 @@ async def get_directory_children(db: AsyncSession, directory_id: str | uuid.UUID
             .where(Directory.parent_id == d.id, Directory.is_system.is_(False))
         )
         mat_count = await db.scalar(
-            select(func.count()).select_from(Material).where(
-                Material.directory_id == d.id,
-                Material.parent_material_id.is_(None)
-            )
+            select(func.count())
+            .select_from(Material)
+            .where(Material.directory_id == d.id, Material.parent_material_id.is_(None))
         )
         dirs_with_counts.append(
             {
@@ -144,6 +150,7 @@ async def get_directory_children(db: AsyncSession, directory_id: str | uuid.UUID
                 "metadata": d.metadata_,
                 "sort_order": d.sort_order,
                 "is_system": d.is_system,
+                "tags": [t.name for t in d.tags],
                 "created_at": d.created_at,
                 "child_directory_count": dir_count or 0,
                 "child_material_count": mat_count or 0,
@@ -164,14 +171,13 @@ async def get_directory_children(db: AsyncSession, directory_id: str | uuid.UUID
 
     mat_stmt = (
         select(Material, MaterialVersion, att_count_subq)
+        .options(selectinload(Material.tags))
         .outerjoin(
             MaterialVersion,
             (Material.id == MaterialVersion.material_id)
-            & (Material.current_version == MaterialVersion.version_number)
+            & (Material.current_version == MaterialVersion.version_number),
         )
-        .where(
-            Material.directory_id == directory.id, Material.parent_material_id.is_(None)
-        )
+        .where(Material.directory_id == directory.id, Material.parent_material_id.is_(None))
         .order_by(Material.title)
     )
     mat_result = await db.execute(mat_stmt)
@@ -190,6 +196,7 @@ async def get_directory_children(db: AsyncSession, directory_id: str | uuid.UUID
             "author_id": material.author_id,
             "metadata": material.metadata_,
             "download_count": material.download_count,
+            "tags": [t.name for t in material.tags],
             "created_at": material.created_at,
             "updated_at": material.updated_at,
             "attachment_count": att_count or 0,
@@ -221,7 +228,7 @@ async def get_directory_path(db: AsyncSession, directory_id: str | uuid.UUID) ->
 
         directory_id = uuid.UUID(directory_id)
     path: list[dict] = []
-    current = await get_directory_by_id(db, directory_id)
+    current: Directory | None = await get_directory_by_id(db, directory_id)
     seen: set[uuid.UUID] = set()
 
     while current:
@@ -274,10 +281,11 @@ async def resolve_browse_path(db: AsyncSession, path: str) -> dict:
             # No more segments — return the attachment listing
             result = await db.execute(
                 select(Material, MaterialVersion)
+                .options(selectinload(Material.tags))
                 .outerjoin(
                     MaterialVersion,
                     (Material.id == MaterialVersion.material_id)
-                    & (Material.current_version == MaterialVersion.version_number)
+                    & (Material.current_version == MaterialVersion.version_number),
                 )
                 .where(Material.parent_material_id == last_material.id)
                 .order_by(Material.title)
@@ -325,7 +333,9 @@ async def resolve_browse_path(db: AsyncSession, path: str) -> dict:
 
         if current_dir is None:
             result = await db.execute(
-                select(Directory).where(
+                select(Directory)
+                .options(selectinload(Directory.tags))
+                .where(
                     Directory.slug == segment,
                     Directory.parent_id.is_(None),
                     Directory.is_system.is_(False),
@@ -333,7 +343,9 @@ async def resolve_browse_path(db: AsyncSession, path: str) -> dict:
             )
         else:
             result = await db.execute(
-                select(Directory).where(
+                select(Directory)
+                .options(selectinload(Directory.tags))
+                .where(
                     Directory.slug == segment,
                     Directory.parent_id == current_dir.id,
                     Directory.is_system.is_(False),
@@ -348,7 +360,9 @@ async def resolve_browse_path(db: AsyncSession, path: str) -> dict:
 
         if current_dir:
             mat_result = await db.execute(
-                select(Material).where(
+                select(Material)
+                .options(selectinload(Material.tags))
+                .where(
                     Material.slug == segment,
                     Material.directory_id == current_dir.id,
                     Material.parent_material_id.is_(None),

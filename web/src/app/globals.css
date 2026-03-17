@@ -7,8 +7,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -173,20 +173,13 @@
   50% { opacity: 1; transform: translateX(-50%) scale(1.04); }
 }
 
-@media print {
-  @page {
-    size: auto;
-    margin: 0mm;
-  }
-  
-  body {
-    padding: 1cm;
-  }
+@keyframes virus-shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-2px); }
+  20%, 40%, 60%, 80% { transform: translateX(2px); }
+}
 
-  .react-pdf__Page,
-  .react-pdf__Page__canvas,
-  canvas.react-pdf__Page__canvas {
-    max-width: 100% !important;
-    height: auto !important;
-  }
+@keyframes virus-pulse-border {
+  0%, 100% { border-color: var(--color-destructive); opacity: 1; }
+  50% { border-color: oklch(0.55 0.22 27); opacity: 0.85; }
 }

@@ -31,6 +31,7 @@ interface NavbarNotification {
 
 interface NotificationsResponse {
     items: NavbarNotification[];
+    total: number;
 }
 
 export function Navbar() {
@@ -59,19 +60,19 @@ export function Navbar() {
     const fetchRecentNotifications = useCallback(async () => {
         setLoadingNotifications(true);
         try {
+            // Fetch unread count first to sync badge
+            const unreadData = await apiFetch<NotificationsResponse>("/notifications?read=false&limit=1");
+            setUnreadCount(unreadData.total);
+
+            // Fetch recent 5 for popover
             const data = await apiFetch<NotificationsResponse>("/notifications?limit=5");
             setRecentNotifications(data.items || []);
-            const unread = data.items?.filter((n) => !n.read).length || 0;
-            if (unreadCount === 0 && unread > 0) {
-                 // Sync unread count loosely
-                 setUnreadCount(unread);
-            }
         } catch {
             // Ignore for popover
         } finally {
             setLoadingNotifications(false);
         }
-    }, [setUnreadCount, unreadCount]);
+    }, [setUnreadCount]);
 
     useEffect(() => {
         if (popoverOpen) {
@@ -89,13 +90,13 @@ export function Navbar() {
         : user?.email?.slice(0, 2).toUpperCase() || "?";
 
     return (
-        <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md print:hidden supports-[backdrop-filter]:bg-background/60">
+        <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md supports-backdrop-filter:bg-background/60">
             <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6 relative">
                 {/* Left: Brand */}
                 <div className="flex w-1/3 justify-start">
                     <Link
                         href="/"
-                        className="text-xl font-extrabold tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
+                        className="text-xl font-extrabold tracking-tight bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
                     >
                         WikINT
                     </Link>
@@ -119,11 +120,11 @@ export function Navbar() {
                         </Button>
                     </div>
                 )}
-                
+
                 {/* Mobile Search Icon (when centered search is hidden) */}
                 {pathname !== "/login" && (
                     <div className="sm:hidden flex items-center">
-                         <Button
+                        <Button
                             variant="ghost"
                             size="icon"
                             className="h-9 w-9 text-muted-foreground"

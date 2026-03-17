@@ -66,6 +66,12 @@ Complex file upload interface:
 - Per-file progress tracking and status indicators
 - Supports `initialFiles` prop for pre-loading files from GlobalDropZone
 
+**File statuses**: `pending` → `uploading` → `scanned` → `done` | `error` | `virus`
+- `scanned`: amber pulsing progress bar with "Scanning for viruses…" text (while `upload/complete` runs)
+- `done`: green check icon
+- `error`: red alert icon with error message and retry button
+- `virus`: distinct threat UI — `ShieldX` icon with shake animation, red pulsing border, danger background, and explicit "Threat detected — file rejected" message. No retry button (file is deleted server-side). Detected by checking for `ApiError` with status 400 and message containing "virus"
+
 ### GlobalDropZone (`global-drop-zone.tsx`)
 Full-screen drag-and-drop overlay. Detects file drags anywhere on the document, shows an animated upload icon, resolves the target directory from the current browse context, and passes files to UploadDrawer.
 

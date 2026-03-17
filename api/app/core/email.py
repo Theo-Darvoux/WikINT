@@ -26,10 +26,9 @@ async def send_email(to: str, subject: str, body: str) -> None:
         kwargs["use_tls"] = False
         kwargs["start_tls"] = False
 
-    await aiosmtplib.send(
-        _build_message(to, subject, body),
-        **kwargs
-    )
+    from typing import Any, cast
+
+    await aiosmtplib.send(_build_message(to, subject, body), **cast(Any, kwargs))
 
 
 def _build_message(to: str, subject: str, body: str) -> str:

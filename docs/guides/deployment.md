@@ -66,9 +66,12 @@ DOMAIN=your-domain.com
 
 This builds all images and starts the production stack. Gunicorn runs the API with 4 Uvicorn workers, and the frontend serves a pre-built Next.js standalone build.
 
-### 3. Obtain TLS Certificate
+### 3. Configure TLS and Reverse Proxy
 
-Before setting up TLS, nginx starts on port 80 and redirects to HTTPS -- but the HTTPS server will fail without certificates. To bootstrap:
+You can expose WikINT securely in two ways: using the built-in Certbot for Let's Encrypt, or using an external reverse proxy (like Cloudflare, Traefik, or an outer Nginx).
+
+#### Option A: Built-in TLS (Certbot / Let's Encrypt)
+By default, Nginx starts on port 80 and redirects to HTTPS -- but the HTTPS server will fail without certificates. To bootstrap:
 
 ```bash
 # Request a certificate from Let's Encrypt
@@ -79,6 +82,17 @@ docker compose run certbot certonly --webroot \
 # Reload nginx to pick up the new certificate
 docker compose exec nginx nginx -s reload
 ```
+
+#### Option B: External Reverse Proxy (e.g., Cloudflare + Outer Nginx)
+If you are terminating SSL at an external proxy, you should remove the internal SSL setup to simplify your deployment.
+
+1. **Update `infra/nginx/nginx.conf`**: Modify the internal Nginx to run exclusively on port 80 and remove all SSL settings. It must properly forward the `X-Forwarded-Proto $http_x_forwarded_proto` header. See the [Reverse Proxy Docs](../infrastructure/reverse-proxy.md#deploying-behind-an-external-reverse-proxy) for the exact configuration.
+2. **Update `docker-compose.yml`**: Remove the `certbot` service, and change the `nginx` ports to bind locally:
+   ```yaml
+   ports:
+     - "127.0.0.1:9080:80"
+   ```
+3. Configure your outer proxy to forward traffic to `127.0.0.1:9080`.
 
 ### 4. Seed the Database
 

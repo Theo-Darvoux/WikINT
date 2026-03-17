@@ -75,7 +75,21 @@ This pattern ensures background jobs (search indexing, upload processing) are on
 
 ## Schema Management
 
-WikINT does **not** use Alembic migrations. The schema is managed directly through SQLAlchemy model definitions. Tables are created/updated via the ORM model metadata.
+WikINT uses **Alembic** for database migrations. The migration scripts are located in `api/app/migrations/versions/`.
+
+### Migration Workflow
+
+To generate a new migration after updating SQLAlchemy models:
+```bash
+docker exec wikint-api-1 uv run alembic revision --autogenerate -m "description"
+```
+
+To apply migrations:
+```bash
+docker exec wikint-api-1 uv run alembic upgrade head
+```
+
+Migrations are automatically run on container startup via `api/start.sh`.
 
 ### Tables
 

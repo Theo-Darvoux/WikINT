@@ -100,7 +100,8 @@ The `POSTGRES_*` variables configure the PostgreSQL container itself. The API on
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FRONTEND_URL` | `http://localhost:3000` | Used for CORS origin and email links |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000/api` | API base URL used by the Next.js frontend. Must be set at build time |
+| `NEXT_PUBLIC_API_URL` | `/api` | API base URL used by the Next.js frontend. In development, defaults to `/api` to route through Nginx. |
+| `API_INTERNAL_URL` | `http://api:8000` | Internal API URL used by the Next.js dev server for server-side requests and rewrites. |
 
 ### Nginx
 

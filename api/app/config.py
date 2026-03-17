@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     meili_url: str = "http://localhost:7700"
     meili_master_key: str = "change-me"
 
+    max_file_size_mb: int = 100
+
     clamav_host: str = "localhost"
     clamav_port: int = 3310
     clamav_scan_timeout_base: int = 60

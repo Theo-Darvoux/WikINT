@@ -66,3 +66,4 @@ API: `GET /api/flags`, `PATCH /api/flags/{id}`
 - Table columns: Title, Type, Votes, Submitted, Action
 - "Review" button links to `/pull-requests/{id}` detail page
 - Type and date columns hidden on mobile
+

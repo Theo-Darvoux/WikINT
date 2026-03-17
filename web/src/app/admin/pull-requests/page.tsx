@@ -22,13 +22,6 @@ interface PRItem {
     } | null;
 }
 
-interface PRResponse {
-    items: PRItem[];
-    total: number;
-    page: number;
-    pages: number;
-}
-
 export default function AdminPRQueuePage() {
     const [prs, setPrs] = useState<PRItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -37,8 +30,8 @@ export default function AdminPRQueuePage() {
     const fetchPRs = async () => {
         setLoading(true);
         try {
-            const data = await apiFetch<PRResponse>("/pull-requests?status=open&limit=50");
-            setPrs(data.items);
+            const data = await apiFetch<PRItem[]>("/pull-requests?status=open&limit=50");
+            setPrs(data ?? []);
         } catch {
             toast.error("Failed to load PR moderation queue");
         } finally {

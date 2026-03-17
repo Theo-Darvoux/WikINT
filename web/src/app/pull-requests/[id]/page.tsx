@@ -36,6 +36,7 @@ import { PRVoteButtons } from "@/components/pr/pr-vote-buttons";
 import { PRComments } from "@/components/pr/pr-comments";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/stores";
+import { toast } from "sonner";
 
 /* ── Types ──────────────────────────────────────────── */
 
@@ -51,6 +52,7 @@ interface PullRequestDetail {
     user_vote: number;
     payload: Record<string, unknown>[] | Record<string, unknown>;
     summary_types?: string[];
+    virus_scan_result?: string;
 }
 
 /* ── Constants ──────────────────────────────────────── */
@@ -211,7 +213,6 @@ function OperationRow({
     useEffect(() => {
         if (!hasFile) return;
         let cancelled = false;
-        // Use microtask to avoid synchronous setState in effect body
         Promise.resolve().then(() => { if (!cancelled) setLoadingPreview(true); });
         apiFetch<{ url: string }>(
             `/pull-requests/${prId}/preview?opIndex=${index}`,
@@ -279,8 +280,8 @@ function OperationRow({
                     onClick={(e) => e.stopPropagation()}
                 >
                     {/* File preview */}
-                    {hasFile &&
-                        (loadingPreview ? (
+                    {hasFile && (
+                        loadingPreview ? (
                             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                         ) : previewUrl ? (
                             <Button
@@ -298,7 +299,8 @@ function OperationRow({
                                     Preview
                                 </a>
                             </Button>
-                        ) : null)}
+                        ) : null
+                    )}
 
                     {/* Browse / View link */}
                     {showBrowseLink && browseHref && (
@@ -383,7 +385,8 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                     : prev,
             );
         } catch (e) {
-            console.error(e);
+            const msg = e instanceof Error ? e.message : "Action failed";
+            toast.error(msg);
         } finally {
             setActing(null);
         }
@@ -426,7 +429,6 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
         user?.role === "member" ||
         user?.role === "bureau" ||
         user?.role === "vieux";
-
     const status = STATUS_CONFIG[pr.status] ?? STATUS_CONFIG.open;
     const StatusIcon = status.Icon;
 
@@ -528,7 +530,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                         <div className="flex items-center gap-2">
                             <Button
                                 size="sm"
-                                className="gap-1.5 bg-green-600 text-white hover:bg-green-700"
+                                className="gap-1.5 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
                                 onClick={() => handleAction("approve")}
                                 disabled={acting !== null}
                             >

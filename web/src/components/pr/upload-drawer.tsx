@@ -22,12 +22,16 @@ import {
     RotateCcw,
     Package,
     Folder,
+    ShieldCheck,
+    ShieldX,
 } from "lucide-react";
 import { toast } from "sonner";
-import { apiFetch } from "@/lib/api-client";
+import { ApiError, apiFetch } from "@/lib/api-client";
 import { useStagingStore } from "@/lib/staging-store";
 import type { CreateMaterialOp } from "@/lib/staging-store";
 import { cn } from "@/lib/utils";
+import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB } from "@/lib/file-utils";
+import { TagInput } from "@/components/ui/tag-input";
 
 // ---------------------------------------------------------------------------
 // Recursive folder traversal via FileSystem API
@@ -138,8 +142,18 @@ interface UploadRequestOut {
     mime_type: string;
 }
 
-const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024; // 1 GB
 const MAX_CONCURRENT_UPLOADS = 4; // simultaneous XHR uploads
+const MAX_FILES_PER_BATCH = 50;
+const ACCEPTED_FILE_TYPES = [
+    ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
+    ".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a",
+    ".docx", ".xlsx", ".pptx", ".doc", ".xls", ".ppt", ".odt", ".ods",
+    ".epub", ".djvu", ".djv",
+    ".mp4", ".webm",
+    ".md", ".txt", ".csv", ".json", ".xml", ".tex",
+    ".py", ".js", ".ts", ".java", ".c", ".cpp", ".rs", ".go",
+    ".css", ".sql", ".sh", ".yaml", ".yml", ".toml",
+].join(",");
 
 function fileSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
@@ -161,9 +175,13 @@ interface FileEntry {
     clientId: string;
     file: File;
     title: string;
-    status: "pending" | "uploading" | "scanned" | "done" | "error";
+    status: "pending" | "uploading" | "scanned" | "done" | "error" | "virus";
     progress: number;
     fileKey?: string;
+    /** Corrected filename from the server (may differ from file.name if extension was fixed). */
+    fileName?: string;
+    /** Actual file size reported by the server (post-metadata-strip). */
+    serverSize?: number;
     mimeType?: string;
     error?: string;
     xhr?: XMLHttpRequest;
@@ -185,6 +203,7 @@ export function UploadDrawer({
     const addOperations = useStagingStore((s) => s.addOperations);
     const nextTempId = useStagingStore((s) => s.nextTempId);
     const [files, setFiles] = useState<FileEntry[]>([]);
+    const filesCountRef = useRef(0);
     // Upload concurrency queue
     const uploadQueueRef = useRef<FileEntry[]>([]);
     const activeUploadsRef = useRef(0);
@@ -193,11 +212,15 @@ export function UploadDrawer({
      * Key = relative dir path (e.g. "FolderA/sub"), value = temp_id.
      */
     const [pendingDirPaths, setPendingDirPaths] = useState<DirPathMap>(new Map());
+    const [batchTags, setBatchTags] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const folderInputRef = useRef<HTMLInputElement>(null);
     const dropzoneRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const initialFilesProcessedRef = useRef(false);
+
+    // Keep ref in sync for use in memoized callbacks
+    filesCountRef.current = files.length;
 
     const startUpload = useCallback((entry: FileEntry) => {
         const updateEntry = (clientId: string, patch: Partial<FileEntry>) => {
@@ -250,22 +273,36 @@ export function UploadDrawer({
                 });
 
                 updateEntry(e.clientId, { status: "scanned", progress: 100 });
-                await apiFetch("/upload/complete", {
-                    method: "POST",
-                    body: JSON.stringify({ file_key }),
-                });
+                const completeResult = await apiFetch<{ file_key: string; size: number; mime_type: string }>(
+                    "/upload/complete",
+                    {
+                        method: "POST",
+                        body: JSON.stringify({ file_key }),
+                    },
+                );
+
+                // Extract corrected filename from the returned key (last path segment)
+                const correctedName = completeResult.file_key.split("/").pop() ?? e.file.name;
 
                 updateEntry(e.clientId, {
                     status: "done",
                     progress: 100,
-                    fileKey: file_key,
-                    mimeType: mime_type,
+                    fileKey: completeResult.file_key,
+                    fileName: correctedName,
+                    serverSize: completeResult.size,
+                    mimeType: completeResult.mime_type,
                     xhr: undefined,
                 });
             } catch (err) {
                 const msg = err instanceof Error ? err.message : "Upload failed";
                 if (msg !== "Upload cancelled") {
-                    updateEntry(e.clientId, { status: "error", error: msg, xhr: undefined });
+                    const isVirus = err instanceof ApiError && err.status === 400
+                        && msg.toLowerCase().includes("virus");
+                    updateEntry(e.clientId, {
+                        status: isVirus ? "virus" : "error",
+                        error: msg,
+                        xhr: undefined,
+                    });
                 }
             } finally {
                 activeUploadsRef.current--;
@@ -281,10 +318,19 @@ export function UploadDrawer({
     /** Add flat files (from file input or flat drag). All go to current directory. */
     const addFlatFiles = useCallback(
         (newFiles: FileList | File[]) => {
-            const entries: FileEntry[] = Array.from(newFiles)
+            const remaining = MAX_FILES_PER_BATCH - filesCountRef.current;
+            if (remaining <= 0) {
+                toast.error(`Maximum ${MAX_FILES_PER_BATCH} files per batch`);
+                return;
+            }
+            const capped = Array.from(newFiles).slice(0, remaining);
+            if (capped.length < newFiles.length) {
+                toast.warning(`Only adding ${remaining} file(s) — batch limit is ${MAX_FILES_PER_BATCH}`);
+            }
+            const entries: FileEntry[] = capped
                 .filter((f) => {
                     if (f.size > MAX_FILE_SIZE) {
-                        toast.error(`${f.name} exceeds the 1 GB size limit`);
+                        toast.error(`${f.name} exceeds the ${MAX_FILE_SIZE_MB} MiB size limit`);
                         return false;
                     }
                     return true;
@@ -329,9 +375,19 @@ export function UploadDrawer({
             if (scanned.length === 0) return;
 
             const oversized = scanned.filter((s) => s.file.size > MAX_FILE_SIZE);
-            oversized.forEach((s) => toast.error(`${s.file.name} exceeds the 1 GB size limit`));
-            const valid = scanned.filter((s) => s.file.size <= MAX_FILE_SIZE);
+            oversized.forEach((s) => toast.error(`${s.file.name} exceeds the ${MAX_FILE_SIZE_MB} MiB size limit`));
+            let valid = scanned.filter((s) => s.file.size <= MAX_FILE_SIZE);
             if (valid.length === 0) return;
+
+            const remaining = MAX_FILES_PER_BATCH - filesCountRef.current;
+            if (remaining <= 0) {
+                toast.error(`Maximum ${MAX_FILES_PER_BATCH} files per batch`);
+                return;
+            }
+            if (valid.length > remaining) {
+                toast.warning(`Only adding ${remaining} file(s) — batch limit is ${MAX_FILES_PER_BATCH}`);
+                valid = valid.slice(0, remaining);
+            }
 
             // Build a temp_id map for each unique directory path
             const dirPaths = extractDirPaths(valid);
@@ -393,7 +449,7 @@ export function UploadDrawer({
     const inFlightFiles = files.filter(
         (f) => f.status === "uploading" || f.status === "scanned" || f.status === "pending",
     );
-    const errorFiles = files.filter((f) => f.status === "error");
+    const errorFiles = files.filter((f) => f.status === "error" || f.status === "virus");
 
     const canStage = doneFiles.length > 0 && inFlightFiles.length === 0;
 
@@ -421,6 +477,7 @@ export function UploadDrawer({
                 parent_id: parentId,
                 name,
                 type: "folder" as const,
+                tags: batchTags.length > 0 ? batchTags : undefined,
             };
         });
 
@@ -430,16 +487,18 @@ export function UploadDrawer({
                 ? (pendingDirPaths.get(f.targetDirPath) ?? directoryId)
                 : directoryId;
             return {
+                ...f, // keep existing fields
                 op: "create_material" as const,
                 temp_id: nextTempId("mat"),
                 directory_id: dirId,
-                title: f.title || titleFromFilename(f.file.name),
+                title: f.title || titleFromFilename(f.fileName ?? f.file.name),
                 type: "document",
                 file_key: f.fileKey!,
-                file_name: f.file.name,
-                file_size: f.file.size,
+                file_name: f.fileName ?? f.file.name,
+                file_size: f.serverSize ?? f.file.size,
                 file_mime_type: f.mimeType || f.file.type || "application/octet-stream",
                 ...(parentMaterialId ? { parent_material_id: parentMaterialId } : {}),
+                tags: batchTags.length > 0 ? batchTags : undefined,
             };
         });
 
@@ -516,6 +575,18 @@ export function UploadDrawer({
                     </SheetDescription>
                 </SheetHeader>
 
+                <div className="space-y-1.5 py-4">
+                    <label className="text-sm font-medium">Batch Tags</label>
+                    <TagInput 
+                        tags={batchTags} 
+                        onChange={setBatchTags} 
+                        placeholder="Apply tags to all files..." 
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                        Tags entered here will be applied to every file and folder in this batch.
+                    </p>
+                </div>
+
                 {/* Dropzone — compact when files are present */}
                 <div
                     ref={dropzoneRef}
@@ -535,23 +606,24 @@ export function UploadDrawer({
                 >
                     <UploadCloud
                         className={cn(
+                            "pointer-events-none",
                             isDragging ? "text-primary" : "text-muted-foreground",
                             files.length === 0 ? "h-8 w-8" : "h-4 w-4 shrink-0",
                         )}
                     />
                     {files.length === 0 ? (
-                        <>
-                            <p className="text-sm text-muted-foreground text-center">
+                        <div className="pointer-events-none flex flex-col items-center gap-2 text-center">
+                            <p className="text-sm text-muted-foreground">
                                 {isDragging
                                     ? "Drop files or folders here"
                                     : "Drag & drop files or folders, or click to browse"}
                             </p>
                             <p className="text-xs text-muted-foreground/70">
-                                Max 1 GB per file · Folder structure preserved on drop
+                                Max {MAX_FILE_SIZE_MB} MiB per file · Folder structure preserved on drop
                             </p>
-                        </>
+                        </div>
                     ) : (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="pointer-events-none text-xs text-muted-foreground">
                             {isDragging ? "Drop to add more" : "Drop more files or folders here"}
                         </p>
                     )}
@@ -559,6 +631,7 @@ export function UploadDrawer({
                         ref={fileInputRef}
                         type="file"
                         multiple
+                        accept={ACCEPTED_FILE_TYPES}
                         className="hidden"
                         onChange={(e) => {
                             if (e.target.files) addFlatFiles(e.target.files);
@@ -601,7 +674,7 @@ export function UploadDrawer({
                                 const entries: FileEntry[] = scanned
                                     .filter((s) => {
                                         if (s.file.size > MAX_FILE_SIZE) {
-                                            toast.error(`${s.file.name} exceeds the 1 GB size limit`);
+                                            toast.error(`${s.file.name} exceeds the ${MAX_FILE_SIZE_MB} MiB size limit`);
                                             return false;
                                         }
                                         return true;
@@ -655,19 +728,28 @@ export function UploadDrawer({
                             {files.map((f) => (
                                 <div
                                     key={f.clientId}
-                                    className="group flex items-start gap-3 rounded-lg border p-3"
+                                    className={cn(
+                                        "group flex items-start gap-3 rounded-lg border p-3",
+                                        f.status === "virus" &&
+                                            "border-destructive bg-destructive/5 dark:bg-destructive/10 animate-[virus-pulse-border_2s_ease-in-out_infinite]",
+                                    )}
                                 >
                                     {/* Status icon */}
                                     <div className="mt-0.5 shrink-0">
                                         {f.status === "done" && (
                                             <CheckCircle2 className="h-4 w-4 text-green-500" />
                                         )}
+                                        {f.status === "virus" && (
+                                            <ShieldX className="h-5 w-5 text-destructive animate-[virus-shake_0.6s_ease-in-out_2]" />
+                                        )}
                                         {f.status === "error" && (
                                             <AlertCircle className="h-4 w-4 text-destructive" />
                                         )}
-                                        {(f.status === "uploading" ||
-                                            f.status === "scanned") && (
+                                        {f.status === "uploading" && (
                                             <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                        )}
+                                        {f.status === "scanned" && (
+                                            <ShieldCheck className="h-4 w-4 animate-pulse text-amber-500" />
                                         )}
                                         {f.status === "pending" && (
                                             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -686,7 +768,7 @@ export function UploadDrawer({
                                         />
                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                             <span className="truncate">
-                                                {f.file.name}
+                                                {f.fileName ?? f.file.name}
                                             </span>
                                             <span className="shrink-0">
                                                 {fileSize(f.file.size)}
@@ -698,12 +780,32 @@ export function UploadDrawer({
                                                 <span className="truncate">{f.targetDirPath}</span>
                                             </div>
                                         )}
-                                        {(f.status === "uploading" ||
-                                            f.status === "scanned") && (
+                                        {f.status === "uploading" && (
                                             <Progress
                                                 value={f.progress}
                                                 className="h-1.5"
                                             />
+                                        )}
+                                        {f.status === "scanned" && (
+                                            <div className="space-y-1">
+                                                <Progress
+                                                    value={100}
+                                                    className="h-1.5 [&>div]:bg-amber-500 [&>div]:animate-pulse"
+                                                />
+                                                <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                                                    Scanning for viruses…
+                                                </p>
+                                            </div>
+                                        )}
+                                        {f.status === "virus" && (
+                                            <div className="rounded-md bg-destructive/10 px-2 py-1.5">
+                                                <p className="text-xs font-semibold text-destructive">
+                                                    Threat detected — file rejected
+                                                </p>
+                                                <p className="mt-0.5 text-[10px] text-destructive/80">
+                                                    This file was flagged as malicious by the virus scanner and has been deleted from storage. It cannot be uploaded.
+                                                </p>
+                                            </div>
                                         )}
                                         {f.status === "error" && f.error && (
                                             <p className="text-xs text-destructive">

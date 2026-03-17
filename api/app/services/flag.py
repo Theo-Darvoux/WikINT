@@ -34,8 +34,10 @@ async def _validate_target(db: AsyncSession, target_type: str, target_id: uuid.U
     model = TARGET_TABLE_MAP.get(target_type)
     if not model:
         raise BadRequestError(f"Invalid target_type: {target_type}")
-    result = await db.execute(select(model).where(model.id == target_id))  # type: ignore[attr-defined]
-    if not result.scalar_one_or_none():
+    from sqlalchemy.engine import Result
+
+    target_res: Result = await db.execute(select(model).where(model.id == target_id))  # type: ignore[attr-defined, assignment]
+    if not target_res.scalar_one_or_none():
         raise NotFoundError(f"{target_type} not found")
 
 
@@ -110,9 +112,7 @@ async def update_flag(
         raise ForbiddenError("Only moderators can update flags")
 
     fid = _to_uuid(flag_id)
-    result = await db.execute(
-        select(Flag).options(joinedload(Flag.reporter)).where(Flag.id == fid)
-    )
+    result = await db.execute(select(Flag).options(joinedload(Flag.reporter)).where(Flag.id == fid))
     flag = result.scalar_one_or_none()
     if not flag:
         raise NotFoundError("Flag not found")

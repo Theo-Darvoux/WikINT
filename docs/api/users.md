@@ -50,7 +50,12 @@ Returns the current user's profile with reputation stats.
 ```
 
 ### PATCH `/api/users/me`
-**Auth**: Required. Updates optional fields: `display_name`, `bio`, `academic_year`, `avatar_url`. Only provided fields are updated.
+**Auth**: Required. Updates optional fields: `display_name`, `bio`, `academic_year`, `avatar_url`.
+
+**Avatar handling**:
+1. If `avatar_url` starts with `uploads/`, it is moved to the permanent `avatars/` prefix.
+2. The old avatar file (if any) is permanently deleted from storage.
+3. The user's `avatar_url` is updated to the new permanent key.
 
 ### GET `/api/users/{user_id}`
 Public profile with stats. No auth required.
@@ -87,6 +92,22 @@ reputation = (prs_approved * 10) + (annotations_count * 2)
 
 ---
 
+## Security & Moderation
+
+### Deleted User Blocking
+
+Users with `deleted_at` set are rejected at the authentication layer. Both Bearer token authentication (for API requests) and SSE query-parameter authentication check the `deleted_at` field and return a `401 "Account has been deleted"` error if the account has been soft-deleted. This ensures deleted users cannot continue accessing the system during the 30-day GDPR retention period before hard deletion.
+
+### Account Flagging
+
+The `is_flagged` boolean on the `User` model is used to mark accounts for administrative review. 
+
+- **Automatic Flagging**: Triggered when a user reaches the daily download limit (200 files).
+- **Behavior**: Flagged users are **not** automatically blocked from the system. The flag serves as an internal signal for moderators to investigate potential scraping or unauthorized automated access.
+- **Resolution**: Flags must be cleared manually by an administrator after review.
+
+---
+
 ## GDPR Compliance
 
 ### Data Export
@@ -112,9 +133,10 @@ reputation = (prs_approved * 10) + (annotations_count * 2)
 
 **DELETE `/api/users/me`** performs a soft delete:
 
-1. Sets `deleted_at = now()`
-2. Anonymizes: `display_name = "Deleted User"`, clears `bio`, `avatar_url`, `academic_year`
-3. Sets `gdpr_consent = False`
+1. Deletes the current `avatar_url` file from MinIO storage.
+2. Sets `deleted_at = now()`
+3. Anonymizes: `display_name = "Deleted User"`, clears `bio`, `avatar_url`, `academic_year`
+4. Sets `gdpr_consent = False`
 
 The user is immediately inaccessible (queries filter `WHERE deleted_at IS NULL`). After 30 days, the `gdpr_cleanup` background worker hard-deletes the record.
 

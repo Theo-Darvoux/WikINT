@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { FolderPlus } from "lucide-react";
 import { toast } from "sonner";
 import { useStagingStore } from "@/lib/staging-store";
+import { TagInput } from "@/components/ui/tag-input";
 
 interface NewFolderDialogProps {
     open: boolean;
@@ -34,6 +35,7 @@ export function NewFolderDialog({
     const nextTempId = useStagingStore((s) => s.nextTempId);
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
+    const [tags, setTags] = useState<string[]>([]);
 
     const canSubmit = name.trim().length >= 1;
 
@@ -48,11 +50,13 @@ export function NewFolderDialog({
             parent_id: parentId,
             name: name.trim(),
             description: description.trim() || undefined,
+            tags: tags.length > 0 ? tags : undefined,
         });
 
         toast.success(`Folder "${name.trim()}" staged for creation`);
         setName("");
         setDescription("");
+        setTags([]);
         onOpenChange(false);
     };
 
@@ -122,6 +126,14 @@ export function NewFolderDialog({
                             placeholder="What's in this folder?"
                             maxLength={500}
                             rows={2}
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Tags</label>
+                        <TagInput
+                            tags={tags}
+                            onChange={setTags}
+                            placeholder="Add folder tags..."
                         />
                     </div>
                 </div>

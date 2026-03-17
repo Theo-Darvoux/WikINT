@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-media-query";
+import { apiFetchBlob } from "@/lib/api-client";
 
 interface VideoPlayerProps {
     fileKey: string;
@@ -14,8 +15,6 @@ export function VideoPlayer({ materialId, material }: VideoPlayerProps) {
     const isMobile = useIsMobile();
     const [blobUrl, setBlobUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
-
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
     const metadata = material.metadata as Record<string, unknown> | null;
     const embedUrl = metadata?.video_url as string | undefined;
@@ -31,8 +30,7 @@ export function VideoPlayer({ materialId, material }: VideoPlayerProps) {
             setBlobUrl(null);
         });
 
-        fetch(`${apiBase}/materials/${materialId}/file`, { credentials: "include" })
-            .then((res) => res.blob())
+        apiFetchBlob(`/materials/${materialId}/file`)
             .then((blob) => {
                 if (cancelled) return;
                 objectUrl = URL.createObjectURL(blob);
@@ -45,7 +43,7 @@ export function VideoPlayer({ materialId, material }: VideoPlayerProps) {
             cancelled = true;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [materialId, apiBase, embedUrl]);
+    }, [materialId, embedUrl]);
 
     if (embedUrl) {
         return (

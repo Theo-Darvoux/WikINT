@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+import { createSSEConnection } from "@/lib/sse-client";
 
 interface AnnotationAuthor {
     id: string;
@@ -79,33 +78,17 @@ export function useAnnotations(materialId: string | null) {
 
     useEffect(() => {
         if (!materialId) return;
-        let es: EventSource | null = null;
-        let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-        let cancelled = false;
 
-        function connect() {
-            if (cancelled) return;
-            es = new EventSource(`${API_BASE}/materials/${materialId}/sse`);
-            es.addEventListener("annotation_created", () => {
-                fetchAnnotations(pageRef.current);
-            });
-            es.addEventListener("annotation_deleted", () => {
-                fetchAnnotations(pageRef.current);
-            });
-            es.onerror = () => {
-                es?.close();
-                if (!cancelled) {
-                    reconnectTimer = setTimeout(connect, 5000);
-                }
-            };
-        }
+        const connection = createSSEConnection({
+            url: `/materials/${materialId}/sse`,
+            listeners: {
+                annotation_created: () => fetchAnnotations(pageRef.current),
+                annotation_deleted: () => fetchAnnotations(pageRef.current),
+            },
+            startupDelay: 50, // React Strict Mode workaround
+        });
 
-        connect();
-        return () => {
-            cancelled = true;
-            if (reconnectTimer) clearTimeout(reconnectTimer);
-            es?.close();
-        };
+        return () => connection.close();
     }, [materialId, fetchAnnotations]);
 
     const createAnnotation = useCallback(
@@ -162,4 +145,10 @@ export function useAnnotations(materialId: string | null) {
         editAnnotation,
         deleteAnnotation,
     };
+}
+
+export type AnnotationsAPI = ReturnType<typeof useAnnotations>;
+export const AnnotationsContext = createContext<AnnotationsAPI | null>(null);
+export function useAnnotationsContext() {
+    return useContext(AnnotationsContext);
 }

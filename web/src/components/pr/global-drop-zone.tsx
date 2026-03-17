@@ -151,11 +151,11 @@ export function GlobalDropZone() {
     // Listen for drag events on the document (show/hide overlay)
     useEffect(() => {
         const onDragEnter = (e: DragEvent) => {
-            // Only react to file drags
-            if (!e.dataTransfer?.types.includes("Files")) return;
             e.preventDefault();
             dragCounterRef.current++;
-            if (dragCounterRef.current === 1) {
+
+            // Only show overlay for file drags
+            if (e.dataTransfer?.types.includes("Files")) {
                 setIsDragOver(true);
             }
         };
@@ -171,7 +171,9 @@ export function GlobalDropZone() {
         const onDragLeave = (e: DragEvent) => {
             e.preventDefault();
             dragCounterRef.current--;
-            if (dragCounterRef.current <= 0) {
+
+            // If we've left all elements or left the window altogether (relatedTarget is null)
+            if (dragCounterRef.current <= 0 || !e.relatedTarget) {
                 dragCounterRef.current = 0;
                 setIsDragOver(false);
             }
@@ -179,14 +181,11 @@ export function GlobalDropZone() {
 
         // Fallback: catch drops that escape the overlay (e.g. dropped outside it)
         const onDrop = (e: DragEvent) => {
-            if (drawerOpen) {
-                dragCounterRef.current = 0;
-                setIsDragOver(false);
-                return;
-            }
-            e.preventDefault();
             dragCounterRef.current = 0;
             setIsDragOver(false);
+            if (!drawerOpen) {
+                e.preventDefault();
+            }
         };
 
         document.addEventListener("dragenter", onDragEnter);
@@ -232,7 +231,7 @@ export function GlobalDropZone() {
                     onDragOver={handleOverlayDragOver}
                     onDrop={handleOverlayDrop}
                 >
-                    <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-primary bg-primary/5 px-16 py-12">
+                    <div className="pointer-events-none flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-primary bg-primary/5 px-16 py-12">
                         <UploadCloud className="h-16 w-16 text-primary animate-bounce" />
                         <div className="text-center">
                             <p className="text-lg font-semibold text-primary">

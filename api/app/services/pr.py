@@ -7,19 +7,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
-
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.minio import move_object, read_object_bytes
 from app.models.directory import Directory
 from app.models.material import Material, MaterialVersion
 from app.models.pull_request import PullRequest
+from app.models.security import VirusScanResult
 from app.models.tag import Tag
 from app.routers.upload import guess_mime_from_bytes
+from app.services.directory import slugify
 from app.services.tag import get_or_create_tags
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _is_temp_id(value: str | None) -> bool:
     """Check if a value is a $-prefixed temporary inter-reference ID."""
@@ -36,7 +38,10 @@ def _resolve(value: str | None, id_map: dict[str, uuid.UUID]) -> uuid.UUID | Non
         if resolved is None:
             raise BadRequestError(f"Unresolved temp_id reference: {s}")
         return resolved
-    return uuid.UUID(s)
+    try:
+        return uuid.UUID(s)
+    except ValueError:
+        raise BadRequestError(f"Invalid UUID: {s}")
 
 
 def _collect_temp_refs(op: dict) -> set[str]:
@@ -54,6 +59,57 @@ def _collect_temp_refs(op: dict) -> set[str]:
                         if isinstance(v2, str) and _is_temp_id(v2):
                             refs.add(v2)
     return refs
+
+
+async def _unique_material_slug(
+    db: AsyncSession,
+    directory_id: uuid.UUID,
+    title: str,
+) -> str:
+    """Generate a slug unique within the directory, appending -2, -3, … on collision.
+
+    Uses SELECT ... FOR UPDATE SKIP LOCKED to prevent race conditions between
+    concurrent PR applications.
+    """
+    base = slugify(title) or "untitled"
+    result = await db.execute(
+        select(Material.slug)
+        .where(Material.directory_id == directory_id, Material.slug.like(f"{base}%"))
+        .with_for_update(skip_locked=True)
+    )
+    existing = set(result.scalars().all())
+    if base not in existing:
+        return base
+    for i in range(2, len(existing) + 100):
+        candidate = f"{base}-{i}"
+        if candidate not in existing:
+            return candidate
+    return f"{base}-{uuid.uuid4().hex[:8]}"
+
+
+async def _unique_directory_slug(
+    db: AsyncSession,
+    parent_id: uuid.UUID | None,
+    name: str,
+) -> str:
+    """Generate a slug unique among sibling directories.
+
+    Uses SELECT ... FOR UPDATE SKIP LOCKED to prevent race conditions.
+    """
+    base = slugify(name) or "untitled"
+    result = await db.execute(
+        select(Directory.slug)
+        .where(Directory.parent_id == parent_id, Directory.slug.like(f"{base}%"))
+        .with_for_update(skip_locked=True)
+    )
+    existing = set(result.scalars().all())
+    if base not in existing:
+        return base
+    for i in range(2, len(existing) + 100):
+        candidate = f"{base}-{i}"
+        if candidate not in existing:
+            return candidate
+    return f"{base}-{uuid.uuid4().hex[:8]}"
 
 
 def topo_sort_operations(operations: list[dict]) -> list[dict]:
@@ -133,6 +189,7 @@ async def _resolve_mime_type(file_key: str, payload: dict) -> str:
 async def _get_real_file_size(file_key: str) -> int:
     """Read the actual file size from object storage."""
     from app.core.minio import get_object_info
+
     info = await get_object_info(file_key)
     return info["size"]
 
@@ -140,6 +197,7 @@ async def _get_real_file_size(file_key: str) -> int:
 # ---------------------------------------------------------------------------
 # Individual operation executors
 # ---------------------------------------------------------------------------
+
 
 async def _exec_create_material(
     db: AsyncSession, p: dict, pr: PullRequest, id_map: dict[str, uuid.UUID]
@@ -154,12 +212,15 @@ async def _exec_create_material(
 
     mat_id = uuid.uuid4()
     directory_id = _resolve(str(p["directory_id"]), id_map)
+    if directory_id is None:
+        raise BadRequestError("directory_id is required")
 
+    slug = await _unique_material_slug(db, directory_id, p["title"])
     m = Material(
         id=mat_id,
         directory_id=directory_id,
         title=p["title"],
-        slug=p["title"].lower().replace(" ", "-"),
+        slug=slug,
         description=p.get("description"),
         type=p["type"],
         parent_material_id=_resolve(
@@ -190,6 +251,7 @@ async def _exec_create_material(
             file_mime_type=mime_type,
             author_id=pr.author_id,
             pr_id=pr.id,
+            virus_scan_result=VirusScanResult.CLEAN,
         )
         db.add(mv)
         await db.flush()
@@ -210,11 +272,12 @@ async def _exec_create_material(
         for att in p["attachments"]:
             att_tags = att.get("tags", [])
             await get_or_create_tags(db, att_tags)
+            att_slug = await _unique_material_slug(db, sys_dir.id, att["title"])
             att_m = Material(
                 id=uuid.uuid4(),
                 directory_id=sys_dir.id,
                 title=att["title"],
-                slug=att["title"].lower().replace(" ", "-"),
+                slug=att_slug,
                 type=att["type"],
                 parent_material_id=m.id,
                 author_id=pr.author_id,
@@ -240,6 +303,7 @@ async def _exec_create_material(
                     file_mime_type=att_mime,
                     author_id=pr.author_id,
                     pr_id=pr.id,
+                    virus_scan_result=VirusScanResult.CLEAN,
                 )
                 db.add(v)
                 await db.flush()
@@ -254,9 +318,7 @@ async def _exec_edit_material(
 ) -> uuid.UUID:
     mat_id = _resolve(str(p["material_id"]), id_map)
     mat = await db.scalar(
-        select(Material)
-        .where(Material.id == mat_id)
-        .options(selectinload(Material.tags))
+        select(Material).where(Material.id == mat_id).options(selectinload(Material.tags))
     )
     if not mat:
         raise NotFoundError("Material not found")
@@ -293,6 +355,7 @@ async def _exec_edit_material(
             author_id=pr.author_id,
             diff_summary=p.get("diff_summary"),
             pr_id=pr.id,
+            virus_scan_result=VirusScanResult.CLEAN,
         )
         mat.current_version += 1
         db.add(mv)
@@ -312,17 +375,41 @@ async def _exec_delete_material(
         raise NotFoundError("Material not found")
 
     deleted_id = mat.id
+
+    # Collect file keys to delete from MinIO
+    file_keys_to_delete = []
+    versions = await db.scalars(
+        select(MaterialVersion).where(MaterialVersion.material_id == deleted_id)
+    )
+    for v in versions:
+        if v.file_key:
+            file_keys_to_delete.append(v.file_key)
+
     await db.delete(mat)
 
-    sys_dir = await db.scalar(
-        select(Directory).where(Directory.name == f"attachments:{mat.id}")
-    )
+    sys_dir = await db.scalar(select(Directory).where(Directory.name == f"attachments:{mat.id}"))
     if sys_dir:
+        # Also grab attachment file keys
+        att_mats = await db.scalars(select(Material).where(Material.directory_id == sys_dir.id))
+        att_mat_ids = [m.id for m in att_mats]
+        if att_mat_ids:
+            att_versions = await db.scalars(
+                select(MaterialVersion).where(MaterialVersion.material_id.in_(att_mat_ids))
+            )
+            for av in att_versions:
+                if av.file_key:
+                    file_keys_to_delete.append(av.file_key)
+
         await db.delete(sys_dir)
 
     db.info.setdefault("post_commit_jobs", []).append(
         ("delete_indexed_item", "materials", str(deleted_id))
     )
+
+    if file_keys_to_delete:
+        db.info.setdefault("post_commit_jobs", []).append(
+            ("delete_minio_objects", file_keys_to_delete)
+        )
 
     return deleted_id
 
@@ -334,15 +421,15 @@ async def _exec_create_directory(
     await get_or_create_tags(db, tags)
 
     dir_id = uuid.uuid4()
+    parent_id = _resolve(str(p["parent_id"]) if p.get("parent_id") else None, id_map)
+    dir_slug = await _unique_directory_slug(db, parent_id, p["name"])
     d = Directory(
         id=dir_id,
         name=p["name"],
-        slug=p["name"].lower().replace(" ", "-"),
+        slug=dir_slug,
         type=p.get("type", "folder"),
         description=p.get("description"),
-        parent_id=_resolve(
-            str(p["parent_id"]) if p.get("parent_id") else None, id_map
-        ),
+        parent_id=parent_id,
         tags=tags,
         metadata_=p.get("metadata", {}),
         created_by=pr.author_id,
@@ -420,13 +507,11 @@ async def _exec_move_item(
             raise BadRequestError("Cannot move a directory into itself")
         if new_parent_id is not None:
             # Walk up from new_parent to ensure target is not an ancestor
-            check_id = new_parent_id
+            check_id: uuid.UUID | None = new_parent_id
             seen: set[uuid.UUID] = set()
             while check_id:
                 if check_id == target_id:
-                    raise BadRequestError(
-                        "Cannot move a directory into one of its own descendants"
-                    )
+                    raise BadRequestError("Cannot move a directory into one of its own descendants")
                 if check_id in seen:
                     break  # existing circular chain — stop
                 seen.add(check_id)
@@ -467,9 +552,8 @@ _EXECUTORS = {
 # Browse-path resolution (for post-approval links)
 # ---------------------------------------------------------------------------
 
-async def _build_browse_path(
-    db: AsyncSession, op_type: str, result_id: uuid.UUID
-) -> str | None:
+
+async def _build_browse_path(db: AsyncSession, op_type: str, result_id: uuid.UUID) -> str | None:
     """Build the slug-based browse path for a result item."""
     from app.services.directory import get_directory_path
 
@@ -509,6 +593,7 @@ async def _build_browse_path(
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) -> None:
     """
     Execute all operations in a batch PR.  Operations are topologically
@@ -545,9 +630,7 @@ async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) 
                 raw_id = str(op.get(id_field, ""))
                 target_uuid = _resolve(raw_id, id_map) if raw_id else None
                 if target_uuid:
-                    pre_delete_browse_path = await _build_browse_path(
-                        db, op_type, target_uuid
-                    )
+                    pre_delete_browse_path = await _build_browse_path(db, op_type, target_uuid)
             except Exception:
                 pass
 

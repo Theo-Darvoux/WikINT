@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { apiRequest } from "@/lib/api-client";
 
 interface EpubViewerProps {
     fileKey: string;
@@ -11,8 +12,6 @@ export function EpubViewer({ materialId }: EpubViewerProps) {
     const viewerRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
-    const downloadUrl = `/api/materials/${materialId}/download`;
 
     useEffect(() => {
         let isMounted = true;
@@ -35,8 +34,7 @@ export function EpubViewer({ materialId }: EpubViewerProps) {
 
                 if (!isMounted) return;
 
-                const response = await fetch(downloadUrl);
-                if (!response.ok) throw new Error("Failed to fetch EPUB file");
+                const response = await apiRequest(`/materials/${materialId}/file`);
                 const arrayBuffer = await response.arrayBuffer();
 
                 if (!viewerRef.current || !isMounted) return;
@@ -44,7 +42,7 @@ export function EpubViewer({ materialId }: EpubViewerProps) {
                 // Load book string
                 book = (window as unknown as Record<string, (buf: ArrayBuffer) => typeof book>).ePub(arrayBuffer);
 
-                rendition = book.renderTo(viewerRef.current, {
+                rendition = book!.renderTo(viewerRef.current, {
                     width: "100%",
                     height: "100%",
                     spread: "none"
@@ -68,7 +66,7 @@ export function EpubViewer({ materialId }: EpubViewerProps) {
                 book.destroy();
             }
         };
-    }, [downloadUrl]);
+    }, [materialId]);
 
     if (error) {
         return (

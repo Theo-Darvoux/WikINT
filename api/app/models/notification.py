@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class Notification(UUIDMixin, Base):
@@ -21,4 +27,4 @@ class Notification(UUIDMixin, Base):
     read: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    user: Mapped["User"] = relationship(back_populates="notifications")  # noqa: F821
+    user: Mapped[User] = relationship(back_populates="notifications")  # noqa: F821

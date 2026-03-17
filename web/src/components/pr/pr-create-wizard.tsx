@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { PRFileUpload } from "./pr-file-upload";
+import { TagInput } from "@/components/ui/tag-input";
 
 type PRType = "create_material" | "edit_material" | "delete_material" | "create_directory" | "edit_directory" | "delete_directory" | "move_item";
 
@@ -25,7 +26,7 @@ export function PRCreateWizard() {
     const [itemName, setItemName] = useState(""); // For material title / dir name
     const [itemDescription, setItemDescription] = useState("");
     const [itemType] = useState("document");
-    const [tags, setTags] = useState("");
+    const [tags, setTags] = useState<string[]>([]);
 
     const [fileKey, setFileKey] = useState<string | null>(null);
     const [fileName, setFileName] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export function PRCreateWizard() {
             }
         }
 
-        if (tags && tags.length > 200) newErrors.tags = "Tags string max length is 200 characters.";
+        if (tags.length > 50) newErrors.tags = "Too many tags.";
 
         if (["edit_material", "delete_material", "edit_directory", "delete_directory"].includes(prType)) {
             if (!targetId) newErrors.general = "A target item must be selected to perform this action.";
@@ -86,7 +87,7 @@ export function PRCreateWizard() {
                 payload.title = itemName;
                 payload.description = itemDescription;
                 payload.type = itemType;
-                payload.tags = tags.split(",").map(t => t.trim()).filter(Boolean);
+                if (tags.length > 0) payload.tags = tags;
                 if (fileKey) {
                     payload.file_key = fileKey;
                     payload.file_name = fileName;
@@ -103,14 +104,17 @@ export function PRCreateWizard() {
                     payload.file_size = fileSize;
                     payload.file_mime_type = fileMimeType;
                 }
+                if (tags.length > 0) payload.tags = tags;
             } else if (prType === "create_directory") {
                 payload.parent_id = targetId || null;
                 payload.name = itemName;
                 payload.description = itemDescription;
+                if (tags.length > 0) payload.tags = tags;
             } else if (prType === "edit_directory") {
                 payload.directory_id = targetId;
                 if (itemName) payload.name = itemName;
                 if (itemDescription) payload.description = itemDescription;
+                if (tags.length > 0) payload.tags = tags;
             } else if (prType === "delete_material") {
                 payload.material_id = targetId;
             } else if (prType === "delete_directory") {
@@ -188,10 +192,14 @@ export function PRCreateWizard() {
                         </>
                     )}
 
-                    {prType === "create_material" && (
+                    {["create_material", "edit_material", "create_directory", "edit_directory"].includes(prType) && (
                         <div className="space-y-2">
-                            <label className="text-sm font-medium">Comma-separated Tags</label>
-                            <Input value={tags} onChange={e => { setTags(e.target.value); setErrors({ ...errors, tags: "" }) }} placeholder="math, physics..." />
+                            <label className="text-sm font-medium">Tags</label>
+                            <TagInput 
+                                tags={tags} 
+                                onChange={setTags} 
+                                placeholder="math, physics..." 
+                            />
                             {errors.tags && <p className="text-sm text-destructive">{errors.tags}</p>}
                         </div>
                     )}

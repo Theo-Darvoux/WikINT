@@ -21,18 +21,24 @@ async def _create_user(db: AsyncSession, role: UserRole = UserRole.STUDENT) -> U
     await db.flush()
     return user
 
+
 def _auth_headers(user: User) -> dict[str, str]:
     from app.core.security import create_access_token
+
     token, _ = create_access_token(str(user.id), user.role.value, user.email)
     return {"Authorization": f"Bearer {token}"}
+
 
 @pytest.fixture
 def mock_meili_client():
     with patch("app.services.search.meili_client") as mock:
         yield mock
 
+
 @pytest.mark.asyncio
-async def test_global_search_success(client: AsyncClient, db_session: AsyncSession, mock_meili_client: AsyncMock):
+async def test_global_search_success(
+    client: AsyncClient, db_session: AsyncSession, mock_meili_client: AsyncMock
+):
     user = await _create_user(db_session)
     await db_session.commit()
 
@@ -46,7 +52,7 @@ async def test_global_search_success(client: AsyncClient, db_session: AsyncSessi
         def __init__(self):
             self.results = [
                 MockHits([{"id": "mat1", "title": "Test Material"}], 1),
-                MockHits([{"id": "dir1", "name": "Test Directory"}], 1)
+                MockHits([{"id": "dir1", "name": "Test Directory"}], 1),
             ]
 
     mock_meili_client.multi_search = AsyncMock(return_value=MockMultiSearchResponse())
@@ -66,8 +72,11 @@ async def test_global_search_success(client: AsyncClient, db_session: AsyncSessi
     assert data["items"][1]["search_type"] == "material"
     assert data["items"][1]["title"] == "Test Material"
 
+
 @pytest.mark.asyncio
-async def test_global_search_pagination(client: AsyncClient, db_session: AsyncSession, mock_meili_client: AsyncMock):
+async def test_global_search_pagination(
+    client: AsyncClient, db_session: AsyncSession, mock_meili_client: AsyncMock
+):
     user = await _create_user(db_session)
     await db_session.commit()
 
@@ -78,10 +87,7 @@ async def test_global_search_pagination(client: AsyncClient, db_session: AsyncSe
 
     class MockMultiSearchResponse:
         def __init__(self):
-            self.results = [
-                MockHits([{"id": "mat1", "title": "Mat"}], 10),
-                MockHits([], 0)
-            ]
+            self.results = [MockHits([{"id": "mat1", "title": "Mat"}], 10), MockHits([], 0)]
 
     mock_meili_client.multi_search = AsyncMock(return_value=MockMultiSearchResponse())
 
@@ -96,11 +102,14 @@ async def test_global_search_pagination(client: AsyncClient, db_session: AsyncSe
     # Verify the offset passed to Meilisearch
     mock_meili_client.multi_search.assert_called_once()
     call_args = mock_meili_client.multi_search.call_args[0][0]
-    assert call_args[0]["offset"] == 5
-    assert call_args[1]["offset"] == 5
+    assert call_args[0].offset == 5
+    assert call_args[1].offset == 5
+
 
 @pytest.mark.asyncio
-async def test_global_search_validation(client: AsyncClient, db_session: AsyncSession, mock_meili_client: AsyncMock):
+async def test_global_search_validation(
+    client: AsyncClient, db_session: AsyncSession, mock_meili_client: AsyncMock
+):
     user = await _create_user(db_session)
     await db_session.commit()
     headers = _auth_headers(user)

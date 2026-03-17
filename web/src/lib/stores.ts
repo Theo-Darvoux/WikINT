@@ -1,9 +1,10 @@
 import { create } from "zustand";
 
-interface UserBrief {
+export interface UserBrief {
     id: string;
     email: string;
     display_name: string | null;
+    avatar_url: string | null;
     role: string;
     onboarded: boolean;
 }

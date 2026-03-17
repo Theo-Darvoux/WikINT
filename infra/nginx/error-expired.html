@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Expired | WikINT</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: #09090b;
+            color: #fafafa;
+            font-family: sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            overflow: hidden;
+        }
+        .glow {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 50% 0%, rgba(59,130,246,0.15) 0%, transparent 50%);
+            pointer-events: none;
+        }
+        .card {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 28rem;
+            text-align: center;
+            padding: 2.5rem;
+            background: rgba(24,24,27,0.5);
+            border-radius: 2.5rem;
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(24px);
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+        .icon-wrap {
+            display: flex;
+            justify-content: center;
+        }
+        .icon-circle {
+            height: 5rem;
+            width: 5rem;
+            border-radius: 1.5rem;
+            background: rgba(59,130,246,0.1);
+            border: 1px solid rgba(59,130,246,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .icon-circle svg {
+            height: 2.5rem;
+            width: 2.5rem;
+            color: #3b82f6;
+            stroke: #3b82f6;
+        }
+        .text-block { display: flex; flex-direction: column; gap: 0.5rem; }
+        h1 { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.025em; }
+        p { color: #a1a1aa; font-size: 0.875rem; line-height: 1.625; }
+        .btn-wrap { padding-top: 1rem; }
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.75rem;
+            background: #ffffff;
+            padding: 0.75rem 2rem;
+            font-size: 0.875rem;
+            font-weight: 700;
+            color: #000;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.15s;
+            box-shadow: 0 10px 15px -3px rgba(255,255,255,0.1);
+        }
+        button:hover { transform: scale(1.05); }
+        button:active { transform: scale(0.95); }
+        .error-code {
+            font-size: 0.625rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #52525b;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="glow"></div>
+    <div class="card">
+        <div class="icon-wrap">
+            <div class="icon-circle">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </div>
+        </div>
+        <div class="text-block">
+            <h1>Access Link Expired</h1>
+            <p>For security reasons, file access links are temporary.<br/>Please return to the application and try again.</p>
+        </div>
+        <div class="btn-wrap">
+            <button onclick="window.history.length > 1 ? window.history.back() : window.close()">
+                Go Back
+            </button>
+        </div>
+        <p class="error-code">Error: StorageAccessExpired</p>
+    </div>
+</body>
+</html>

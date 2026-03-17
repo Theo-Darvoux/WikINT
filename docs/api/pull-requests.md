@@ -27,8 +27,8 @@ A PR contains an array of operations in its `payload` JSONB column. Operations a
 
 | Operation | Key Fields | Description |
 |-----------|-----------|-------------|
-| `create_material` | directory_id, title, type, file_key?, attachments?, tags? | Create a new material with optional file and attachments |
-| `edit_material` | material_id, title?, type?, file_key?, diff_summary? | Update material fields, optionally replace the file |
+| `create_material` | directory_id, title, type, tags?, file_key?, attachments? | Create a new material with optional file, attachments, and tags |
+| `edit_material` | material_id, title?, type?, tags?, file_key?, diff_summary? | Update material fields, tags, or replace the file |
 | `delete_material` | material_id | Remove material and its attachment directory |
 | `create_directory` | parent_id?, name, type? | Create a new folder or module |
 | `edit_directory` | directory_id, name?, description?, tags? | Update directory fields |
@@ -39,8 +39,11 @@ A PR contains an array of operations in its `payload` JSONB column. Operations a
 - Maximum **50 operations** per PR
 - Maximum **5 open PRs** per student (unlimited for BUREAU/VIEUX)
 - `file_key` must start with `uploads/{user_id}/` (ownership check)
+- **Scan verification**: All `file_key`s must have a Redis scan cache entry (`upload:scanned:{file_key}`), proving they passed virus scanning via `complete_upload`. Files that haven't been scanned are rejected at PR creation.
+- **File key claiming**: Each `file_key` can only be referenced by one open PR at a time. Attempting to reuse a `file_key` that is already attached to another open PR returns an error.
+- **Attachment validation**: Attachments are validated with a typed `AttachmentOp` model that enforces the same validators as `CreateMaterialOp` (title, type, file_key, file_name, tags, metadata).
 - Attachments cannot be nested (no attachments on attachments)
-- Tags: max 20 per item, max 80 chars each
+- Tags: max **20 per item**, max **20 chars each** (enforced in `PullRequestCreate` schema)
 - Metadata: max 20 keys
 - `temp_id` values must be unique across all operations
 
@@ -66,6 +69,23 @@ During execution, `$dir-1` is resolved to the actual UUID of the created directo
 Operations are sorted using **Kahn's algorithm** (`api/app/services/pr.py:topo_sort_operations`) to ensure dependencies are executed first. If `create_material` references `$dir-1`, the `create_directory` with `temp_id: "$dir-1"` executes first.
 
 Cyclic dependencies are detected and rejected with a `BadRequestError`.
+
+---
+
+## Virus Scanning
+
+Virus scanning happens **synchronously** during `POST /api/upload/complete`. By the time a `file_key` is returned to the client, the file has already been:
+1. Checked for MIME/extension consistency
+2. Stripped of metadata (EXIF, PDF Info) if <50MB
+3. Scanned by ClamAV via the INSTREAM protocol
+
+If the scan fails or ClamAV is unavailable, the upload is rejected (fail-closed with 503). Infected files are deleted and rejected with 400.
+
+Every PR carries a `virus_scan_result` field (VARCHAR(20)). Since all files are pre-scanned, PRs are created with `virus_scan_result = clean` (if files present) or `skipped` (no files). The `pending`, `error`, and `infected` states are no longer set at PR creation.
+
+### Auto-approve for BUREAU / VIEUX
+
+On PR creation, if the author is `BUREAU` or `VIEUX`, the PR is immediately approved and `apply_pr()` is called. No scan checks are needed since files are already clean.
 
 ---
 
@@ -95,6 +115,9 @@ When creating/editing materials with files, the system determines MIME type in p
 2. Guess from filename extension
 3. Fall back to client-provided hint
 
+### Slug Generation
+Material and directory slugs are generated using Unicode-aware `slugify` (NFKD normalization → ASCII → lowercase → dash-separated). Collisions within the same directory are resolved automatically by appending `-2`, `-3`, etc.
+
 ### Circular Ancestry Detection
 `move_item` for directories walks up the parent chain from `new_parent_id` to verify the target directory isn't an ancestor of the item being moved. This prevents creating infinite loops in the directory tree.
 
@@ -112,7 +135,7 @@ When creating/editing materials with files, the system determines MIME type in p
 }
 ```
 
-For BUREAU/VIEUX authors, the PR is auto-approved and applied immediately.
+Validates that all referenced `file_key`s exist in storage and have passed virus scanning (Redis scan cache check). Rejects any `file_key` already claimed by another open PR. For BUREAU/VIEUX authors, the PR is auto-approved and applied immediately (files are already scanned clean at upload time).
 
 **Response**: `PullRequestOut` (201 Created)
 
@@ -162,6 +185,8 @@ Lists PR comments. **Auth**: Required.
 Creates a PR comment. Supports threading via `parent_id`. Notifies the parent comment's author if it's a reply to someone else.
 
 **Request**: `{"body": "Looks good!", "parent_id": null}`
+
+**Validation**: `body` must be between 1 and 10,000 characters.
 
 ---
 

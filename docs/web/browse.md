@@ -49,6 +49,15 @@ When `response.type === "material"`, the page renders the material's file using 
 
 The sidebar opens with the material as target, showing details, comments, annotations, edits, and actions.
 
+## Global Drop Zone
+
+The `GlobalDropZone` component (`web/src/components/pr/global-drop-zone.tsx`) listens for file drag events across the entire application.
+
+- **Overlay**: When a file is dragged over the window, a full-screen blurred overlay appears prompting the user to "Drop files to upload".
+- **Context Awareness**: If the user is currently browsing a directory, dropping files will automatically target that directory in the upload drawer.
+- **Robustness**: The drop zone uses a synchronized counter to handle nested element transitions and correctly dismisses the overlay if the drag is cancelled or leaves the window.
+- **Drawer Integration**: Upon dropping files, the `UploadDrawer` is opened with the files pre-staged and the appropriate directory context resolved.
+
 ### ViewerFab (`viewer-fab.tsx`)
 Fixed bottom-right floating action buttons:
 - **Download** (blue) — links to `/api/materials/{id}/download`

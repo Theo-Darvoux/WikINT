@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import AliasChoices, BaseModel, Field
 
+from app.models.security import VirusScanResult
+
 
 class MaterialVersionOut(BaseModel):
     id: uuid.UUID
@@ -15,6 +17,7 @@ class MaterialVersionOut(BaseModel):
     diff_summary: str | None
     author_id: uuid.UUID | None
     pr_id: uuid.UUID | None
+    virus_scan_result: VirusScanResult
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -34,6 +37,7 @@ class MaterialOut(BaseModel):
     metadata: dict = Field(validation_alias=AliasChoices("metadata_", "metadata"))
     download_count: int
     attachment_count: int = 0
+    tags: list[str] = []
     created_at: datetime
     updated_at: datetime
 
@@ -46,7 +50,7 @@ class MaterialDetail(MaterialOut):
 
 class UploadRequestIn(BaseModel):
     filename: str = Field(..., min_length=1, max_length=255)
-    size: int = Field(..., ge=0, le=1_073_741_824)
+    size: int = Field(..., ge=0)  # upper bound enforced by router via MAX_FILE_SIZE_MB setting
     mime_type: str = Field(..., max_length=200)
 
 
@@ -57,7 +61,10 @@ class UploadRequestOut(BaseModel):
 
 
 class UploadCompleteIn(BaseModel):
-    file_key: str
+    file_key: str = Field(
+        ...,
+        pattern=r"^uploads/[0-9a-f\-]{36}/[0-9a-f\-]{36}/.{1,255}$",
+    )
 
 
 class UploadCompleteOut(BaseModel):

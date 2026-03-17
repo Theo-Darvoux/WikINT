@@ -5,8 +5,7 @@ import { UploadCloud, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024; // 1 GB
+import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB } from "@/lib/file-utils";
 
 interface UploadRequestOut {
     upload_url: string;
@@ -39,7 +38,7 @@ export function PRFileUpload({ onUploadComplete }: { onUploadComplete: (result: 
             const selected = e.target.files[0];
             if (selected.size > MAX_FILE_SIZE) {
                 setStatus("error");
-                setErrorMsg("File exceeds the 1 GB size limit");
+                setErrorMsg(`File exceeds the ${MAX_FILE_SIZE_MB} MiB size limit`);
                 return;
             }
             setFile(selected);

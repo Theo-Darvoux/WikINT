@@ -166,9 +166,7 @@ async def test_create_reply_annotation(client: AsyncClient, db_session: AsyncSes
     assert data["reply_to_id"] == str(root.id)
 
 
-async def test_create_reply_to_nonexistent(
-    client: AsyncClient, db_session: AsyncSession
-) -> None:
+async def test_create_reply_to_nonexistent(client: AsyncClient, db_session: AsyncSession) -> None:
     user = await _create_user(db_session)
     material, _ = await _create_material(db_session, user)
     await db_session.commit()
@@ -185,9 +183,7 @@ async def test_create_reply_to_nonexistent(
     assert response.status_code == 404
 
 
-async def test_list_annotations_with_threads(
-    client: AsyncClient, db_session: AsyncSession
-) -> None:
+async def test_list_annotations_with_threads(client: AsyncClient, db_session: AsyncSession) -> None:
     user = await _create_user(db_session)
     material, version = await _create_material(db_session, user)
     root = await _create_annotation(db_session, user, material, version)
@@ -289,9 +285,7 @@ async def test_delete_annotation_forbidden(client: AsyncClient, db_session: Asyn
     assert response.status_code == 403
 
 
-async def test_edit_nonexistent_annotation(
-    client: AsyncClient, db_session: AsyncSession
-) -> None:
+async def test_edit_nonexistent_annotation(client: AsyncClient, db_session: AsyncSession) -> None:
     user = await _create_user(db_session)
     await db_session.commit()
 
@@ -304,9 +298,7 @@ async def test_edit_nonexistent_annotation(
     assert response.status_code == 404
 
 
-async def test_delete_nonexistent_annotation(
-    client: AsyncClient, db_session: AsyncSession
-) -> None:
+async def test_delete_nonexistent_annotation(client: AsyncClient, db_session: AsyncSession) -> None:
     user = await _create_user(db_session)
     await db_session.commit()
 

@@ -2,7 +2,7 @@
 
 WikINT uses ARQ (Async Redis Queue) for background job processing. A dedicated `worker` container runs the same codebase as the API but executes queued functions and cron jobs instead of serving HTTP requests.
 
-**Key files**: `api/app/workers/settings.py`, `api/app/workers/process_upload.py`, `api/app/workers/cleanup_uploads.py`, `api/app/workers/gdpr_cleanup.py`, `api/app/workers/year_rollover.py`, `api/app/workers/index_content.py`
+**Key files**: `api/app/workers/settings.py`, `api/app/workers/cleanup_uploads.py`, `api/app/workers/cleanup_orphans.py`, `api/app/workers/minio_ops.py`, `api/app/workers/gdpr_cleanup.py`, `api/app/workers/year_rollover.py`, `api/app/workers/index_content.py`
 
 ---
 
@@ -13,9 +13,10 @@ WikINT uses ARQ (Async Redis Queue) for background job processing. A dedicated `
 ```python
 class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
-    functions = [process_upload, index_material, index_directory, delete_indexed_item]
+    functions = [index_material, index_directory, delete_indexed_item, delete_minio_objects]
     cron_jobs = [
         cron(cleanup_uploads, hour=3, minute=0),
+        cron(cleanup_orphans, hour=3, minute=30),
         cron(gdpr_cleanup, hour=4, minute=0),
         cron(year_rollover, month={9}, day=1, hour=2, minute=0),
     ]
@@ -30,14 +31,6 @@ The worker is started with: `uv run arq app.workers.settings.WorkerSettings`
 ## On-Demand Functions
 
 These functions are enqueued by the API via the post-commit job pattern.
-
-### `process_upload(ctx, file_key: str)`
-
-**File**: `api/app/workers/process_upload.py`
-
-Processes a newly uploaded file:
-- Retrieves object metadata from MinIO (size, content type)
-- Logs upload information
 
 ### `index_material(ctx, material_id: UUID)`
 
@@ -66,6 +59,12 @@ Same as `index_material` but for directories:
 
 Removes a document from a Meilisearch index. Used when materials or directories are deleted.
 
+### `delete_minio_objects(ctx, keys: list[str])`
+
+**File**: `api/app/workers/minio_ops.py`
+
+Asynchronously deletes a list of MinIO object keys to prevent blocking the main database transaction. Triggered when materials or their attachments are deleted, removing the physical files to prevent storage leaks.
+
 ---
 
 ## Cron Jobs
@@ -75,11 +74,24 @@ Removes a document from a Meilisearch index. Used when materials or directories 
 **File**: `api/app/workers/cleanup_uploads.py`
 
 Removes stale temporary uploads from MinIO:
-1. Lists all objects under the `uploads/` prefix
-2. Deletes any object with `LastModified` older than 24 hours
-3. Uses S3 paginator for large result sets
+1. Queries all `file_key`s from open PRs' payloads into a protected set
+2. Lists all objects under the `uploads/` prefix
+3. Skips any file referenced by an open PR
+4. Deletes any remaining object with `LastModified` older than 24 hours
+5. Uses S3 paginator for large result sets
 
-This catches uploads where the user obtained a presigned URL but never completed the upload flow.
+**Error handling**: Database and S3 connection failures propagate to arq for automatic retry (no outer try/except wrapping the whole function). Per-file deletion errors are caught individually and logged, so a single failed delete does not abort the rest of the cleanup run. A summary count of failed deletions is logged at the end.
+
+This catches uploads where the user obtained a presigned URL but never completed the upload flow, while protecting files that are still needed by open PRs.
+
+### `cleanup_orphans` -- Daily at 03:30 UTC
+
+**File**: `api/app/workers/cleanup_orphans.py`
+
+Removes orphaned, unreferenced objects in MinIO to save storage space:
+1. Queries all `file_key` values currently stored in the `MaterialVersion` table.
+2. Iterates over the `materials/` prefix in MinIO.
+3. Deletes any file older than 24 hours that no longer has a corresponding database entry.
 
 ### `gdpr_cleanup` -- Daily at 04:00 UTC
 
@@ -145,7 +157,7 @@ worker:
       condition: service_healthy
 ```
 
-The worker uses the same Docker image as the API (same `Dockerfile`, same dependencies). It receives the same environment variables except it doesn't need `CLAMAV_*`, `SMTP_*`, or `FRONTEND_URL`.
+The worker uses the same Docker image as the API (same `Dockerfile`, same dependencies). It receives the same environment variables. The worker does not need `CLAMAV_HOST`/`CLAMAV_PORT` (virus scanning is done synchronously by the API during upload), nor `SMTP_*` or `FRONTEND_URL`.
 
 In development, the worker bind-mounts `./api:/app` for live code reloading.
 

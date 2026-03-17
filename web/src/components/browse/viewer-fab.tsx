@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Download, Share2, Paperclip, UploadCloud } from "lucide-react";
+import { Download, Share2, Paperclip, UploadCloud, Loader2, Printer } from "lucide-react";
 import { FlagButton } from "@/components/flags/flag-button";
 import { useDropZoneStore } from "@/components/pr/global-drop-zone";
+import { useDownload } from "@/hooks/use-download";
+import { usePrint } from "@/hooks/use-print";
 import { toast } from "sonner";
 
 interface ViewerFabProps {
@@ -13,11 +15,21 @@ interface ViewerFabProps {
     directoryId?: string;
     attachmentCount?: number;
     isAttachment?: boolean;
+    viewerType?: string;
+    mimeType?: string;
+    fileName?: string;
 }
 
-export function ViewerFab({ materialId, materialTitle, directoryId, attachmentCount = 0, isAttachment = false }: ViewerFabProps) {
+export function ViewerFab({ materialId, materialTitle, directoryId, attachmentCount = 0, isAttachment = false, viewerType = "", mimeType = "", fileName = "" }: ViewerFabProps) {
     const pathname = usePathname();
     const requestUpload = useDropZoneStore((s) => s.requestUpload);
+    const { downloadMaterial, isDownloading } = useDownload();
+    const { print, isPrinting, canPrint } = usePrint({
+        viewerType,
+        materialId,
+        fileName,
+        mimeType,
+    });
 
     const handleShare = () => {
         navigator.clipboard.writeText(window.location.href).then(() => {
@@ -27,13 +39,32 @@ export function ViewerFab({ materialId, materialTitle, directoryId, attachmentCo
 
     return (
         <div className="fixed bottom-20 right-4 z-40 flex flex-col gap-2">
-            <a
-                href={`/api/materials/${materialId}/download`}
-                className="flex h-12 w-12 items-center justify-center rounded-full bg-primary shadow-lg"
+            <button
+                onClick={() => downloadMaterial(materialId)}
+                disabled={isDownloading}
+                className="flex h-12 w-12 items-center justify-center rounded-full bg-primary shadow-lg disabled:opacity-70"
                 aria-label="Download"
             >
-                <Download className="h-5 w-5 text-primary-foreground" />
-            </a>
+                {isDownloading ? (
+                    <Loader2 className="h-5 w-5 animate-spin text-primary-foreground" />
+                ) : (
+                    <Download className="h-5 w-5 text-primary-foreground" />
+                )}
+            </button>
+            {canPrint && (
+                <button
+                    onClick={print}
+                    disabled={isPrinting}
+                    className="flex h-12 w-12 items-center justify-center rounded-full bg-muted shadow-lg disabled:opacity-70"
+                    aria-label="Print"
+                >
+                    {isPrinting ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                        <Printer className="h-5 w-5" />
+                    )}
+                </button>
+            )}
             {!isAttachment && (
                 <>
                     <button

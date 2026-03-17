@@ -66,12 +66,19 @@ Five Zustand stores manage global client-side state:
 
 ## API Client
 
-`web/src/lib/api-client.ts` provides `apiFetch<T>(path, options)`:
+`web/src/lib/api-client.ts` provides three functions built on a shared `apiRequest()` core that handles Bearer token injection and 401 refresh:
 
+| Function | Return Type | Use Case |
+|----------|-------------|----------|
+| `apiFetch<T>(path, options)` | `Promise<T>` (parsed JSON) | Standard API calls (most components) |
+| `apiFetchBlob(path, options)` | `Promise<Blob>` | Binary file viewers (PDF, image, video, audio) |
+| `apiRequest(path, options)` | `Promise<Response>` | When callers need the raw `Response` (text, arrayBuffer) |
+
+Shared behavior:
 - Base URL from `NEXT_PUBLIC_API_URL` (default `http://localhost:8000/api`)
 - Auto-injects Bearer token from localStorage
 - On 401: attempts token refresh via `POST /auth/refresh` (cookie-based), retries original request
-- If refresh fails: clears token, throws error
+- If refresh fails: clears token, throws `ApiError`
 - Custom `ApiError` class with `status` and `message`
 - `skipAuth` option for public endpoints
 

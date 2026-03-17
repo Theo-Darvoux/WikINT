@@ -2,6 +2,7 @@ from app.models.annotation import Annotation
 from app.models.base import Base
 from app.models.comment import Comment
 from app.models.directory import Directory
+from app.models.download_audit import DownloadAudit
 from app.models.flag import Flag
 from app.models.material import Material, MaterialVersion
 from app.models.notification import Notification
@@ -15,6 +16,7 @@ __all__ = [
     "Base",
     "Comment",
     "Directory",
+    "DownloadAudit",
     "Flag",
     "Material",
     "MaterialVersion",

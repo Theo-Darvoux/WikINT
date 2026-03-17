@@ -2,7 +2,7 @@
 
 The annotation system lets users highlight text in documents and start threaded discussions. Annotations update in real-time via Server-Sent Events.
 
-**Key files**: `web/src/hooks/use-annotations.ts`, `web/src/components/annotations/annotation-selection-tooltip.tsx`, `web/src/components/annotations/annotation-thread.tsx`, `web/src/components/sidebar/annotations-tab.tsx`
+**Key files**: `web/src/hooks/use-annotations.ts`, `web/src/lib/sse-client.ts`, `web/src/components/browse/material-viewer.tsx`, `web/src/components/annotations/annotation-selection-tooltip.tsx`, `web/src/components/annotations/annotation-thread.tsx`, `web/src/components/sidebar/annotations-tab.tsx`
 
 ---
 
@@ -43,11 +43,11 @@ sequenceDiagram
 | `editAnnotation(id, body)` | `PATCH /annotations/{id}` |
 | `deleteAnnotation(id)` | `DELETE /annotations/{id}` |
 
-**Real-time**: Opens an `EventSource` to `GET /materials/{id}/sse`. Listens for:
+**Real-time**: Uses `createSSEConnection` from `web/src/lib/sse-client.ts` to connect to `GET /materials/{id}/sse`. Listens for:
 - `annotation_created` → refreshes thread list
 - `annotation_deleted` → refreshes thread list
 
-Auto-reconnects after 5 seconds on error. Cleans up on unmount or when `materialId` changes.
+The shared `createSSEConnection` utility handles auto-reconnection (5s delay) and cleanup. A 50ms `startupDelay` is used to survive React Strict Mode's double-mount in development.
 
 ---
 
@@ -94,4 +94,22 @@ Sidebar tab (desktop only — hidden on mobile) that shows all annotation thread
 - Thread cards with pagination
 - Reply and edit forms inline
 - Empty state shows help text explaining how to create annotations
-- Uses the `useAnnotations` hook for all data operations
+- Consumes `AnnotationsContext` (see below) — does **not** open its own SSE connection
+
+---
+
+## AnnotationsContext
+
+`web/src/hooks/use-annotations.ts` also exports:
+
+```ts
+export type AnnotationsAPI = ReturnType<typeof useAnnotations>;
+export const AnnotationsContext = createContext<AnnotationsAPI | null>(null);
+export function useAnnotationsContext(): AnnotationsAPI | null
+```
+
+`MaterialViewer` calls `useAnnotations(materialId)` once and wraps its JSX in `<AnnotationsContext.Provider value={annotationsData}>`. `AnnotationsTab` consumes this context via `useAnnotationsContext()` instead of calling `useAnnotations` itself.
+
+**Why this matters**: Without the context, both `MaterialViewer` and `AnnotationsTab` would each open an independent SSE connection to `/api/materials/{id}/sse`. Radix UI's `TabsContent` unmounts inactive tabs, so switching away from the Annotations tab would tear down its SSE and trigger a CORS false positive on remount. The context approach keeps exactly one SSE connection for the entire viewer lifetime.
+
+The `useAnnotations` SSE connection uses `createSSEConnection` with a 50ms `startupDelay` to survive React Strict Mode's double-mount (which would otherwise cause a CORS error on first render in development).

@@ -1,0 +1,70 @@
+@media print {
+  /* ——— Hide all application chrome ——— */
+  nav,
+  header,
+  footer,
+  [data-sidebar],
+  .mobile-bottom-bar,
+  .cookie-banner {
+    display: none !important;
+  }
+
+  /* Hide floating UI: FABs, toasts, tooltips, dialogs */
+  [class*="viewer-fab"],
+  [class*="fixed"],
+  [role="dialog"],
+  [data-sonner-toaster],
+  [data-radix-popper-content-wrapper] {
+    display: none !important;
+  }
+
+  /* ——— Reset layout constraints ——— */
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Remove the viewport-locked height on the main viewer shell */
+  main,
+  [data-viewer-container],
+  .flex.h-\[calc\(100vh-3\.5rem\)\] {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Let the sidebar column disappear */
+  .shrink-0.border-l {
+    display: none !important;
+  }
+
+  /* ——— Viewer content should expand to fill ——— */
+  .flex-1.min-w-0.min-h-0 {
+    padding: 0 !important;
+    flex: unset !important;
+    width: 100% !important;
+  }
+
+  /* Round border on viewer container is distracting in print */
+  .rounded-lg.border {
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* Ensure images print at full size */
+  img {
+    max-width: 100% !important;
+    page-break-inside: avoid;
+  }
+
+  /* Prevent page breaks inside code blocks */
+  pre, code {
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    page-break-inside: avoid;
+  }
+}

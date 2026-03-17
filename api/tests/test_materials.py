@@ -94,7 +94,7 @@ async def test_get_material(client: AsyncClient, db_session: AsyncSession) -> No
     await _create_version(db_session, material)
     await db_session.commit()
 
-    response = await client.get(f"/api/materials/{material.id}")
+    response = await client.get(f"/api/materials/{material.id}", headers=_auth_headers(user))
     assert response.status_code == 200
     data = response.json()
     assert data["title"] == "Test Material"
@@ -108,16 +108,18 @@ async def test_get_material_without_version(client: AsyncClient, db_session: Asy
     material = await _create_material(db_session, directory, user)
     await db_session.commit()
 
-    response = await client.get(f"/api/materials/{material.id}")
+    response = await client.get(f"/api/materials/{material.id}", headers=_auth_headers(user))
     assert response.status_code == 200
     data = response.json()
     assert data["title"] == "Test Material"
     assert data["current_version_info"] is None
 
 
-async def test_get_material_not_found(client: AsyncClient) -> None:
+async def test_get_material_not_found(client: AsyncClient, db_session: AsyncSession) -> None:
+    user = await _create_user(db_session)
+    await db_session.commit()
     fake_id = str(uuid.uuid4())
-    response = await client.get(f"/api/materials/{fake_id}")
+    response = await client.get(f"/api/materials/{fake_id}", headers=_auth_headers(user))
     assert response.status_code == 404
 
 
@@ -129,7 +131,9 @@ async def test_list_versions(client: AsyncClient, db_session: AsyncSession) -> N
     await _create_version(db_session, material, 2, file_size=4096)
     await db_session.commit()
 
-    response = await client.get(f"/api/materials/{material.id}/versions")
+    response = await client.get(
+        f"/api/materials/{material.id}/versions", headers=_auth_headers(user)
+    )
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
@@ -143,14 +147,18 @@ async def test_list_versions_empty(client: AsyncClient, db_session: AsyncSession
     material = await _create_material(db_session, directory, user)
     await db_session.commit()
 
-    response = await client.get(f"/api/materials/{material.id}/versions")
+    response = await client.get(
+        f"/api/materials/{material.id}/versions", headers=_auth_headers(user)
+    )
     assert response.status_code == 200
     assert response.json() == []
 
 
-async def test_list_versions_not_found(client: AsyncClient) -> None:
+async def test_list_versions_not_found(client: AsyncClient, db_session: AsyncSession) -> None:
+    user = await _create_user(db_session)
+    await db_session.commit()
     fake_id = str(uuid.uuid4())
-    response = await client.get(f"/api/materials/{fake_id}/versions")
+    response = await client.get(f"/api/materials/{fake_id}/versions", headers=_auth_headers(user))
     assert response.status_code == 404
 
 
@@ -162,7 +170,9 @@ async def test_get_specific_version(client: AsyncClient, db_session: AsyncSessio
     await _create_version(db_session, material, 2, file_size=8192)
     await db_session.commit()
 
-    response = await client.get(f"/api/materials/{material.id}/versions/2")
+    response = await client.get(
+        f"/api/materials/{material.id}/versions/2", headers=_auth_headers(user)
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["version_number"] == 2
@@ -177,7 +187,9 @@ async def test_get_specific_version_not_found(
     material = await _create_material(db_session, directory, user)
     await db_session.commit()
 
-    response = await client.get(f"/api/materials/{material.id}/versions/999")
+    response = await client.get(
+        f"/api/materials/{material.id}/versions/999", headers=_auth_headers(user)
+    )
     assert response.status_code == 404
 
 
@@ -203,7 +215,9 @@ async def test_list_attachments(client: AsyncClient, db_session: AsyncSession) -
     )
     await db_session.commit()
 
-    response = await client.get(f"/api/materials/{parent.id}/attachments")
+    response = await client.get(
+        f"/api/materials/{parent.id}/attachments", headers=_auth_headers(user)
+    )
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
@@ -217,14 +231,20 @@ async def test_list_attachments_empty(client: AsyncClient, db_session: AsyncSess
     material = await _create_material(db_session, directory, user)
     await db_session.commit()
 
-    response = await client.get(f"/api/materials/{material.id}/attachments")
+    response = await client.get(
+        f"/api/materials/{material.id}/attachments", headers=_auth_headers(user)
+    )
     assert response.status_code == 200
     assert response.json() == []
 
 
-async def test_list_attachments_not_found(client: AsyncClient) -> None:
+async def test_list_attachments_not_found(client: AsyncClient, db_session: AsyncSession) -> None:
+    user = await _create_user(db_session)
+    await db_session.commit()
     fake_id = str(uuid.uuid4())
-    response = await client.get(f"/api/materials/{fake_id}/attachments")
+    response = await client.get(
+        f"/api/materials/{fake_id}/attachments", headers=_auth_headers(user)
+    )
     assert response.status_code == 404
 
 

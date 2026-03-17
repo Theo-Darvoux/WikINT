@@ -41,7 +41,7 @@ export function LayoutShell({ children }: { children: ReactNode }) {
     return (
         <div className="flex flex-col min-h-screen">
             <Navbar />
-            <main className="flex-1 w-full flex flex-col print:m-0 print:p-0 print:block print:h-auto">
+            <main className="flex-1 w-full flex flex-col">
                 {shouldHideContent ? (
                     <div className="flex-1 flex items-center justify-center min-h-[50vh]">
                         {/* Empty or simple loader while redirecting */}

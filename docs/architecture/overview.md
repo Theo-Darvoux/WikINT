@@ -234,15 +234,18 @@ sequenceDiagram
 
 The system uses **Server-Sent Events** for two real-time channels:
 
+All SSE queue infrastructure lives in `api/app/core/sse.py`, which provides reusable queue management and a shared `sse_event_stream()` async generator used by both SSE endpoints. On the frontend, `web/src/lib/sse-client.ts` provides `createSSEConnection()` — a shared reconnecting EventSource utility used by both hooks.
+
 ### Notification SSE
 - Endpoint: `GET /api/notifications/sse?token=` (token in query param because EventSource cannot send headers)
-- Server maintains `_sse_queues: Dict[user_id → asyncio.Queue]` in `api/app/services/notification.py`
+- Auth: `SSEUser` dependency in `api/app/dependencies/auth.py` validates the query-param JWT
+- Server maintains `_user_queues: Dict[user_id → asyncio.Queue]` in `api/app/core/sse.py`
 - Events: `notification` (new notification data), `ping` (30s keepalive)
 - Multi-tab coordination on the frontend uses **BroadcastChannel API**: first tab becomes "leader" and opens the EventSource, others listen via the channel
 
 ### Material Annotation SSE
 - Endpoint: `GET /api/materials/{id}/sse`
-- Server maintains `_material_queues: Dict[material_id → list[asyncio.Queue]]`
+- Server maintains `_topic_queues: Dict[topic → list[asyncio.Queue]]` in `api/app/core/sse.py`
 - Events: `annotation_created`, `annotation_deleted`, `ping`
 - Enables collaborative annotation — all users viewing the same material see new annotations in real time
 
@@ -258,11 +261,11 @@ The ARQ worker (`api/app/workers/settings.py`) runs as a separate container cons
 | `index_material` | `api/app/workers/index_content.py` | Material created/edited via PR |
 | `index_directory` | `api/app/workers/index_content.py` | Directory created/edited via PR |
 | `delete_indexed_item` | `api/app/workers/index_content.py` | Material/directory deleted via PR |
-| `process_upload` | `api/app/workers/process_upload.py` | File upload completed |
 
 **Scheduled cron jobs**:
 | Task | File | Schedule | Purpose |
 |------|------|----------|---------|
 | `cleanup_uploads` | `api/app/workers/cleanup_uploads.py` | Daily 3:00 AM | Delete stale uploads older than 24h |
+| `cleanup_orphans` | `api/app/workers/cleanup_orphans.py` | Daily 3:30 AM | Delete orphaned material files in MinIO |
 | `gdpr_cleanup` | `api/app/workers/gdpr_cleanup.py` | Daily 4:00 AM | Hard-delete users soft-deleted 30+ days ago |
 | `year_rollover` | `api/app/workers/year_rollover.py` | Sept 1, 2:00 AM | Promote academic years (1A→2A→3A+) |

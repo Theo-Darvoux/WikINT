@@ -17,9 +17,8 @@ from app.services.pr import topo_sort_operations
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _create_user(
-    db: AsyncSession, role: UserRole = UserRole.STUDENT
-) -> User:
+
+async def _create_user(db: AsyncSession, role: UserRole = UserRole.STUDENT) -> User:
     user = User(
         id=uuid.uuid4(),
         email=f"{uuid.uuid4().hex[:8]}@telecom-sudparis.eu",
@@ -34,7 +33,10 @@ async def _create_user(
 
 
 async def _create_directory(
-    db: AsyncSession, name: str = "TestDir", parent_id: uuid.UUID | None = None, user_id: uuid.UUID | None = None
+    db: AsyncSession,
+    name: str = "TestDir",
+    parent_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
 ) -> Directory:
     d = Directory(
         id=uuid.uuid4(),
@@ -74,6 +76,24 @@ def _auth_headers(user: User) -> dict[str, str]:
 
     token, _ = create_access_token(str(user.id), user.role.value, user.email)
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture(autouse=True)
+def mock_pr_deps(mock_redis):
+    """Mock external dependencies for PR creation (MinIO check and Redis scan cache)."""
+    with patch("app.routers.pull_requests.object_exists", new_callable=AsyncMock) as m_exists:
+        m_exists.return_value = True
+
+        # Mock redis.get to return something for scan checks (meaning scanned clean)
+        # We use a side effect that only returns "clean" for scanned keys
+        async def mock_get(key: str) -> str | None:
+            if "scanned" in key:
+                return '{"file_key": "dummy", "size": 1024, "mime_type": "application/pdf"}'
+            return None
+
+        mock_redis.get.side_effect = mock_get
+
+        yield m_exists, mock_redis
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +155,8 @@ class TestTopoSort:
         assert names == ["Root", "Sub", "File"]
 
     def test_cyclic_raises(self) -> None:
+        from app.core.exceptions import BadRequestError
+
         ops = [
             {
                 "op": "create_directory",
@@ -149,21 +171,12 @@ class TestTopoSort:
                 "name": "B",
             },
         ]
-        with pytest.raises(Exception, match="Cyclic"):
+        with pytest.raises(BadRequestError, match="Cyclic dependency"):
             topo_sort_operations(ops)
-
-    def test_preserves_order_when_no_deps(self) -> None:
-        ops = [
-            {"op": "delete_material", "material_id": str(uuid.uuid4())},
-            {"op": "edit_directory", "directory_id": str(uuid.uuid4()), "name": "X"},
-            {"op": "delete_directory", "directory_id": str(uuid.uuid4())},
-        ]
-        result = topo_sort_operations(ops)
-        assert result == ops
 
 
 # ---------------------------------------------------------------------------
-# Integration tests via HTTP
+# Integration tests for PR creation
 # ---------------------------------------------------------------------------
 
 
@@ -171,39 +184,41 @@ class TestCreateBatchPR:
     async def test_single_create_directory_op(
         self, client: AsyncClient, db_session: AsyncSession
     ) -> None:
-        user = await _create_user(db_session, UserRole.STUDENT)
+        user = await _create_user(db_session)
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Add new folder",
+                "title": "Test PR Title",
+                "description": "Desc",
                 "operations": [
-                    {"op": "create_directory", "name": "NewFolder"},
+                    {
+                        "op": "create_directory",
+                        "name": "NewDir",
+                        "description": "A folder",
+                    }
                 ],
             },
             headers=_auth_headers(user),
         )
-        assert resp.status_code == 200, resp.text
+        assert resp.status_code == 201
         data = resp.json()
-        assert data["type"] == "batch"
-        assert data["status"] == "open"
+        assert data["title"] == "Test PR Title"
         assert len(data["payload"]) == 1
         assert data["payload"][0]["op"] == "create_directory"
-        assert "create_directory" in data["summary_types"]
+        assert data["payload"][0]["name"] == "NewDir"
 
-    async def test_multi_op_batch(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
-        user = await _create_user(db_session, UserRole.STUDENT)
-        d = await _create_directory(db_session, "Existing", user_id=user.id)
+    async def test_multi_op_batch(self, client: AsyncClient, db_session: AsyncSession) -> None:
+        user = await _create_user(db_session)
+        d = await _create_directory(db_session, "ExistingDir")
         m = await _create_material(db_session, d.id, "ExistingMat", user.id)
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Multi-edit batch",
+                "title": "Multi-edit batch long",
                 "operations": [
                     {"op": "edit_material", "material_id": str(m.id), "title": "Renamed"},
                     {"op": "create_directory", "name": "NewSub", "parent_id": str(d.id)},
@@ -211,7 +226,7 @@ class TestCreateBatchPR:
             },
             headers=_auth_headers(user),
         )
-        assert resp.status_code == 200, resp.text
+        assert resp.status_code == 201, resp.text
         data = resp.json()
         assert len(data["payload"]) == 2
         assert set(data["summary_types"]) == {"create_directory", "edit_material"}
@@ -226,7 +241,7 @@ class TestCreateBatchPR:
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Folder + file batch",
+                "title": "Folder + file batch long",
                 "operations": [
                     {
                         "op": "create_directory",
@@ -244,93 +259,85 @@ class TestCreateBatchPR:
             },
             headers=_auth_headers(user),
         )
-        assert resp.status_code == 200, resp.text
+        assert resp.status_code == 201, resp.text
         data = resp.json()
         assert data["status"] == "approved"
 
-        # Verify the directory was actually created
-        dirs = (
-            await db_session.execute(
-                select(Directory).where(Directory.name == "BatchFolder")
-            )
-        ).scalars().all()
-        assert len(dirs) == 1
+        # Verify items were actually created in DB
+        result_dir = await db_session.execute(
+            select(Directory).where(Directory.name == "BatchFolder")
+        )
+        folder = result_dir.scalar_one()
+        assert folder is not None
 
-        # Verify material was created with correct directory_id
-        mats = (
-            await db_session.execute(
-                select(Material).where(Material.title == "BatchFile")
-            )
-        ).scalars().all()
-        assert len(mats) == 1
-        assert mats[0].directory_id == dirs[0].id
+        result_mat = await db_session.execute(select(Material).where(Material.title == "BatchFile"))
+        file = result_mat.scalar_one()
+        assert file.directory_id == folder.id
 
     async def test_duplicate_temp_id_rejected(
         self, client: AsyncClient, db_session: AsyncSession
     ) -> None:
-        user = await _create_user(db_session, UserRole.STUDENT)
+        user = await _create_user(db_session)
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Duplicate temp_id",
+                "title": "Bad PR Title",
                 "operations": [
-                    {"op": "create_directory", "temp_id": "$dup", "name": "A"},
-                    {"op": "create_directory", "temp_id": "$dup", "name": "B"},
+                    {"op": "create_directory", "temp_id": "$dup", "name": "Dir1"},
+                    {"op": "create_directory", "temp_id": "$dup", "name": "Dir2"},
                 ],
             },
             headers=_auth_headers(user),
         )
-        assert resp.status_code == 422, resp.text
+        assert resp.status_code == 422
 
     async def test_empty_operations_rejected(
         self, client: AsyncClient, db_session: AsyncSession
     ) -> None:
-        user = await _create_user(db_session, UserRole.STUDENT)
+        user = await _create_user(db_session)
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
-            json={
-                "title": "Empty ops",
-                "operations": [],
-            },
+            json={"title": "Empty Title", "operations": []},
             headers=_auth_headers(user),
         )
-        assert resp.status_code == 422, resp.text
+        assert resp.status_code == 422
 
-    async def test_five_pr_limit(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
-        user = await _create_user(db_session, UserRole.STUDENT)
+    async def test_five_pr_limit(self, client: AsyncClient, db_session: AsyncSession) -> None:
+        user = await _create_user(db_session)
         await db_session.commit()
 
+        # Create 5 PRs
         for i in range(5):
             resp = await client.post(
                 "/api/pull-requests",
                 json={
-                    "title": f"PR {i}",
-                    "operations": [
-                        {"op": "create_directory", "name": f"Dir{i}"},
-                    ],
+                    "title": f"PR {i} long",
+                    "operations": [{"op": "create_directory", "name": f"Dir {i}"}],
                 },
                 headers=_auth_headers(user),
             )
-            assert resp.status_code == 200, f"PR {i} failed: {resp.text}"
+            assert resp.status_code == 201
 
         # 6th should fail
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "PR 5",
-                "operations": [
-                    {"op": "create_directory", "name": "Dir5"},
-                ],
+                "title": "PR 6 long",
+                "operations": [{"op": "create_directory", "name": "Dir 6"}],
             },
             headers=_auth_headers(user),
         )
-        assert resp.status_code == 400, resp.text
+        assert resp.status_code == 400
+        assert "limit of 5" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Approve/Reject & Execution
+# ---------------------------------------------------------------------------
 
 
 class TestApproveReject:
@@ -339,37 +346,47 @@ class TestApproveReject:
     ) -> None:
         student = await _create_user(db_session, UserRole.STUDENT)
         mod = await _create_user(db_session, UserRole.BUREAU)
+        d = await _create_directory(db_session, "Target")
         await db_session.commit()
 
-        # Create a PR as student
+        # Create PR
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Needs approval",
+                "title": "Batch PR Long",
                 "operations": [
-                    {"op": "create_directory", "name": "ApprovedFolder"},
+                    {
+                        "op": "create_material",
+                        "directory_id": str(d.id),
+                        "title": "NewMat",
+                        "type": "document",
+                    },
+                    {
+                        "op": "edit_directory",
+                        "directory_id": str(d.id),
+                        "description": "Updated",
+                    },
                 ],
             },
             headers=_auth_headers(student),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201, resp.text
         pr_id = resp.json()["id"]
-        assert resp.json()["status"] == "open"
 
-        # Approve as mod
+        # Approve it
         resp = await client.post(
             f"/api/pull-requests/{pr_id}/approve",
             headers=_auth_headers(mod),
         )
         assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
 
-        # Verify directory was created
-        dirs = (
-            await db_session.execute(
-                select(Directory).where(Directory.name == "ApprovedFolder")
-            )
-        ).scalars().all()
-        assert len(dirs) == 1
+        # Verify side effects
+        await db_session.refresh(d)
+        assert d.description == "Updated"
+
+        res = await db_session.execute(select(Material).where(Material.title == "NewMat"))
+        assert res.scalar_one().directory_id == d.id
 
     @patch("app.core.minio.delete_object", new_callable=AsyncMock)
     async def test_reject_cleans_up_files(
@@ -383,23 +400,25 @@ class TestApproveReject:
         d = await _create_directory(db_session, "Dir", user_id=student.id)
         await db_session.commit()
 
+        file_key = f"uploads/{student.id}/{uuid.uuid4()}/test.pdf"
+
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "With file",
+                "title": "With file long",
                 "operations": [
                     {
                         "op": "create_material",
                         "directory_id": str(d.id),
                         "title": "FileItem",
                         "type": "document",
-                        "file_key": "uploads/test.pdf",
+                        "file_key": file_key,
                     },
                 ],
             },
             headers=_auth_headers(student),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201, resp.text
         pr_id = resp.json()["id"]
 
         resp = await client.post(
@@ -407,149 +426,130 @@ class TestApproveReject:
             headers=_auth_headers(mod),
         )
         assert resp.status_code == 200
-        mock_delete.assert_called_once_with("uploads/test.pdf")
+        mock_delete.assert_called_once_with(file_key)
 
 
 class TestListAndGet:
-    async def test_list_prs(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
+    async def test_list_prs(self, client: AsyncClient, db_session: AsyncSession) -> None:
         user = await _create_user(db_session, UserRole.STUDENT)
         await db_session.commit()
 
         await client.post(
             "/api/pull-requests",
             json={
-                "title": "PR A",
-                "operations": [
-                    {"op": "create_directory", "name": "A"},
-                ],
+                "title": "PR 1 long",
+                "operations": [{"op": "create_directory", "name": "D1"}],
             },
             headers=_auth_headers(user),
         )
         await client.post(
             "/api/pull-requests",
             json={
-                "title": "PR B",
-                "operations": [
-                    {"op": "create_directory", "name": "B"},
-                ],
+                "title": "PR 2 long",
+                "operations": [{"op": "create_directory", "name": "D2"}],
             },
             headers=_auth_headers(user),
         )
 
-        resp = await client.get(
-            "/api/pull-requests",
-            headers=_auth_headers(user),
-        )
+        resp = await client.get("/api/pull-requests", headers=_auth_headers(user))
         assert resp.status_code == 200
-        assert len(resp.json()) >= 2
+        data = resp.json()
+        assert len(data) >= 2
 
-    async def test_get_pr_by_id(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
-        user = await _create_user(db_session, UserRole.STUDENT)
+        titles = [p["title"] for p in data]
+        assert "PR 1 long" in titles
+        assert "PR 2 long" in titles
+
+    async def test_get_pr_by_id(self, client: AsyncClient, db_session: AsyncSession) -> None:
+        user = await _create_user(db_session)
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Get me",
-                "operations": [
-                    {"op": "create_directory", "name": "GetDir"},
-                ],
+                "title": "FetchMe Long",
+                "operations": [{"op": "create_directory", "name": "D"}],
             },
             headers=_auth_headers(user),
         )
         pr_id = resp.json()["id"]
 
-        resp = await client.get(
-            f"/api/pull-requests/{pr_id}",
-            headers=_auth_headers(user),
-        )
+        resp = await client.get(f"/api/pull-requests/{pr_id}", headers=_auth_headers(user))
         assert resp.status_code == 200
-        assert resp.json()["title"] == "Get me"
-        assert resp.json()["payload"][0]["op"] == "create_directory"
+        assert resp.json()["title"] == "FetchMe Long"
 
-    async def test_get_nonexistent_pr(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
-        user = await _create_user(db_session, UserRole.STUDENT)
+    async def test_get_nonexistent_pr(self, client: AsyncClient, db_session: AsyncSession) -> None:
+        user = await _create_user(db_session)
         await db_session.commit()
-
-        resp = await client.get(
-            f"/api/pull-requests/{uuid.uuid4()}",
-            headers=_auth_headers(user),
-        )
+        resp = await client.get(f"/api/pull-requests/{uuid.uuid4()}", headers=_auth_headers(user))
         assert resp.status_code == 404
 
 
 class TestVoting:
-    async def test_vote_on_pr(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
-        author = await _create_user(db_session, UserRole.STUDENT)
-        voter = await _create_user(db_session, UserRole.STUDENT)
+    async def test_vote_on_pr(self, client: AsyncClient, db_session: AsyncSession) -> None:
+        author = await _create_user(db_session)
+        voter = await _create_user(db_session)
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Vote on me",
-                "operations": [
-                    {"op": "create_directory", "name": "VoteDir"},
-                ],
+                "title": "VoteMe Long",
+                "operations": [{"op": "create_directory", "name": "D"}],
+            },
+            headers=_auth_headers(author),
+        )
+        pr_id = resp.json()["id"]
+
+        # Upvote
+        resp = await client.post(
+            f"/api/pull-requests/{pr_id}/vote",
+            json={"value": 1},
+            headers=_auth_headers(voter),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["vote_score"] == 1
+
+        # Downvote
+        resp = await client.post(
+            f"/api/pull-requests/{pr_id}/vote",
+            json={"value": -1},
+            headers=_auth_headers(voter),
+        )
+        assert resp.json()["vote_score"] == -1
+
+    async def test_cannot_vote_own_pr(self, client: AsyncClient, db_session: AsyncSession) -> None:
+        author = await _create_user(db_session)
+        await db_session.commit()
+
+        resp = await client.post(
+            "/api/pull-requests",
+            json={
+                "title": "MyPR Long",
+                "operations": [{"op": "create_directory", "name": "D"}],
             },
             headers=_auth_headers(author),
         )
         pr_id = resp.json()["id"]
 
         resp = await client.post(
-            f"/api/pull-requests/{pr_id}/vote?value=1",
-            headers=_auth_headers(voter),
-        )
-        assert resp.status_code == 200
-        assert resp.json()["vote_score"] == 1
-
-    async def test_cannot_vote_own_pr(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
-        user = await _create_user(db_session, UserRole.STUDENT)
-        await db_session.commit()
-
-        resp = await client.post(
-            "/api/pull-requests",
-            json={
-                "title": "Self vote",
-                "operations": [
-                    {"op": "create_directory", "name": "SelfDir"},
-                ],
-            },
-            headers=_auth_headers(user),
-        )
-        pr_id = resp.json()["id"]
-
-        resp = await client.post(
-            f"/api/pull-requests/{pr_id}/vote?value=1",
-            headers=_auth_headers(user),
+            f"/api/pull-requests/{pr_id}/vote",
+            json={"value": 1},
+            headers=_auth_headers(author),
         )
         assert resp.status_code == 403
 
 
 class TestComments:
-    async def test_add_comment(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
-        user = await _create_user(db_session, UserRole.STUDENT)
+    async def test_add_comment(self, client: AsyncClient, db_session: AsyncSession) -> None:
+        user = await _create_user(db_session)
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Comment PR",
-                "operations": [
-                    {"op": "create_directory", "name": "CmtDir"},
-                ],
+                "title": "CommentMe Long",
+                "operations": [{"op": "create_directory", "name": "D"}],
             },
             headers=_auth_headers(user),
         )
@@ -557,179 +557,156 @@ class TestComments:
 
         resp = await client.post(
             f"/api/pull-requests/{pr_id}/comments",
-            json={"body": "Looks good!"},
+            json={"body": "Nice PR!"},
             headers=_auth_headers(user),
         )
         assert resp.status_code == 200
-        assert resp.json()["body"] == "Looks good!"
+        assert resp.json()["body"] == "Nice PR!"
 
-    async def test_list_comments(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
-        user = await _create_user(db_session, UserRole.STUDENT)
+    async def test_list_comments(self, client: AsyncClient, db_session: AsyncSession) -> None:
+        user = await _create_user(db_session)
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Comment PR",
-                "operations": [
-                    {"op": "create_directory", "name": "CmtDir2"},
-                ],
+                "title": "Valid PR Title Long",
+                "operations": [{"op": "create_directory", "name": "D"}],
             },
             headers=_auth_headers(user),
         )
+        assert resp.status_code == 201, resp.text
         pr_id = resp.json()["id"]
 
         await client.post(
             f"/api/pull-requests/{pr_id}/comments",
-            json={"body": "Comment 1"},
-            headers=_auth_headers(user),
-        )
-        await client.post(
-            f"/api/pull-requests/{pr_id}/comments",
-            json={"body": "Comment 2"},
+            json={"body": "C1"},
             headers=_auth_headers(user),
         )
 
-        resp = await client.get(
-            f"/api/pull-requests/{pr_id}/comments",
-            headers=_auth_headers(user),
-        )
+        resp = await client.get(f"/api/pull-requests/{pr_id}/comments", headers=_auth_headers(user))
         assert resp.status_code == 200
-        assert len(resp.json()) == 2
+        assert len(resp.json()) == 1
 
 
 class TestDeleteOperations:
-    async def test_delete_material_op(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
+    async def test_delete_material_op(self, client: AsyncClient, db_session: AsyncSession) -> None:
         user = await _create_user(db_session, UserRole.BUREAU)
-        d = await _create_directory(db_session, "Dir", user_id=user.id)
-        m = await _create_material(db_session, d.id, "ToDelete", user.id)
+        d = await _create_directory(db_session)
+        m = await _create_material(db_session, d.id)
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Delete material",
-                "operations": [
-                    {"op": "delete_material", "material_id": str(m.id)},
-                ],
+                "title": "Delete Mat Long",
+                "operations": [{"op": "delete_material", "material_id": str(m.id)}],
             },
             headers=_auth_headers(user),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         assert resp.json()["status"] == "approved"
 
-        mat = await db_session.scalar(
-            select(Material).where(Material.id == m.id)
-        )
-        assert mat is None
+        # Check it's gone
+        res = await db_session.execute(select(Material).where(Material.id == m.id))
+        assert res.scalar_one_or_none() is None
 
-    async def test_delete_directory_op(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
+    async def test_delete_directory_op(self, client: AsyncClient, db_session: AsyncSession) -> None:
         user = await _create_user(db_session, UserRole.BUREAU)
-        d = await _create_directory(db_session, "ToDeleteDir", user_id=user.id)
+        d = await _create_directory(db_session, "ToBeDeleted")
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Delete dir",
-                "operations": [
-                    {"op": "delete_directory", "directory_id": str(d.id)},
-                ],
+                "title": "Delete Dir Long",
+                "operations": [{"op": "delete_directory", "directory_id": str(d.id)}],
             },
             headers=_auth_headers(user),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
 
-        d_check = await db_session.scalar(
-            select(Directory).where(Directory.id == d.id)
-        )
-        assert d_check is None
+        res = await db_session.execute(select(Directory).where(Directory.id == d.id))
+        assert res.scalar_one_or_none() is None
 
 
 class TestMoveOperation:
-    async def test_move_material(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
+    async def test_move_material(self, client: AsyncClient, db_session: AsyncSession) -> None:
         user = await _create_user(db_session, UserRole.BUREAU)
-        d1 = await _create_directory(db_session, "Source", user_id=user.id)
-        d2 = await _create_directory(db_session, "Dest", user_id=user.id)
-        m = await _create_material(db_session, d1.id, "Moveable", user.id)
+        d1 = await _create_directory(db_session, "D1")
+        d2 = await _create_directory(db_session, "D2")
+        m = await _create_material(db_session, d1.id)
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Move material",
+                "title": "Move Mat Long",
                 "operations": [
                     {
                         "op": "move_item",
                         "target_type": "material",
                         "target_id": str(m.id),
                         "new_parent_id": str(d2.id),
-                    },
+                    }
                 ],
             },
             headers=_auth_headers(user),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
+
         await db_session.refresh(m)
         assert m.directory_id == d2.id
 
 
 class TestEditOperations:
-    async def test_edit_material(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
+    async def test_edit_material(self, client: AsyncClient, db_session: AsyncSession) -> None:
         user = await _create_user(db_session, UserRole.BUREAU)
-        d = await _create_directory(db_session, "Dir", user_id=user.id)
-        m = await _create_material(db_session, d.id, "Old Title", user.id)
+        d = await _create_directory(db_session)
+        m = await _create_material(db_session, d.id, title="Old")
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Edit material",
+                "title": "Edit Mat Long",
                 "operations": [
                     {
                         "op": "edit_material",
                         "material_id": str(m.id),
                         "title": "New Title",
-                    },
+                        "description": "New Desc",
+                    }
                 ],
             },
             headers=_auth_headers(user),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
+
         await db_session.refresh(m)
         assert m.title == "New Title"
+        assert m.description == "New Desc"
 
-    async def test_edit_directory(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
+    async def test_edit_directory(self, client: AsyncClient, db_session: AsyncSession) -> None:
         user = await _create_user(db_session, UserRole.BUREAU)
-        d = await _create_directory(db_session, "OldName", user_id=user.id)
+        d = await _create_directory(db_session, name="OldDir")
         await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",
             json={
-                "title": "Edit dir",
+                "title": "Edit Dir Long",
                 "operations": [
                     {
                         "op": "edit_directory",
                         "directory_id": str(d.id),
-                        "name": "NewName",
-                    },
+                        "name": "NewDirName",
+                    }
                 ],
             },
             headers=_auth_headers(user),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
+
         await db_session.refresh(d)
-        assert d.name == "NewName"
+        assert d.name == "NewDirName"

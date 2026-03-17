@@ -22,6 +22,15 @@ cd WikINT
 # 2. Create environment file
 cp .env.example .env
 
+# Note: For local development, ensure .env has:
+# MINIO_PUBLIC_ENDPOINT=localhost:9000
+# This allows the browser to reach MinIO for file uploads/downloads.
+#
+# NEXT_PUBLIC_API_URL is set automatically to http://localhost/api by
+# docker-compose.dev.yml (routing browser API calls through nginx on port 80).
+# SSE (real-time annotations / notifications) requires this nginx routing.
+# If running Next.js outside Docker, set NEXT_PUBLIC_API_URL=http://localhost:8000/api.
+
 # 3. Start the development stack
 ./run.sh --dev
 ```
@@ -86,9 +95,9 @@ The development compose overlay (`docker-compose.dev.yml`) bind-mounts source di
 
 | Service | Mount | Effect |
 |---------|-------|--------|
-| `api` | `./api:/app` | Uvicorn `--reload` watches for Python file changes |
-| `worker` | `./api:/app` | Worker restarts on code changes |
-| `web` | `./web:/app` | Next.js HMR via `pnpm dev` |
+| `api` | `./api:/app`<br>`/app/.venv` | Uvicorn `--reload` watches for Python file changes. The `.venv` anonymous volume prevents local environment conflicts. |
+| `worker` | `./api:/app`<br>`/app/.venv` | Worker restarts on code changes. The `.venv` volume isolates the container's virtual environment. |
+| `web` | `./web:/app`<br>`/app/node_modules` | Next.js HMR via `pnpm dev`. The `node_modules` volume prevents local dependencies from shadowing the container's. |
 
 Changes to source files are reflected immediately without rebuilding containers.
 
@@ -137,6 +146,40 @@ docker compose down -v
 
 ---
 
+## Docker Security & Resource Configuration
+
+### Network Segmentation
+
+Services are split across two Docker networks for isolation:
+
+| Network | Services |
+|---------|----------|
+| `frontend` | nginx, web, api |
+| `backend` | api, worker, postgres, redis, minio, meilisearch, clamav |
+
+The `api` service bridges both networks: it receives proxied requests from nginx on the `frontend` network and communicates with databases and storage on the `backend` network. Nginx also joins both networks so it can proxy to both `api` and `web` on the frontend and reach `minio` on the backend for the `/s3/` location.
+
+### Resource Limits
+
+Each service has CPU and memory limits configured via `deploy.resources.limits` in the compose files. This prevents any single service from consuming all host resources during development.
+
+### Non-Root API Container
+
+The API Dockerfile creates a non-root `appuser` and runs the application under that user. This limits the blast radius of any potential container escape.
+
+### Rate Limiting
+
+Rate limiting is always active, including in development mode. Dev mode uses higher limits to avoid friction during testing:
+
+| Endpoint | Dev Limit |
+|----------|-----------|
+| Upload requests | 100/min, 1000/day |
+| Download requests | 100/min, 2000/day |
+
+Production limits are lower (see the upload and download endpoint documentation).
+
+---
+
 ## Troubleshooting
 
 ### ClamAV takes a long time to start
@@ -159,3 +202,21 @@ Clear the Next.js cache:
 docker compose exec web rm -rf .next
 docker compose restart web
 ```
+
+### SSE / CORS errors in browser console
+
+If you see "can't establish connection" for `/api/…/sse` endpoints, the nginx dev proxy
+is not serving on port 80.
+
+**In Docker dev** — `docker-compose.dev.yml` exposes nginx on port 80 and sets
+`NEXT_PUBLIC_API_URL=http://localhost/api`. SSE connections go through nginx which has
+proper streaming config (`proxy_buffering off`, `proxy_cache off`). Recreate the
+containers to pick up the setting:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate
+```
+
+**Outside Docker** — set `NEXT_PUBLIC_API_URL=http://localhost:8000/api` and ensure the
+API is running on port 8000. CORS is configured to allow `http://localhost:3000` so
+direct requests work.

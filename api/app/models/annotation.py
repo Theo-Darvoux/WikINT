@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     ForeignKey,
@@ -9,6 +12,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.material import Material
+    from app.models.user import User
 
 
 class Annotation(UUIDMixin, TimestampMixin, Base):
@@ -34,11 +41,11 @@ class Annotation(UUIDMixin, TimestampMixin, Base):
         ForeignKey("annotations.id", ondelete="SET NULL")
     )
 
-    material: Mapped["Material"] = relationship(back_populates="annotations")  # noqa: F821
-    author: Mapped["User | None"] = relationship(back_populates="annotations")  # noqa: F821
-    thread_root: Mapped["Annotation | None"] = relationship(
+    material: Mapped[Material] = relationship(back_populates="annotations")  # noqa: F821
+    author: Mapped[User | None] = relationship(back_populates="annotations")  # noqa: F821
+    thread_root: Mapped[Annotation | None] = relationship(
         remote_side="Annotation.id", foreign_keys=[thread_id]
     )
-    reply_to: Mapped["Annotation | None"] = relationship(
+    reply_to: Mapped[Annotation | None] = relationship(
         remote_side="Annotation.id", foreign_keys=[reply_to_id]
     )

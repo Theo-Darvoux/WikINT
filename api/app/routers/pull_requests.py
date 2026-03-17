@@ -2,31 +2,40 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from redis.asyncio import Redis
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
+from app.core.minio import object_exists
+from app.core.redis import get_redis
 from app.dependencies.auth import get_current_user
+from app.models.material import Material
 from app.models.pull_request import PRComment, PRStatus, PRVote, PullRequest
+from app.models.security import VirusScanResult
 from app.models.user import User, UserRole
 from app.schemas.pull_request import (
     PRCommentCreate,
     PRCommentOut,
+    PRVoteIn,
     PullRequestCreate,
     PullRequestOut,
 )
 from app.services.notification import notify_user
 from app.services.pr import apply_pr
 
+_SCAN_CACHE_PREFIX = "upload:scanned:"
+
 router = APIRouter(prefix="/api/pull-requests", tags=["pull-requests"])
 
 
-@router.post("", response_model=PullRequestOut)
+@router.post("", response_model=PullRequestOut, status_code=201)
 async def create_pull_request(
     data: PullRequestCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ) -> PullRequestOut:
     # Check 5 open PR limit for non-privileged users
     if current_user.role not in [UserRole.BUREAU, UserRole.VIEUX]:
@@ -42,8 +51,6 @@ async def create_pull_request(
             raise BadRequestError("You have reached the limit of 5 open pull requests")
 
     # Validate file_key ownership and attachment nesting
-    from app.models.material import Material
-
     user_upload_prefix = f"uploads/{current_user.id}/"
     for op in data.operations:
         # Ensure file_keys belong to the submitting user
@@ -54,23 +61,113 @@ async def create_pull_request(
         if op.op == "create_material":
             # Check attachment file_keys too
             for att in getattr(op, "attachments", []):
-                att_fk = att.get("file_key") if isinstance(att, dict) else None
+                att_fk = (
+                    att.file_key
+                    if hasattr(att, "file_key")
+                    else (att.get("file_key") if isinstance(att, dict) else None)
+                )
                 if att_fk and not att_fk.startswith(user_upload_prefix):
                     raise BadRequestError("Attachment file_key does not belong to you")
 
             pmid = getattr(op, "parent_material_id", None)
             if pmid and isinstance(pmid, uuid.UUID):
-                parent_mat = await db.scalar(
-                    select(Material).where(Material.id == pmid)
-                )
+                parent_mat = await db.scalar(select(Material).where(Material.id == pmid))
                 if parent_mat and parent_mat.parent_material_id is not None:
-                    raise BadRequestError(
-                        "Cannot attach a material to another attachment"
+                    raise BadRequestError("Cannot attach a material to another attachment")
+
+    # Validate that all referenced file_keys actually exist in storage
+    for op in data.operations:
+        fk = getattr(op, "file_key", None)
+        if fk:
+            if not await object_exists(fk):
+                raise BadRequestError(f"File not found in storage: {fk}")
+        for att in getattr(op, "attachments", []):
+            att_fk = (
+                att.file_key
+                if hasattr(att, "file_key")
+                else (att.get("file_key") if isinstance(att, dict) else None)
+            )
+            if att_fk:
+                if not await object_exists(att_fk):
+                    raise BadRequestError(f"Attachment file not found in storage: {att_fk}")
+
+    # Verify every file has been scanned (prevents bypassing complete_upload)
+    for op in data.operations:
+        fk = getattr(op, "file_key", None)
+        if fk and not await redis.get(f"{_SCAN_CACHE_PREFIX}{fk}"):
+            raise BadRequestError(f"File has not been scanned: {fk}")
+        for att in getattr(op, "attachments", []):
+            att_fk = (
+                att.file_key
+                if hasattr(att, "file_key")
+                else (att.get("file_key") if isinstance(att, dict) else None)
+            )
+            if att_fk and not await redis.get(f"{_SCAN_CACHE_PREFIX}{att_fk}"):
+                raise BadRequestError(f"Attachment file has not been scanned: {att_fk}")
+
+    # Prevent file_key reuse across open PRs
+    all_file_keys: set[str] = set()
+    for op in data.operations:
+        fk = getattr(op, "file_key", None)
+        if fk:
+            all_file_keys.add(fk)
+        for att in getattr(op, "attachments", []):
+            att_fk = (
+                att.file_key
+                if hasattr(att, "file_key")
+                else (att.get("file_key") if isinstance(att, dict) else None)
+            )
+            if att_fk:
+                all_file_keys.add(att_fk)
+
+    if all_file_keys:
+        for fk in all_file_keys:
+            if db.bind.dialect.name == "sqlite":
+                # SQLite doesn't support the jsonb_array_elements/->> syntax.
+                # Since this is primarily for tests, we do a Python-based check.
+                stmt = select(PullRequest.payload).where(PullRequest.status == PRStatus.OPEN)
+                res_payloads = await db.scalars(stmt)
+                for p_list in res_payloads:
+                    for op_item in p_list:
+                        if op_item.get("file_key") == fk:
+                            raise BadRequestError(
+                                "File is already referenced by another open pull request"
+                            )
+                        for att_item in op_item.get("attachments", []):
+                            if att_item.get("file_key") == fk:
+                                raise BadRequestError(
+                                    "File is already referenced by another open pull request"
+                                )
+            else:
+                # PostgreSQL optimized path
+                conflict = await db.scalar(
+                    select(PullRequest.id).where(
+                        PullRequest.status == PRStatus.OPEN,
+                        text(
+                            "EXISTS (SELECT 1 FROM jsonb_array_elements(payload) elem "
+                            "WHERE elem->>'file_key' = :fk "
+                            "OR EXISTS (SELECT 1 FROM jsonb_array_elements("
+                            "COALESCE(elem->'attachments', '[]'::jsonb)) att "
+                            "WHERE att->>'file_key' = :fk))"
+                        ).bindparams(fk=fk),
                     )
+                )
+                if conflict:
+                    raise BadRequestError("File is already referenced by another open pull request")
 
     # Serialize operations to list[dict]
     ops_payload = [op.model_dump(mode="json") for op in data.operations]
     summary_types = sorted({op.op for op in data.operations})
+
+    # Files are already scanned clean by upload/complete — mark as CLEAN
+    has_file = any(
+        op.get("file_key")
+        or any(
+            (att.get("file_key") if isinstance(att, dict) else None)
+            for att in op.get("attachments", [])
+        )
+        for op in ops_payload
+    )
 
     pr = PullRequest(
         id=uuid.uuid4(),
@@ -81,6 +178,7 @@ async def create_pull_request(
         payload=ops_payload,
         summary_types=summary_types,
         author_id=current_user.id,
+        virus_scan_result=VirusScanResult.CLEAN if has_file else VirusScanResult.SKIPPED,
     )
     db.add(pr)
     await db.flush()
@@ -92,11 +190,10 @@ async def create_pull_request(
         await apply_pr(db, pr, current_user.id)
         await db.flush()
 
-    await db.refresh(pr)
-    await db.refresh(pr, ["author"])
-    pr.vote_score = 0
-    pr.user_vote = 0
-    return pr
+    await db.refresh(pr, ["author", "created_at", "updated_at"])
+    setattr(pr, "vote_score", 0)
+    setattr(pr, "user_vote", 0)
+    return PullRequestOut.model_validate(pr)
 
 
 @router.get("", response_model=list[PullRequestOut])
@@ -117,35 +214,24 @@ async def list_pull_requests(
     if author_id:
         stmt = stmt.where(PullRequest.author_id == author_id)
 
-    stmt = (
-        stmt.order_by(desc(PullRequest.created_at))
-        .offset((page - 1) * limit)
-        .limit(limit)
-    )
+    stmt = stmt.order_by(desc(PullRequest.created_at)).offset((page - 1) * limit).limit(limit)
     result = await db.execute(stmt)
     prs = result.scalars().all()
 
     out = []
     for pr in prs:
         await db.refresh(pr, ["author"])
-        score = (
-            await db.scalar(
-                select(func.sum(PRVote.value)).where(PRVote.pr_id == pr.id)
-            )
-            or 0
-        )
+        score = await db.scalar(select(func.sum(PRVote.value)).where(PRVote.pr_id == pr.id)) or 0
         user_vote = (
             await db.scalar(
-                select(PRVote.value).where(
-                    PRVote.pr_id == pr.id, PRVote.user_id == current_user.id
-                )
+                select(PRVote.value).where(PRVote.pr_id == pr.id, PRVote.user_id == current_user.id)
             )
             or 0
         )
-        pr.vote_score = score
-        pr.user_vote = user_vote
+        setattr(pr, "vote_score", score)
+        setattr(pr, "user_vote", user_vote)
         out.append(pr)
-    return out
+    return [PullRequestOut.model_validate(pr) for pr in out]
 
 
 @router.get("/for-item", response_model=list[PullRequestOut])
@@ -187,25 +273,19 @@ async def list_pull_requests_for_item(
     out = []
     for pr in prs:
         await db.refresh(pr, ["author"])
-        score = (
-            await db.scalar(
-                select(func.sum(PRVote.value)).where(PRVote.pr_id == pr.id)
-            )
-            or 0
-        )
+        score = await db.scalar(select(func.sum(PRVote.value)).where(PRVote.pr_id == pr.id)) or 0
         user_vote = (
             await db.scalar(
-                select(PRVote.value).where(
-                    PRVote.pr_id == pr.id, PRVote.user_id == current_user.id
-                )
+                select(PRVote.value).where(PRVote.pr_id == pr.id, PRVote.user_id == current_user.id)
             )
             or 0
         )
-        pr.vote_score = score
-        pr.user_vote = user_vote
+        setattr(pr, "vote_score", score)
+        setattr(pr, "user_vote", user_vote)
+        await db.refresh(pr, ["author", "created_at", "updated_at"])
         out.append(pr)
 
-    return out
+    return [PullRequestOut.model_validate(pr) for pr in out]
 
 
 @router.get("/{id}", response_model=PullRequestOut)
@@ -219,32 +299,26 @@ async def get_pull_request(
         raise NotFoundError("Pull request not found")
 
     await db.refresh(pr, ["author"])
-    score = (
-        await db.scalar(
-            select(func.sum(PRVote.value)).where(PRVote.pr_id == pr.id)
-        )
-        or 0
-    )
+    score = await db.scalar(select(func.sum(PRVote.value)).where(PRVote.pr_id == pr.id)) or 0
     user_vote = (
         await db.scalar(
-            select(PRVote.value).where(
-                PRVote.pr_id == pr.id, PRVote.user_id == current_user.id
-            )
+            select(PRVote.value).where(PRVote.pr_id == pr.id, PRVote.user_id == current_user.id)
         )
         or 0
     )
-    pr.vote_score = score
-    pr.user_vote = user_vote
-    return pr
+    setattr(pr, "vote_score", score)
+    setattr(pr, "user_vote", user_vote)
+    return PullRequestOut.model_validate(pr)
 
 
 @router.post("/{id}/vote")
 async def vote_pull_request(
     id: uuid.UUID,
-    value: int,
+    data: PRVoteIn,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
+    value = data.value
     if value not in [-1, 0, 1]:
         raise BadRequestError("Vote value must be -1, 0, or 1")
 
@@ -264,21 +338,14 @@ async def vote_pull_request(
     if vote:
         vote.value = value
     else:
-        vote = PRVote(
-            id=uuid.uuid4(), pr_id=id, user_id=current_user.id, value=value
-        )
+        vote = PRVote(id=uuid.uuid4(), pr_id=id, user_id=current_user.id, value=value)
         db.add(vote)
 
     await db.flush()
 
-    score = (
-        await db.scalar(
-            select(func.sum(PRVote.value)).where(PRVote.pr_id == pr.id)
-        )
-        or 0
-    )
+    score = await db.scalar(select(func.sum(PRVote.value)).where(PRVote.pr_id == pr.id)) or 0
 
-    if pr.author_id != current_user.id:
+    if pr.author_id and pr.author_id != current_user.id:
         await notify_user(
             db,
             pr.author_id,
@@ -291,13 +358,14 @@ async def vote_pull_request(
         pr.status = PRStatus.APPROVED
         pr.reviewed_by = None
         await apply_pr(db, pr, current_user.id)
-        await notify_user(
-            db,
-            pr.author_id,
-            "pr_approved",
-            f'Your PR "{pr.title}" was auto-approved',
-            link=f"/pull-requests/{pr.id}",
-        )
+        if pr.author_id:
+            await notify_user(
+                db,
+                pr.author_id,
+                "pr_approved",
+                f'Your PR "{pr.title}" was auto-approved',
+                link=f"/pull-requests/{pr.id}",
+            )
 
     return {"status": "ok", "vote_score": score}
 
@@ -322,13 +390,14 @@ async def approve_pull_request(
     pr.reviewed_by = current_user.id
 
     await apply_pr(db, pr, current_user.id)
-    await notify_user(
-        db,
-        pr.author_id,
-        "pr_approved",
-        f'Your PR "{pr.title}" was approved',
-        link=f"/pull-requests/{pr.id}",
-    )
+    if pr.author_id:
+        await notify_user(
+            db,
+            pr.author_id,
+            "pr_approved",
+            f'Your PR "{pr.title}" was approved',
+            link=f"/pull-requests/{pr.id}",
+        )
     return {"status": "ok"}
 
 
@@ -370,13 +439,14 @@ async def reject_pull_request(
                 except Exception:
                     pass
 
-    await notify_user(
-        db,
-        pr.author_id,
-        "pr_rejected",
-        f'Your PR "{pr.title}" was rejected',
-        link=f"/pull-requests/{pr.id}",
-    )
+    if pr.author_id:
+        await notify_user(
+            db,
+            pr.author_id,
+            "pr_rejected",
+            f'Your PR "{pr.title}" was rejected',
+            link=f"/pull-requests/{pr.id}",
+        )
     return {"status": "ok"}
 
 
@@ -433,16 +503,12 @@ async def list_pull_request_comments(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> list[PRCommentOut]:
-    stmt = (
-        select(PRComment)
-        .where(PRComment.pr_id == id)
-        .order_by(PRComment.created_at)
-    )
+    stmt = select(PRComment).where(PRComment.pr_id == id).order_by(PRComment.created_at)
     res = await db.execute(stmt)
-    comments = res.scalars().all()
+    comments = list(res.scalars().all())
     for c in comments:
-        await db.refresh(c, ["author"])
-    return comments
+        await db.refresh(c, ["author", "created_at", "updated_at"])
+    return [PRCommentOut.model_validate(c) for c in comments]
 
 
 @router.post("/{id}/comments", response_model=PRCommentOut)
@@ -468,10 +534,8 @@ async def create_pull_request_comment(
     await db.refresh(c, ["author"])
 
     if data.parent_id:
-        parent = await db.scalar(
-            select(PRComment).where(PRComment.id == data.parent_id)
-        )
-        if parent and parent.author_id != current_user.id:
+        parent = await db.scalar(select(PRComment).where(PRComment.id == data.parent_id))
+        if parent and parent.author_id and parent.author_id != current_user.id:
             await notify_user(
                 db,
                 parent.author_id,
@@ -480,5 +544,4 @@ async def create_pull_request_comment(
                 link=f"/pull-requests/{pr.id}",
             )
 
-    return c
-
+    return c  # type: ignore[return-value]

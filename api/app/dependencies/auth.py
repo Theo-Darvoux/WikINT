@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError
 from redis.asyncio import Redis
@@ -45,6 +45,9 @@ async def get_current_user(
     if not user:
         raise UnauthorizedError("User not found")
 
+    if user.deleted_at is not None:
+        raise UnauthorizedError("Account has been deleted")
+
     return user
 
 
@@ -74,3 +77,41 @@ def require_moderator():
 
 
 OnboardedUser = Annotated[User, Depends(require_onboarded())]
+
+
+async def get_sse_user(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+    token: Annotated[str | None, Query()] = None,
+) -> User:
+    """Authenticate via query-param JWT (EventSource cannot send headers)."""
+    if not token:
+        raise UnauthorizedError("Token required as query parameter")
+
+    try:
+        payload = decode_token(token)
+    except InvalidTokenError:
+        raise UnauthorizedError("Invalid token")
+
+    if payload.get("type") != "access":
+        raise UnauthorizedError("Invalid token type")
+
+    jti = payload.get("jti")
+    if jti and await is_token_blacklisted(redis, jti):
+        raise UnauthorizedError("Token has been revoked")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise UnauthorizedError("Invalid token payload")
+
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        raise UnauthorizedError("User not found")
+
+    if user.deleted_at is not None:
+        raise UnauthorizedError("Account has been deleted")
+
+    return user
+
+
+SSEUser = Annotated[User, Depends(get_sse_user)]

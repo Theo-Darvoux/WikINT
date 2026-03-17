@@ -48,7 +48,7 @@ Returns root-level directories (top of the tree).
     {
       "id": "uuid", "name": "1A", "slug": "1a",
       "type": "module", "child_directory_count": 2,
-      "child_material_count": 0, ...
+      "child_material_count": 0, "tags": ["year-1", "core"], ...
     }
   ],
   "materials": []
@@ -63,8 +63,8 @@ Resolves any path to a directory listing, material, or attachment listing.
 {
   "type": "directory_listing",
   "directory": { "id": "uuid", "name": "S1", ... },
-  "directories": [...],
-  "materials": [...],
+  "directories": [{"id": "uuid", "name": "MA101", "tags": ["maths"], ...}],
+  "materials": [{"id": "uuid", "title": "Cours", "tags": ["analyse"], ...}],
   "breadcrumbs": [
     {"id": "uuid", "name": "1A", "slug": "1a"},
     {"id": "uuid", "name": "S1", "slug": "s1"}
@@ -124,6 +124,7 @@ Key fields:
 - `type`: `module` (course-level) or `folder` (organizational)
 - `is_system`: `true` for auto-created directories (e.g., attachment folders)
 - `metadata_`: JSONB for extensible data (course codes, syllabus links, etc.)
+- `tags`: Many-to-many relationship with the `Tag` model
 - `sort_order`: Controls display ordering within parent
 
 ---

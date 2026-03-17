@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     BigInteger,
@@ -15,6 +18,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
+from app.models.security import VirusScanResult
+
+if TYPE_CHECKING:
+    from app.models.annotation import Annotation
+    from app.models.directory import Directory
+    from app.models.tag import Tag
+    from app.models.user import User
 
 
 class Material(UUIDMixin, TimestampMixin, Base):
@@ -36,18 +46,18 @@ class Material(UUIDMixin, TimestampMixin, Base):
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
     download_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
-    directory: Mapped["Directory"] = relationship(back_populates="materials")  # noqa: F821
-    author: Mapped["User | None"] = relationship(foreign_keys=[author_id])  # noqa: F821
-    versions: Mapped[list["MaterialVersion"]] = relationship(
+    directory: Mapped[Directory] = relationship(back_populates="materials")  # noqa: F821
+    author: Mapped[User | None] = relationship(foreign_keys=[author_id])  # noqa: F821
+    versions: Mapped[list[MaterialVersion]] = relationship(
         back_populates="material",
         cascade="all, delete-orphan",
         order_by="MaterialVersion.version_number",
     )
-    parent_material: Mapped["Material | None"] = relationship(
+    parent_material: Mapped[Material | None] = relationship(
         remote_side="Material.id", foreign_keys=[parent_material_id]
     )
-    tags: Mapped[list["Tag"]] = relationship(secondary="material_tags", back_populates="materials")  # noqa: F821
-    annotations: Mapped[list["Annotation"]] = relationship(  # noqa: F821
+    tags: Mapped[list[Tag]] = relationship(secondary="material_tags", back_populates="materials")  # noqa: F821
+    annotations: Mapped[list[Annotation]] = relationship(  # noqa: F821
         back_populates="material", cascade="all, delete-orphan"
     )
 
@@ -71,6 +81,11 @@ class MaterialVersion(UUIDMixin, Base):
     pr_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("pull_requests.id", ondelete="SET NULL")
     )
+    virus_scan_result: Mapped[VirusScanResult] = mapped_column(
+        String(20),
+        default=VirusScanResult.PENDING,
+        server_default="pending",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    material: Mapped["Material"] = relationship(back_populates="versions")
+    material: Mapped[Material] = relationship(back_populates="versions")

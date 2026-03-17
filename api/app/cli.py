@@ -21,8 +21,8 @@ async def _seed(email: str, role: str) -> None:
     from app.models.user import User, UserRole
 
     async with async_session_factory() as session:
-        result = await session.execute(select(User).where(User.email == email))
-        user = result.scalar_one_or_none()
+        user_res = await session.execute(select(User).where(User.email == email))
+        user = user_res.scalar_one_or_none()
 
         role_enum = UserRole(role)
         if user:
@@ -33,20 +33,20 @@ async def _seed(email: str, role: str) -> None:
             session.add(user)
             typer.echo(f"Created user {email} with role '{role}'")
 
-        root_structure = [
+        root_structure: list[tuple[str, list[tuple[str, list]]]] = [
             ("1A", [("S1", []), ("S2", [])]),
             ("2A", [("S1", []), ("S2", [])]),
             ("3A", [("S1", []), ("S2", [])]),
         ]
 
         for year_name, semesters in root_structure:
-            result = await session.execute(
+            year_res = await session.execute(
                 select(Directory).where(
                     Directory.slug == year_name.lower(),
                     Directory.parent_id.is_(None),
                 )
             )
-            year_dir = result.scalar_one_or_none()
+            year_dir = year_res.scalar_one_or_none()
             if not year_dir:
                 year_dir = Directory(
                     name=year_name,
@@ -59,13 +59,13 @@ async def _seed(email: str, role: str) -> None:
                 typer.echo(f"  Created directory: {year_name}")
 
             for sem_name, _ in semesters:
-                result = await session.execute(
+                sem_res = await session.execute(
                     select(Directory).where(
                         Directory.slug == sem_name.lower(),
                         Directory.parent_id == year_dir.id,
                     )
                 )
-                sem_dir = result.scalar_one_or_none()
+                sem_dir = sem_res.scalar_one_or_none()
                 if not sem_dir:
                     sem_dir = Directory(
                         name=sem_name,
@@ -94,19 +94,17 @@ async def _reindex() -> None:
     from app.core.meilisearch import meili_client, setup_meilisearch
     from app.models.directory import Directory
     from app.models.material import Material
-
-    from app.services.directory import get_directory_path
-
     from app.services.directory import get_directory_path
 
     def split_identifiers(text: str) -> str:
         import re
+
         if not text:
             return ""
         # Add space between letters and digits
-        s = re.sub(r'([a-zA-Z]+)(\d+)', r'\1 \2', text)
+        s = re.sub(r"([a-zA-Z]+)(\d+)", r"\1 \2", text)
         # Add space between digits and letters
-        s = re.sub(r'(\d+)([a-zA-Z]+)', r'\1 \2', s)
+        s = re.sub(r"(\d+)([a-zA-Z]+)", r"\1 \2", s)
         return s
 
     # First ensure indexes exist
@@ -114,10 +112,10 @@ async def _reindex() -> None:
 
     async with async_session_factory() as session:
         # Reindex Materials
-        result = await session.execute(
+        m_result = await session.execute(
             select(Material).options(selectinload(Material.tags), selectinload(Material.author))
         )
-        materials = result.scalars().all()
+        materials = m_result.scalars().all()
 
         m_docs = []
         for mat in materials:
@@ -128,26 +126,28 @@ async def _reindex() -> None:
                 if path_parts:
                     ancestor_path = " ".join(p["name"] for p in path_parts)
                     browse_path += "/" + "/".join(p["slug"] for p in path_parts)
-            
+
             browse_path += f"/{mat.slug}"
 
             # Build extra searchable fields (identifiers)
             extra = f"{split_identifiers(mat.title)} {split_identifiers(ancestor_path)}"
 
-            m_docs.append({
-                "id": str(mat.id),
-                "title": mat.title,
-                "slug": mat.slug,
-                "description": mat.description or "",
-                "type": mat.type,
-                "tags": [t.name for t in mat.tags] if mat.tags else [],
-                "authorName": mat.author.display_name if mat.author else None,
-                "directory_id": str(mat.directory_id) if mat.directory_id else None,
-                "created_at": mat.created_at.isoformat() if mat.created_at else None,
-                "ancestor_path": ancestor_path,
-                "extra_searchable": extra,
-                "browse_path": browse_path,
-            })
+            m_docs.append(
+                {
+                    "id": str(mat.id),
+                    "title": mat.title,
+                    "slug": mat.slug,
+                    "description": mat.description or "",
+                    "type": mat.type,
+                    "tags": [t.name for t in mat.tags] if mat.tags else [],
+                    "authorName": mat.author.display_name if mat.author else None,
+                    "directory_id": str(mat.directory_id) if mat.directory_id else None,
+                    "created_at": mat.created_at.isoformat() if mat.created_at else None,
+                    "ancestor_path": ancestor_path,
+                    "extra_searchable": extra,
+                    "browse_path": browse_path,
+                }
+            )
 
         if m_docs:
             await meili_client.index("materials").add_documents(m_docs)
@@ -156,10 +156,8 @@ async def _reindex() -> None:
             typer.echo("0 materials to reindex.")
 
         # Reindex Directories
-        result = await session.execute(
-            select(Directory).options(selectinload(Directory.tags))
-        )
-        directories = result.scalars().all()
+        d_result = await session.execute(select(Directory).options(selectinload(Directory.tags)))
+        directories = d_result.scalars().all()
 
         d_docs = []
         for dir_obj in directories:
@@ -170,29 +168,31 @@ async def _reindex() -> None:
                 if path_parts:
                     ancestor_path = " ".join(p["name"] for p in path_parts)
                     browse_path += "/" + "/".join(p["slug"] for p in path_parts)
-            
+
             browse_path += f"/{dir_obj.slug}"
 
             metadata = dir_obj.metadata_ or {}
             code = metadata.get("code") or ""
-            
+
             # Build extra searchable fields (identifiers)
             extra = f"{split_identifiers(dir_obj.name)} {split_identifiers(code)} {split_identifiers(ancestor_path)}"
 
-            d_docs.append({
-                "id": str(dir_obj.id),
-                "name": dir_obj.name,
-                "slug": dir_obj.slug,
-                "type": dir_obj.type.value if dir_obj.type else "folder",
-                "description": dir_obj.description or "",
-                "tags": [t.name for t in dir_obj.tags] if dir_obj.tags else [],
-                "code": code,
-                "parent_id": str(dir_obj.parent_id) if dir_obj.parent_id else None,
-                "created_at": dir_obj.created_at.isoformat() if dir_obj.created_at else None,
-                "ancestor_path": ancestor_path,
-                "extra_searchable": extra,
-                "browse_path": browse_path,
-            })
+            d_docs.append(
+                {
+                    "id": str(dir_obj.id),
+                    "name": dir_obj.name,
+                    "slug": dir_obj.slug,
+                    "type": dir_obj.type.value if dir_obj.type else "folder",
+                    "description": dir_obj.description or "",
+                    "tags": [t.name for t in dir_obj.tags] if dir_obj.tags else [],
+                    "code": code,
+                    "parent_id": str(dir_obj.parent_id) if dir_obj.parent_id else None,
+                    "created_at": dir_obj.created_at.isoformat() if dir_obj.created_at else None,
+                    "ancestor_path": ancestor_path,
+                    "extra_searchable": extra,
+                    "browse_path": browse_path,
+                }
+            )
 
         if d_docs:
             await meili_client.index("directories").add_documents(d_docs)

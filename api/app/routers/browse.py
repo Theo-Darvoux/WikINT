@@ -70,8 +70,8 @@ async def browse_path(
     breadcrumbs = []
     if directory:
         dir_out = DirectoryOut.model_validate(directory).model_dump()
-        path = await get_directory_path(db, directory.id)
-        breadcrumbs = [DirectoryBreadcrumb(**p).model_dump() for p in path]
+        path_data = await get_directory_path(db, directory.id)
+        breadcrumbs = [DirectoryBreadcrumb(**p).model_dump() for p in path_data]
 
     materials = []
     for m in result.get("materials", []):
@@ -113,5 +113,5 @@ async def get_path(
     directory_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[DirectoryBreadcrumb]:
-    path = await get_directory_path(db, directory_id)
-    return [DirectoryBreadcrumb(**p) for p in path]
+    full_path = await get_directory_path(db, directory_id)
+    return [DirectoryBreadcrumb(**p) for p in full_path]

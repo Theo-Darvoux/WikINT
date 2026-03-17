@@ -3,13 +3,16 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
 from app.models.material import Material, MaterialVersion
 from app.models.view_history import ViewHistory
 
 
-def material_orm_to_dict(m: Material, *, attachment_count: int = 0, directory_path: str | None = None) -> dict:
+def material_orm_to_dict(
+    m: Material, *, attachment_count: int = 0, directory_path: str | None = None
+) -> dict:
     """Convert a Material ORM instance to a plain dict safe for Pydantic validation.
 
     This avoids MissingGreenlet errors caused by SQLAlchemy lazy-loading
@@ -33,6 +36,7 @@ def material_orm_to_dict(m: Material, *, attachment_count: int = 0, directory_pa
         "author_id": m.author_id,
         "metadata": m.metadata_,
         "download_count": m.download_count,
+        "tags": [t.name for t in m.tags] if "tags" in m.__dict__ else [],
         "created_at": m.created_at,
         "updated_at": m.updated_at,
         "attachment_count": attachment_count,
@@ -45,7 +49,9 @@ async def get_material_by_id(db: AsyncSession, material_id: str | uuid.UUID) -> 
         import uuid
 
         material_id = uuid.UUID(material_id)
-    result = await db.execute(select(Material).where(Material.id == material_id))
+    result = await db.execute(
+        select(Material).options(selectinload(Material.tags)).where(Material.id == material_id)
+    )
     material = result.scalar_one_or_none()
     if not material:
         raise NotFoundError("Material not found")
@@ -69,11 +75,14 @@ async def get_material_with_version(db: AsyncSession, material_id: str | uuid.UU
     current_version = version_result.scalar_one_or_none()
 
     # Count attachments (child materials)
-    att_count = await db.scalar(
-        select(func.count())
-        .select_from(Material)
-        .where(Material.parent_material_id == material.id)
-    ) or 0
+    att_count = (
+        await db.scalar(
+            select(func.count())
+            .select_from(Material)
+            .where(Material.parent_material_id == material.id)
+        )
+        or 0
+    )
 
     return {
         "material": material_orm_to_dict(material, attachment_count=att_count),
@@ -103,6 +112,7 @@ async def get_material_version(
     db: AsyncSession, material_id: str, version_number: int
 ) -> MaterialVersion:
     import uuid as _uuid
+
     uid = _uuid.UUID(material_id) if isinstance(material_id, str) else material_id
     await get_material_by_id(db, material_id)
     result = await db.execute(
@@ -146,6 +156,7 @@ async def increment_download_count(db: AsyncSession, material_id: str | uuid.UUI
 
 async def record_view(db: AsyncSession, user_id: str, material_id: str) -> None:
     import uuid as _uuid
+
     uid = _uuid.UUID(user_id) if isinstance(user_id, str) else user_id
     mid = _uuid.UUID(material_id) if isinstance(material_id, str) else material_id
     await get_material_by_id(db, mid)

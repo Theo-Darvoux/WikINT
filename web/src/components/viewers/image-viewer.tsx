@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { apiFetchBlob } from "@/lib/api-client";
 
 interface ImageViewerProps {
     fileKey: string;
@@ -14,8 +15,6 @@ export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
-
     useEffect(() => {
         let objectUrl: string | null = null;
         let cancelled = false;
@@ -27,11 +26,7 @@ export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
             setBlobUrl(null);
         });
 
-        fetch(`${apiBase}/materials/${materialId}/file`, { credentials: "include" })
-            .then((res) => {
-                if (!res.ok) throw new Error(`Failed to load image (${res.status})`);
-                return res.blob();
-            })
+        apiFetchBlob(`/materials/${materialId}/file`)
             .then((blob) => {
                 if (cancelled) return;
                 objectUrl = URL.createObjectURL(blob);
@@ -48,10 +43,10 @@ export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
             cancelled = true;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [materialId, apiBase]);
+    }, [materialId]);
 
     return (
-        <div className="relative flex h-[calc(100vh-10rem)] w-full items-center justify-center bg-muted/20 print:h-auto print:block print:bg-transparent">
+        <div className="relative flex h-[calc(100vh-10rem)] w-full items-center justify-center bg-muted/20">
             {loading && (
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             )}

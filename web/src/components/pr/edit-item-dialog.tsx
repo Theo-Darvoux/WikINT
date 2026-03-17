@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { FilePenLine, FolderPen } from "lucide-react";
 import { toast } from "sonner";
 import { useStagingStore } from "@/lib/staging-store";
+import { TagInput } from "@/components/ui/tag-input";
 
 interface EditItemDialogProps {
     open: boolean;
@@ -39,22 +40,27 @@ export function EditItemDialog({
         isMaterial ? target.data.title ?? "" : target.data.name ?? "",
     );
     const currentDescription = String(target.data.description ?? "");
-    const currentTags = isMaterial
-        ? Array.isArray(target.data.tags)
-            ? (target.data.tags as string[]).join(", ")
-            : ""
-        : "";
+    const rawTags = (target.data.tags ?? []) as unknown[];
+    const currentTags = Array.isArray(rawTags)
+        ? rawTags.map(String).filter(Boolean)
+        : [];
 
     const [title, setTitle] = useState(currentTitle);
     const [description, setDescription] = useState(currentDescription);
-    const [tags, setTags] = useState(currentTags);
+    const [tags, setTags] = useState<string[]>(currentTags);
 
     // Track whether anything actually changed
-    const hasChanges = isMaterial
-        ? title !== currentTitle ||
-          description !== currentDescription ||
-          tags !== currentTags
-        : title !== currentTitle || description !== currentDescription;
+    const hasTagsChanged = () => {
+        if (tags.length !== currentTags.length) return true;
+        // Compare sorted to be order-agnostic for "has changes" check if preferred,
+        // but simple sequence check is safer for PR purposes.
+        return tags.some((t, i) => t !== currentTags[i]);
+    };
+
+    const hasChanges =
+        title !== currentTitle ||
+        description !== currentDescription ||
+        hasTagsChanged();
 
     const canSubmit = hasChanges && title.trim().length > 0;
 
@@ -69,14 +75,7 @@ export function EditItemDialog({
                 ...(description !== currentDescription
                     ? { description: description.trim() || null }
                     : {}),
-                ...(tags !== currentTags
-                    ? {
-                          tags: tags
-                              .split(",")
-                              .map((t) => t.trim())
-                              .filter(Boolean),
-                      }
-                    : {}),
+                ...(hasTagsChanged() ? { tags } : {}),
             });
             toast.success(`Edit to "${title.trim()}" staged`);
         } else {
@@ -87,6 +86,7 @@ export function EditItemDialog({
                 ...(description !== currentDescription
                     ? { description: description.trim() || null }
                     : {}),
+                ...(hasTagsChanged() ? { tags } : {}),
             });
             toast.success(`Edit to folder "${title.trim()}" staged`);
         }
@@ -160,26 +160,20 @@ export function EditItemDialog({
                         />
                     </div>
 
-                    {isMaterial && (
-                        <div className="space-y-1.5">
-                            <label
-                                htmlFor="edit-tags"
-                                className="text-sm font-medium"
-                            >
-                                Tags{" "}
-                                <span className="text-muted-foreground">
-                                    (comma-separated)
-                                </span>
-                            </label>
-                            <Input
-                                id="edit-tags"
-                                value={tags}
-                                onChange={(e) => setTags(e.target.value)}
-                                placeholder="math, algebra, lecture"
-                                maxLength={200}
-                            />
-                        </div>
-                    )}
+                    <div className="space-y-1.5">
+                        <label
+                            htmlFor="edit-tags"
+                            className="text-sm font-medium"
+                        >
+                            Tags
+                        </label>
+                        <TagInput
+                            key={target.id}
+                            tags={tags}
+                            onChange={setTags}
+                            placeholder="math, algebra, lecture..."
+                        />
+                    </div>
                 </div>
 
                 <DialogFooter>

@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import enum
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -14,6 +17,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.material import Material
+    from app.models.tag import Tag
 
 
 class DirectoryType(enum.StrEnum):
@@ -42,15 +49,15 @@ class Directory(UUIDMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
 
-    parent: Mapped["Directory | None"] = relationship(
+    parent: Mapped[Directory | None] = relationship(
         back_populates="children", remote_side="Directory.id"
     )
-    children: Mapped[list["Directory"]] = relationship(
+    children: Mapped[list[Directory]] = relationship(
         back_populates="parent", cascade="all, delete-orphan"
     )
-    materials: Mapped[list["Material"]] = relationship(  # noqa: F821
+    materials: Mapped[list[Material]] = relationship(  # noqa: F821
         back_populates="directory", cascade="all, delete-orphan"
     )
-    tags: Mapped[list["Tag"]] = relationship(  # noqa: F821
+    tags: Mapped[list[Tag]] = relationship(  # noqa: F821
         secondary="directory_tags", back_populates="directories"
     )
