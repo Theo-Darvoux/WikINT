@@ -23,7 +23,7 @@ location /onlyoffice/ {
     proxy_set_header Connection "upgrade";
     proxy_read_timeout 300s;
     proxy_send_timeout 300s;
-    proxy_redirect http://$host/ http://$host/onlyoffice/;
+    proxy_redirect http://$host/ $scheme://$host/onlyoffice/;
 }
 
 # Deny access to ONLYOFFICE internal and admin paths from the public network
