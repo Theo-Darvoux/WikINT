@@ -35,16 +35,31 @@ async def close_s3_client() -> None:
         _s3 = None
 
 
-def _rewrite_host(url: str) -> str:
-    """Swap the internal S3 host with the public endpoint, touching only the netloc and enforcing https in production."""
+def _get_public_endpoint_url() -> str | None:
     if not settings.s3_public_endpoint:
-        return url
-    parsed = urlparse(url)
-
-    # If the public endpoint is not localhost, enforce https to avoid CSP errors.
+        return None
     scheme = "https" if "localhost" not in settings.s3_public_endpoint else "http"
+    return f"{scheme}://{settings.s3_public_endpoint}"
 
-    return urlunparse(parsed._replace(netloc=settings.s3_public_endpoint, scheme=scheme))
+
+@asynccontextmanager
+async def get_presign_s3_client() -> AsyncGenerator:
+    """Yields a client configured with the public endpoint so the signed Host header matches."""
+    public_url = _get_public_endpoint_url()
+    if not public_url:
+        async with get_s3_client() as client:
+            yield client
+        return
+
+    async with _session.client(
+        "s3",
+        endpoint_url=public_url,
+        aws_access_key_id=settings.s3_access_key,
+        aws_secret_access_key=settings.s3_secret_key,
+        region_name=settings.s3_region,
+        config=_s3_config,
+    ) as client:
+        yield client
 
 
 @asynccontextmanager
@@ -77,17 +92,17 @@ async def generate_presigned_put(
     }
     if content_length is not None:
         params["ContentLength"] = content_length
-    async with get_s3_client() as client:
+    async with get_presign_s3_client() as client:
         url: str = await client.generate_presigned_url(
             "put_object",
             Params=params,
             ExpiresIn=ttl,
         )
-        return _rewrite_host(url)
+        return url
 
 
 async def generate_presigned_get(file_key: str, ttl: int = 900) -> str:
-    async with get_s3_client() as client:
+    async with get_presign_s3_client() as client:
         url: str = await client.generate_presigned_url(
             "get_object",
             Params={
@@ -96,7 +111,7 @@ async def generate_presigned_get(file_key: str, ttl: int = 900) -> str:
             },
             ExpiresIn=ttl,
         )
-        return _rewrite_host(url)
+        return url
 
 
 async def object_exists(file_key: str) -> bool:
