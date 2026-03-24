@@ -83,9 +83,7 @@ services:
           memory: 1G
 
   api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
+    image: ghcr.io/theo-darvoux/wikint/api:latest
     restart: unless-stopped
     command: uv run gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
     environment:
@@ -132,9 +130,7 @@ services:
           memory: 512M
 
   worker:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
+    image: ghcr.io/theo-darvoux/wikint/api:latest
     restart: unless-stopped
     entrypoint: ["./worker-start.sh"]
     command: uv run arq app.workers.settings.WorkerSettings
@@ -168,11 +164,7 @@ services:
           memory: 256M
 
   web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    image: ghcr.io/theo-darvoux/wikint/web:latest
     restart: unless-stopped
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
