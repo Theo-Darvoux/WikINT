@@ -50,16 +50,19 @@ The `POSTGRES_*` variables configure the PostgreSQL container itself. The API on
 |----------|---------|-------------|
 | `REDIS_URL` | `redis://redis:6379/0` | Redis connection string. Used for ARQ, rate limiting, token blacklist, SSE |
 
-### MinIO (S3 Storage)
+### S3-Compatible Storage
+
+Supports MinIO (development) and Cloudflare R2 (production).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MINIO_ROOT_USER` | `minioadmin` | MinIO admin username |
-| `MINIO_ROOT_PASSWORD` | `minioadmin` | MinIO admin password |
-| `MINIO_ENDPOINT` | `minio:9000` | Internal S3 API endpoint (container-to-container) |
-| `MINIO_PUBLIC_ENDPOINT` | `null` | Public-facing endpoint for presigned URLs. Set when MinIO is behind a proxy |
-| `MINIO_BUCKET` | `wikint` | S3 bucket name |
-| `MINIO_USE_SSL` | `false` | Use HTTPS for **internal** S3 connections (keep false if using Docker network) |
+| `S3_ACCESS_KEY` | `minioadmin` | S3 access key (MinIO admin user or R2 API token key) |
+| `S3_SECRET_KEY` | `minioadmin` | S3 secret key (MinIO admin password or R2 API token secret) |
+| `S3_ENDPOINT` | `minio:9000` | S3 API endpoint. MinIO: `minio:9000`, R2: `<account-id>.r2.cloudflarestorage.com` |
+| `S3_PUBLIC_ENDPOINT` | `null` | Public-facing endpoint for presigned URLs. Dev: `localhost/s3`, R2: `files.yourdomain.com` |
+| `S3_BUCKET` | `wikint` | S3 bucket name |
+| `S3_REGION` | `us-east-1` | S3 region. MinIO: `us-east-1`, R2: `auto` |
+| `S3_USE_SSL` | `false` | Use HTTPS for S3 connections. `false` for Docker-internal MinIO, `true` for R2 |
 
 ### Meilisearch
 
@@ -103,6 +106,20 @@ The `POSTGRES_*` variables configure the PostgreSQL container itself. The API on
 | `NEXT_PUBLIC_API_URL` | `/api` | API base URL used by the Next.js frontend. In development, defaults to `/api` to route through Nginx. |
 | `API_INTERNAL_URL` | `http://api:8000` | Internal API URL used by the Next.js dev server for server-side requests and rewrites. |
 
+### CORS
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CORS_ALLOWED_HEADERS` | `Content-Type,Authorization,X-Client-ID,Accept,X-Requested-With` | Comma-separated list of allowed CORS headers. Shared between FastAPI and Nginx to keep them in sync. |
+
+### ONLYOFFICE Document Server
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ONLYOFFICE_JWT_SECRET` | `change-me-onlyoffice-jwt-secret` | JWT secret shared between the API and ONLYOFFICE. Must match `JWT_SECRET` on the container. Generate with `openssl rand -hex 32` |
+| `ONLYOFFICE_FILE_TOKEN_SECRET` | `change-me-onlyoffice-file-token-secret` | Separate secret for file-access tokens (API-only, NOT shared with OnlyOffice). Must differ from `ONLYOFFICE_JWT_SECRET`. Generate with `openssl rand -hex 32` |
+| `NEXT_PUBLIC_ONLYOFFICE_URL` | `http://localhost/onlyoffice` | Browser-facing URL for loading the ONLYOFFICE JS API. In Docker dev, nginx proxies `/onlyoffice/` to the container. |
+
 ### Nginx
 
 | Variable | Default | Description |
@@ -135,5 +152,5 @@ def is_dev(self) -> bool:
 
 - **Never commit `.env` to version control**. It is listed in `.gitignore`.
 - Generate `SECRET_KEY` and `MEILI_MASTER_KEY` with `openssl rand -hex 32`
-- Use strong, unique passwords for `POSTGRES_PASSWORD` and `MINIO_ROOT_PASSWORD` in production
-- `MINIO_PUBLIC_ENDPOINT` must be set correctly if MinIO is behind a proxy, otherwise presigned URLs will point to the internal hostname
+- Use strong, unique passwords for `POSTGRES_PASSWORD` and `S3_SECRET_KEY` in production
+- `S3_PUBLIC_ENDPOINT` must be set correctly so presigned URLs point to the public-facing hostname (e.g., R2 custom domain or nginx proxy)

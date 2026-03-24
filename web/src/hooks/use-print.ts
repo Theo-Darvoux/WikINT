@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { fetchMaterialBlob, fetchMaterialFile } from "@/lib/api-client";
 import { isPrintable, printInIframe } from "@/lib/print-utils";
+import { getOfficePrint } from "@/lib/office-print-registry";
 import { toast } from "sonner";
 
 interface UsePrintOptions {
@@ -12,7 +13,7 @@ interface UsePrintOptions {
   mimeType: string;
 }
 
-export function usePrint({ viewerType, materialId, fileName, mimeType }: UsePrintOptions) {
+export function usePrint({ viewerType, materialId, fileName }: UsePrintOptions) {
   const [isPrinting, setIsPrinting] = useState(false);
   const canPrint = isPrintable(viewerType);
 
@@ -73,28 +74,13 @@ export function usePrint({ viewerType, materialId, fileName, mimeType }: UsePrin
         }
 
         case "office": {
-          const fetchFile = () => fetchMaterialFile(materialId);
-          let html = "";
-
-          if (mimeType.includes("wordprocessingml")) {
-            const mammoth = await import("mammoth");
-            const response = await fetchFile();
-            const arrayBuffer = await response.arrayBuffer();
-            const result = await mammoth.convertToHtml({ arrayBuffer });
-            html = result.value;
-          } else if (mimeType.includes("spreadsheet") || mimeType === "application/vnd.ms-excel") {
-            const XLSX = await import("xlsx");
-            const response = await fetchFile();
-            const arrayBuffer = await response.arrayBuffer();
-            const workbook = XLSX.read(arrayBuffer, { type: "array" });
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            html = XLSX.utils.sheet_to_html(firstSheet);
+          const officePrint = getOfficePrint(materialId);
+          if (officePrint) {
+            officePrint();
           } else {
-            toast.info("This office format cannot be printed in-browser. Try downloading the file.");
+            toast.info("Document is still loading. Please try again in a moment.");
             return;
           }
-
-          printInIframe(html, { title: fileName });
           break;
         }
 
@@ -110,7 +96,7 @@ export function usePrint({ viewerType, materialId, fileName, mimeType }: UsePrin
     } finally {
       setIsPrinting(false);
     }
-  }, [viewerType, materialId, fileName, mimeType, canPrint]);
+  }, [viewerType, materialId, fileName, canPrint]);
 
   return { print, isPrinting, canPrint };
 }

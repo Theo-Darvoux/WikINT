@@ -72,20 +72,25 @@ export function MarkdownViewer({ materialId }: MarkdownViewerProps) {
 
     useEffect(() => {
         let cancelled = false;
-        setLoading(true);
-        setError(false);
 
-        fetchMaterialFile(materialId)
-            .then((res) => res.text())
-            .then((text) => {
-                if (!cancelled) setContent(text);
-            })
-            .catch(() => {
-                if (!cancelled) setError(true);
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            });
+        const loadContent = () => {
+            setLoading(true);
+            setError(false);
+
+            fetchMaterialFile(materialId)
+                .then((res) => res.text())
+                .then((text) => {
+                    if (!cancelled) setContent(text);
+                })
+                .catch(() => {
+                    if (!cancelled) setError(true);
+                })
+                .finally(() => {
+                    if (!cancelled) setLoading(false);
+                });
+        };
+
+        loadContent();
 
         return () => {
             cancelled = true;

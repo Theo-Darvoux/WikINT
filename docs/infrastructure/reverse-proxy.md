@@ -2,7 +2,7 @@
 
 Nginx serves as the single entry point for all external traffic. It terminates TLS, routes requests to the API or frontend, and applies security headers.
 
-**Key files**: `infra/nginx/nginx.conf` (production), `infra/nginx/nginx.dev.conf` (development), `docker-compose.yml` (nginx, certbot services)
+**Key files**: `infra/nginx/nginx.conf` (production), `infra/nginx/nginx.dev.conf.template` (development template), `docker-compose.yml` (nginx, certbot services)
 
 ---
 
@@ -27,40 +27,17 @@ graph LR
 | Location | Upstream | Notes |
 |----------|----------|-------|
 | `/api/` | `http://api:8000` | Proxy buffering off, 300s read timeout (for SSE) |
-| `/s3/` | `http://minio:9000` | Private file proxy with error interception (see below) |
 | `/` | `http://web:3000` | WebSocket upgrade headers set (for HMR in case it leaks) |
-| `/.well-known/acme-challenge/` | Filesystem | Certbot ACME challenge files |
 
-### Clean Error Handling (Storage)
+### File Storage
 
-To prevent technical XML errors from leaking to users when access links expire or are invalid, Nginx is configured to intercept storage-level errors:
+In production, file storage is served directly from **Cloudflare R2** via presigned URLs. The browser fetches files from the R2 custom domain (`files.yourdomain.com`), which goes through Cloudflare's CDN automatically. There is no `/s3/` proxy block in the production nginx config.
 
-- **Directive**: `proxy_intercept_errors on` inside the `/s3/` block.
-- **Interception**: 403 Forbidden errors (commonly "Request has expired" in S3) are caught by Nginx.
-- **Custom Page**: Mapped via `error_page 403 =403 /error-expired.html` to a branded, self-contained HTML page (plain inline CSS, no external dependencies) stored in the Nginx container at `/etc/nginx/html/`. The "Go Back" button uses `window.history.back()` for same-tab navigations and `window.close()` for new-tab downloads.
-- **Status code preserved**: The `=403` directive ensures the 403 status code is forwarded to the client. This is critical for presigned PUT uploads — without it, the error page would be served with status 200, causing the browser to silently treat a failed upload as successful.
-
-This ensures that even when a security-sensitive link fails, the user remains within the application's visual context.
-
-### SigV4 Host Header
-
-All presigned URLs are signed using **AWS Signature Version 4**, which includes the `host` header in the canonical request. The `/s3/` location sets:
-
-```nginx
-proxy_set_header Host "minio:9000";
-```
-
-This must match `MINIO_ENDPOINT` (the hostname used when signing). Passing `Host: $host` (the browser's hostname) would cause MinIO to reject the request with a 403 SignatureDoesNotMatch error.
+In development, the `nginx.dev.conf.template` still proxies `/s3/` to the local MinIO container for convenience.
 
 ### TLS
 
-- Port 80 redirects all traffic to HTTPS (301)
-- Certificates from Let's Encrypt at `/etc/letsencrypt/`
-- Protocols: TLSv1.2, TLSv1.3
-- Session cache: 10MB shared
-- Session timeout: 1440 minutes
-- Session tickets: disabled
-- Cipher preference: client-side (modern browsers choose best)
+Production TLS is handled by **Cloudflare Tunnel** — nginx runs HTTP-only on port 80 and Cloudflare terminates TLS at the edge. No certificates are managed locally.
 
 ### Security Headers
 
@@ -95,8 +72,6 @@ proxy_set_header X-Real-IP $remote_addr;
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
-
-The `/s3/` upstream uses `Host "minio:9000"` instead of `Host $host` — see [SigV4 Host Header](#sigv4-host-header) above.
 
 The API upstream also has:
 - `proxy_read_timeout 300s` — long timeout for SSE connections
@@ -141,15 +116,24 @@ location /api/ {
 }
 ```
 
+### CORS Synchronization
+
+The `Access-Control-Allow-Headers` value is defined once in `CORS_ALLOWED_HEADERS` (in `.env`) and consumed by both:
+
+- **FastAPI** (`api/app/config.py`): Pydantic parses the comma-separated string into a `list[str]` for `CORSMiddleware`. This is authoritative in production and bare-uvicorn local dev.
+- **Nginx** (`nginx.dev.conf.template`): The official `nginx:alpine` image's entrypoint substitutes `${CORS_ALLOWED_HEADERS}` at container start. This is authoritative in Docker dev (where Nginx strips backend CORS headers and injects its own).
+
+Both sides have the same default (`Content-Type,Authorization,X-Client-ID,Accept,X-Requested-With`) so things work even without the env var set.
+
 ---
 
-## Development Configuration (`nginx.dev.conf`)
+## Development Configuration (`nginx.dev.conf.template`)
 
-Simplified version without TLS:
+Simplified version without TLS, rendered at container start via the official `nginx:alpine` image's built-in `envsubst` templating:
 
 - **HTTP only** on port 80 (no HTTPS redirect, no certificates)
 - **No security headers** (removed to avoid CSP issues during development)
-- **Explicit CORS handling**: Managed at the Nginx level to support browser debugging (see [CORS Handling](#cors-handling))
+- **Explicit CORS handling**: Managed at the Nginx level to support browser debugging (see [CORS Handling](#cors-handling)). The `Access-Control-Allow-Headers` value is injected from the `CORS_ALLOWED_HEADERS` environment variable, keeping it in sync with FastAPI's `CORSMiddleware` (see [CORS Synchronization](#cors-synchronization))
 - Same upstream routing (`/api/` to api, `/` to web)
 - Same proxy headers and timeout settings
 
@@ -172,32 +156,9 @@ However, `nginx.dev.conf` only listens on port 80, so the self-signed cert is av
 
 ## TLS Certificate Management
 
-The `certbot` service is defined in `docker-compose.yml` but runs on-demand (not as a persistent service):
+Production TLS is managed by **Cloudflare Tunnel**. The `cloudflared` daemon creates an outbound-only encrypted tunnel from your server to Cloudflare's edge network. No inbound ports (80, 443) need to be open.
 
-```yaml
-certbot:
-  image: certbot/certbot
-  volumes:
-    - ./infra/nginx/ssl:/etc/letsencrypt
-    - ./infra/nginx/certbot-webroot:/var/www/certbot
-```
-
-### Initial Certificate
-
-```bash
-docker compose run certbot certonly --webroot \
-  -w /var/www/certbot \
-  -d yourdomain.com
-```
-
-### Renewal
-
-```bash
-docker compose run certbot renew
-docker compose exec nginx nginx -s reload
-```
-
-The ACME challenge directory is served by nginx at `/.well-known/acme-challenge/` from `/var/www/certbot`.
+Nginx runs HTTP-only on port 80 inside the Docker network, bound to `127.0.0.1:9080` on the host. Cloudflare Tunnel forwards traffic to this port.
 
 ---
 
@@ -208,11 +169,8 @@ nginx:
   image: nginx:alpine
   volumes:
     - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    - ./infra/nginx/ssl:/etc/letsencrypt
-    - ./infra/nginx/certbot-webroot:/var/www/certbot
   ports:
-    - "80:80"
-    - "443:443"
+    - "127.0.0.1:9080:80"
   depends_on:
     - api
     - web

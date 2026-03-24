@@ -7,13 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { apiFetch } from "@/lib/api-client";
-import { clearAccessToken } from "@/lib/auth-tokens";
-import { useAuthStore } from "@/lib/stores";
+import { performLogout } from "@/lib/auth-sync";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
     const [exporting, setExporting] = useState(false);
-    const { logout } = useAuthStore();
     const { show } = useConfirmDialog();
     const { theme, setTheme } = useTheme();
 
@@ -45,8 +43,7 @@ export default function SettingsPage() {
             async () => {
                 try {
                     await apiFetch("/users/me", { method: "DELETE" });
-                    clearAccessToken();
-                    logout();
+                    performLogout();
                     toast.success("Account deactivated. Data will be deleted in 30 days.");
                     window.location.href = "/login";
                 } catch {

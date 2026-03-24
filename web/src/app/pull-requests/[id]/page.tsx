@@ -423,7 +423,6 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
         typeCounts[t] = (typeCounts[t] || 0) + 1;
     }
 
-    const isAuthor = user?.id === pr.author?.id;
     const isModerator =
         user?.role === "member" ||
         user?.role === "bureau" ||

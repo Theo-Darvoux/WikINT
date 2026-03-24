@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Maximize, ZoomIn, ZoomOut, BookOpen } from "lucide-react";
+import { ZoomIn, ZoomOut, BookOpen } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Skeleton } from "@/components/ui/skeleton";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import type { ThreadData } from "@/hooks/use-annotations";
 import { fetchMaterialBlob } from "@/lib/api-client";
+import { useFullscreen } from "@/hooks/use-fullscreen";
+import { FullscreenToggle } from "./fullscreen-toggle";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -210,7 +212,7 @@ function LazyBlock({ estimatedHeight, scrollRootRef, children }: {
 export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: PdfViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
-    const [isFullscreen, setIsFullscreen] = useState(false);
+    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
     const [zoom, setZoom] = useState(100);
     const [fileBlob, setFileBlob] = useState<Blob | null>(null);
     const [loading, setLoading] = useState(true);
@@ -261,21 +263,6 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
             ro.disconnect();
             cancelAnimationFrame(rafId);
         };
-    }, []);
-
-    const toggleFullscreen = () => {
-        if (!containerRef.current) return;
-        if (!document.fullscreenElement) {
-            containerRef.current.requestFullscreen();
-        } else {
-            document.exitFullscreen();
-        }
-    };
-
-    useEffect(() => {
-        const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
-        document.addEventListener("fullscreenchange", handleFullscreenChange);
-        return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
     }, []);
 
     useEffect(() => {
@@ -393,14 +380,11 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
                     >
                         <ZoomIn className="h-4 w-4" />
                     </button>
-                    <button
-                        onClick={toggleFullscreen}
+                    <FullscreenToggle
+                        isFullscreen={isFullscreen}
+                        onToggle={toggleFullscreen}
                         disabled={loading}
-                        className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
-                        title="Fullscreen"
-                    >
-                        <Maximize className="h-4 w-4" />
-                    </button>
+                    />
                 </div>
             </div>
 

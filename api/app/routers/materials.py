@@ -1,20 +1,20 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Query
-from fastapi.responses import RedirectResponse, Response, StreamingResponse
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import RedirectResponse, StreamingResponse
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.core.database import get_db
 from app.core.redis import get_redis
-from app.dependencies.auth import CurrentUser, get_user_from_token, security
-from app.models.user import User
+from app.dependencies.auth import CurrentUser, security
 from app.dependencies.rate_limit import rate_limit_downloads
+from app.models.user import User
 from app.schemas.material import MaterialDetail, MaterialOut, MaterialVersionOut
 from app.services.audit import record_download
 from app.services.material import (
+    check_material_access,
     get_material_attachments,
     get_material_version,
     get_material_versions,
@@ -35,6 +35,8 @@ async def get_material(
 ) -> MaterialDetail:
     data = await get_material_with_version(db, material_id)
     mat_dict = data["material"]  # already a plain dict
+    if user:
+        check_material_access(user.id, mat_dict)
     ver = data.get("current_version_info")
     mat_out = MaterialOut.model_validate(mat_dict)
     ver_out = MaterialVersionOut.model_validate(ver) if ver else None
@@ -67,7 +69,7 @@ async def get_material_download_url(
     )
     await db.commit()
 
-    from app.core.minio import generate_presigned_get_url
+    from app.core.storage import generate_presigned_get_url
 
     url = await generate_presigned_get_url(version.file_key)
     return {"url": url}
@@ -86,7 +88,7 @@ async def inline_material(
 
         raise NotFoundError("No file available for preview")
 
-    from app.core.minio import generate_presigned_get_url
+    from app.core.storage import generate_presigned_get_url
 
     url = await generate_presigned_get_url(version.file_key)
     return {"url": url}
@@ -101,15 +103,14 @@ async def stream_material_file(
     token: Annotated[str | None, Query()] = None,
     redis: Annotated[Redis | None, Depends(get_redis)] = None,
 ) -> StreamingResponse:
-    from app.config import settings
-    from app.core.minio import get_s3_client
-    from app.core.exceptions import UnauthorizedError, NotFoundError
+    from app.core.exceptions import NotFoundError, UnauthorizedError
 
     # Manual auth check because we want to allow either header OR query token
     effective_user: User | None = None
-    if user: # security dependency gives HTTPAuthorizationCredentials or None
+    if user:  # security dependency gives HTTPAuthorizationCredentials or None
         try:
             from app.dependencies.auth import get_current_user
+
             effective_user = await get_current_user(user, db, redis)
         except Exception:
             pass
@@ -117,6 +118,7 @@ async def stream_material_file(
     if not effective_user and token:
         try:
             from app.dependencies.auth import get_user_from_token
+
             effective_user = await get_user_from_token(db, redis, token)
         except Exception:
             pass
@@ -139,7 +141,7 @@ async def stream_material_file(
     )
     await db.commit()
 
-    from app.core.minio import generate_presigned_get_url
+    from app.core.storage import generate_presigned_get_url
 
     # Redirect to presigned URL. S3/MinIO handles Range requests (206) perfectly,
     # which is required for browser media players to seek and parse metadata.
@@ -193,7 +195,7 @@ async def get_version_download_url(
     )
     await db.commit()
 
-    from app.core.minio import generate_presigned_get_url
+    from app.core.storage import generate_presigned_get_url
 
     url = await generate_presigned_get_url(version.file_key)
     return {"url": url}

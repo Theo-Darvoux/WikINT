@@ -28,13 +28,15 @@ export default function LoginPage() {
         }
     }, [isAuthenticated, user, router]);
 
-    const handleRequestCode = async (e: FormEvent) => {
-        e.preventDefault();
+    const handleRequestCode = async (e?: FormEvent) => {
+        if (e) e.preventDefault();
         setLoading(true);
         try {
             await requestCode(email);
             setStep("code");
+            setCode("");
             toast.success("Code sent! Check your email.");
+            setTimeout(() => inputRef.current?.focus(), 100);
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to send code");
         } finally {
@@ -92,9 +94,19 @@ export default function LoginPage() {
                     ) : (
                         <form onSubmit={handleVerifyCode} className="space-y-6">
                             <div className="space-y-3">
-                                <Label htmlFor="code" className="text-center block">Verification code</Label>
+                                <div className="flex justify-between items-center px-1">
+                                    <Label htmlFor="code" className="block">Verification code</Label>
+                                    <button 
+                                        type="button" 
+                                        className="text-xs text-primary hover:underline font-medium"
+                                        onClick={() => handleRequestCode()}
+                                        disabled={loading}
+                                    >
+                                        Resend code
+                                    </button>
+                                </div>
                                 <div className="relative cursor-text" onClick={() => inputRef.current?.focus()}>
-                                    {/* Invisible actual input */}
+                                    {/* Invisible actual input - accessible to screen readers */}
                                     <input
                                         ref={inputRef}
                                         id="code"
@@ -106,8 +118,9 @@ export default function LoginPage() {
                                         autoFocus
                                         required
                                         autoComplete="one-time-code"
+                                        aria-label="Code de vérification à 8 caractères"
                                     />
-                                    {/* Visual representation */}
+                                    {/* Visual representation - hidden from screen readers */}
                                     <div className="flex justify-between gap-2" aria-hidden="true">
                                         {[...Array(8)].map((_, i) => (
                                             <div
@@ -125,6 +138,8 @@ export default function LoginPage() {
                                 </div>
                                 <p className="text-center text-xs text-muted-foreground">
                                     Check your school email for an 8-character code.
+                                    <br/>
+                                    <span className="opacity-80">Valid for 10 minutes. Maximum 5 attempts.</span>
                                 </p>
                             </div>
                             <Button type="submit" className="w-full" disabled={loading}>

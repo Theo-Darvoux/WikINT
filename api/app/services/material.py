@@ -58,6 +58,42 @@ async def get_material_by_id(db: AsyncSession, material_id: str | uuid.UUID) -> 
     return material
 
 
+def check_material_access(user_id: uuid.UUID, material: dict) -> None:
+    """
+    Authorization choke-point for material access.
+
+    SECURITY: This function is currently a stub — it always permits access.
+    Any authenticated user can reach any material regardless of ownership or
+    future visibility/ACL fields.  When per-material access controls are
+    introduced (e.g. a `visibility` or `published` flag, course enrollment
+    checks, etc.) they MUST be enforced here so all call sites are covered.
+
+    Do NOT add inline access checks at call sites; route them through this
+    function instead.
+    """
+    # TODO: enforce material["visibility"], enrollment membership, etc. once
+    # those fields exist on the Material model.
+    _ = user_id, material  # suppress unused-variable warnings until implemented
+
+
+async def get_material_file_info(db: AsyncSession, material_id: str | uuid.UUID) -> MaterialVersion:
+    """Single JOIN query returning only the fields needed to serve a file."""
+    if isinstance(material_id, str):
+        material_id = uuid.UUID(material_id)
+    result = await db.execute(
+        select(MaterialVersion)
+        .join(Material, Material.id == MaterialVersion.material_id)
+        .where(
+            Material.id == material_id,
+            MaterialVersion.version_number == Material.current_version,
+        )
+    )
+    version = result.scalar_one_or_none()
+    if not version:
+        raise NotFoundError("No file available")
+    return version
+
+
 async def get_material_with_version(db: AsyncSession, material_id: str | uuid.UUID) -> dict:
 
     if isinstance(material_id, str):

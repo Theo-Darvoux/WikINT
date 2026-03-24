@@ -29,19 +29,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     from app.core.meilisearch import setup_meilisearch
     from app.core.redis import close_arq_pool, init_arq_pool
+    from app.core.storage import close_s3_client, init_s3_client
 
     try:
         await setup_meilisearch()
         await init_arq_pool()
+        await init_s3_client()
     except Exception as e:
-        logger.error(f"Failed to setup search: {e}")
+        logger.error(f"Failed to setup search or storage: {e}")
 
     yield
     logger.info("WikINT API shutting down")
+    await close_arq_pool()
+    await close_s3_client()
     from app.core.redis import redis_client
 
     await redis_client.aclose()
-    await close_arq_pool()
 
 
 app = FastAPI(
@@ -70,7 +73,7 @@ app.add_middleware(
     allow_origins=[settings.frontend_url],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=settings.cors_headers_list,
 )
 
 
@@ -106,6 +109,7 @@ from app.routers.directories import router as directories_router  # noqa: E402
 from app.routers.flags import router as flags_router  # noqa: E402
 from app.routers.materials import router as materials_router  # noqa: E402
 from app.routers.notifications import router as notifications_router  # noqa: E402
+from app.routers.onlyoffice import router as onlyoffice_router  # noqa: E402
 from app.routers.pr_comments import router as pr_comments_router  # noqa: E402
 from app.routers.pull_requests import router as pull_requests_router  # noqa: E402
 from app.routers.search import router as search_router  # noqa: E402
@@ -125,6 +129,7 @@ app.include_router(notifications_router)
 app.include_router(pr_comments_router)
 app.include_router(pull_requests_router)
 app.include_router(search_router)
+app.include_router(onlyoffice_router)
 app.include_router(upload_router)
 app.include_router(users_router)
 

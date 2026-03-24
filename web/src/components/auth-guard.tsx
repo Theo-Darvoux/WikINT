@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, type ReactNode, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { getAccessToken } from "@/lib/auth-tokens";
 
 interface AuthGuardProps {
     children: ReactNode;
@@ -13,14 +12,12 @@ interface AuthGuardProps {
 export function AuthGuard({ children, requireOnboarded = false }: AuthGuardProps) {
     const { user, isAuthenticated, isLoading, fetchMe } = useAuth();
     const router = useRouter();
+    const fetchedRef = useRef(false);
 
     useEffect(() => {
-        const token = getAccessToken();
-        if (token && !isAuthenticated && isLoading) {
+        if (!fetchedRef.current && !isAuthenticated && isLoading) {
+            fetchedRef.current = true;
             fetchMe();
-        } else if (!token && isLoading) {
-            // No token - stop loading immediately so the redirect to /login fires
-            fetchMe(); // This will fail with 401 and clear loading state
         }
     }, [isAuthenticated, isLoading, fetchMe]);
 

@@ -1,0 +1,184 @@
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    sendfile on;
+    tcp_nopush on;
+    keepalive_timeout 65;
+    client_max_body_size 100m;
+
+    # Per-location CSP via map.  'unsafe-eval' is required by the ONLYOFFICE
+    # api.js script which runs in the parent page context.  It is scoped to
+    # the frontend only — API responses get a restrictive policy.
+    map $uri $csp_value {
+        ~^/api/   "default-src 'none'; frame-ancestors 'none'";
+        default   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'self'; connect-src 'self' ws://localhost wss://localhost;";
+    }
+
+    upstream web {
+        server web:3000;
+    }
+
+    upstream api {
+        server api:8000;
+    }
+
+    upstream minio {
+        server minio:9000;
+    }
+
+    # HTTP server - handles both proxying and API
+    server {
+        listen 80;
+        server_name _;
+
+        add_header Content-Security-Policy $csp_value always;
+
+        # Docker's internal DNS resolver — required for variable-based proxy_pass
+        # so nginx resolves upstreams lazily and doesn't fail to start if a service
+        # (e.g. onlyoffice) isn't yet available.
+        resolver 127.0.0.11 valid=10s ipv6=off;
+
+        location /api/ {
+            # CORS handling — DEV ONLY.  Reflects $http_origin (any origin) for
+            # convenience.  Production uses FastAPI's CORSMiddleware with an
+            # explicit allowlist; the prod nginx.conf has NO CORS headers.
+            if ($request_method = 'OPTIONS') {
+                add_header 'Access-Control-Allow-Origin' '$http_origin' always;
+                add_header 'Access-Control-Allow-Credentials' 'true' always;
+                add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE, PATCH' always;
+                add_header 'Access-Control-Allow-Headers' '${CORS_ALLOWED_HEADERS}' always;
+                add_header 'Access-Control-Max-Age' 1728000;
+                add_header 'Content-Length' 0;
+                add_header 'Content-Type' 'text/plain; charset=utf-8';
+                return 204;
+            }
+
+            proxy_pass http://api;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Prevent duplication of CORS headers from the backend
+            proxy_hide_header 'Access-Control-Allow-Origin';
+            proxy_hide_header 'Access-Control-Allow-Credentials';
+            proxy_hide_header 'Access-Control-Allow-Methods';
+            proxy_hide_header 'Access-Control-Allow-Headers';
+
+            # Add CORS headers to successful responses too (handles Nginx-generated errors like 502)
+            add_header 'Access-Control-Allow-Origin' '$http_origin' always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE, PATCH' always;
+            add_header 'Access-Control-Allow-Headers' '${CORS_ALLOWED_HEADERS}' always;
+
+            # Keep connections open for SSE (text/event-stream)
+            proxy_http_version 1.1;
+            proxy_set_header Connection '';
+            proxy_read_timeout 300s;
+            proxy_buffering off;
+            proxy_cache off;
+        }
+
+        # ONLYOFFICE Document Server — serves JS API and editor assets.
+        # Uses a variable so nginx resolves the upstream lazily (doesn't fail
+        # to start if the onlyoffice container isn't ready yet).
+        location /onlyoffice/ {
+            set $onlyoffice_upstream http://onlyoffice;
+            rewrite ^/onlyoffice/(.*)$ /$1 break;
+            proxy_pass $onlyoffice_upstream;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+            # ONLYOFFICE redirects to a versioned build path like /9.3.1-<hash>/...
+            # which loses the /onlyoffice/ prefix. Rewrite the Location header so
+            # the browser follows to /onlyoffice/<hash>/... which this block can proxy.
+            proxy_redirect http://$host/ http://$host/onlyoffice/;
+        }
+
+        # Deny access to ONLYOFFICE internal and admin paths from the public network
+        location ~* ^/(coauthoring|converter|info|healthcheck)/ {
+            return 403;
+        }
+
+        # ONLYOFFICE absolute asset paths (requested by the editor JS).
+        # These prefixes overlap the root namespace, but 404 responses from
+        # ONLYOFFICE fall through to Next.js via @nextjs_fallback, so future
+        # WikINT routes on /meta/, /fonts/, /cache/ etc. will still work.
+        location ~* ^/(cache|web-apps|sdkjs|sdkjs-plugins|fonts|dictionaries|meta|printfile)/ {
+            set $onlyoffice_upstream http://onlyoffice;
+            proxy_pass $onlyoffice_upstream;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+
+            # If ONLYOFFICE doesn't recognise the path (404), fall through to
+            # Next.js so future WikINT routes on these prefixes still work.
+            proxy_intercept_errors on;
+            error_page 404 = @nextjs_fallback;
+        }
+
+        # Fallback for paths that matched the ONLYOFFICE regex but returned 404.
+        location @nextjs_fallback {
+            proxy_pass http://web;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+
+        location / {
+            proxy_pass http://web;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+
+        # S3 Proxy with clean error handling
+        location /s3/ {
+            proxy_pass http://minio/;
+            # SigV4 presigned URLs include 'host' in the signed headers.
+            # Must match the endpoint used when signing (minio:9000).
+            proxy_set_header Host "minio:9000";
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Security
+            add_header X-Content-Type-Options "nosniff" always;
+
+            # Serve friendly error page for expired/invalid presigned URLs.
+            # =403 preserves the status code so XHR uploads correctly detect failures.
+            proxy_intercept_errors on;
+            error_page 403 =403 /error-expired.html;
+        }
+
+        location = /error-expired.html {
+            root /etc/nginx/html;
+            internal;
+        }
+    }
+}

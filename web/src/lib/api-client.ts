@@ -1,4 +1,4 @@
-import { clearAccessToken, getAccessToken, setAccessToken } from "./auth-tokens";
+import { clearAccessToken, getAccessToken, setAccessToken, decodeToken } from "./auth-tokens";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
@@ -10,17 +10,43 @@ async function refreshToken(): Promise<string | null> {
     const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
         credentials: "include",
+        headers: {
+            "X-Client-ID": getClientId(),
+        },
     });
     if (!res.ok) return null;
     const data = await res.json();
     return data.access_token as string;
 }
 
+let _onTokenRefreshed: ((token: string) => void) | null = null;
+export function registerTokenRefreshCallback(cb: (token: string) => void) {
+    _onTokenRefreshed = cb;
+}
+
+export async function lockedRefresh(): Promise<string | null> {
+    if (typeof navigator !== "undefined" && navigator.locks) {
+        return navigator.locks.request("wikint_refresh", async () => {
+            // Another tab may have refreshed while we waited for the lock
+            const existing = getAccessToken();
+            if (existing) {
+                const decoded = decodeToken(existing);
+                if (decoded && decoded.exp > Date.now() / 1000 + 30) {
+                    return existing;
+                }
+            }
+            return refreshToken();
+        });
+    }
+    // Fallback for browsers without Web Locks
+    return refreshToken();
+}
+
 let refreshPromise: Promise<string | null> | null = null;
 
 function refreshTokenOnce(): Promise<string | null> {
     if (!refreshPromise) {
-        refreshPromise = refreshToken().finally(() => { refreshPromise = null; });
+        refreshPromise = lockedRefresh().finally(() => { refreshPromise = null; });
     }
     return refreshPromise;
 }
@@ -62,6 +88,7 @@ export async function apiRequest(
         const newToken = await refreshTokenOnce();
         if (newToken) {
             setAccessToken(newToken);
+            _onTokenRefreshed?.(newToken);
             headers.set("Authorization", `Bearer ${newToken}`);
             res = await fetch(url, { ...fetchOptions, headers, credentials: "include" });
         } else {

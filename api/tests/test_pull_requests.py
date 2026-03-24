@@ -388,7 +388,7 @@ class TestApproveReject:
         res = await db_session.execute(select(Material).where(Material.title == "NewMat"))
         assert res.scalar_one().directory_id == d.id
 
-    @patch("app.core.minio.delete_object", new_callable=AsyncMock)
+    @patch("app.core.storage.delete_object", new_callable=AsyncMock)
     async def test_reject_cleans_up_files(
         self,
         mock_delete: AsyncMock,

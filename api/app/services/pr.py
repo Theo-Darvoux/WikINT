@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.exceptions import BadRequestError, NotFoundError
-from app.core.minio import move_object, read_object_bytes
+from app.core.storage import move_object, read_object_bytes
 from app.models.directory import Directory
 from app.models.material import Material, MaterialVersion
 from app.models.pull_request import PullRequest
@@ -188,7 +188,7 @@ async def _resolve_mime_type(file_key: str, payload: dict) -> str:
 
 async def _get_real_file_size(file_key: str) -> int:
     """Read the actual file size from object storage."""
-    from app.core.minio import get_object_info
+    from app.core.storage import get_object_info
 
     info = await get_object_info(file_key)
     return info["size"]
@@ -408,7 +408,7 @@ async def _exec_delete_material(
 
     if file_keys_to_delete:
         db.info.setdefault("post_commit_jobs", []).append(
-            ("delete_minio_objects", file_keys_to_delete)
+            ("delete_storage_objects", file_keys_to_delete)
         )
 
     return deleted_id

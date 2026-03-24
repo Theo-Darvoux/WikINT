@@ -10,7 +10,7 @@ async def cleanup_orphans(ctx: dict) -> None:
 
     from app.config import settings
     from app.core.database import async_session_factory
-    from app.core.minio import delete_object, get_s3_client
+    from app.core.storage import delete_object, get_s3_client
     from app.models.material import MaterialVersion
 
     # Collect all file_keys currently referenced in the database for materials
@@ -31,7 +31,7 @@ async def cleanup_orphans(ctx: dict) -> None:
     async with get_s3_client() as client:
         paginator = client.get_paginator("list_objects_v2")
         # Check all files inside materials/
-        async for page in paginator.paginate(Bucket=settings.minio_bucket, Prefix="materials/"):
+        async for page in paginator.paginate(Bucket=settings.s3_bucket, Prefix="materials/"):
             for obj in page.get("Contents", []):
                 key = obj["Key"]
                 if key in valid_keys:

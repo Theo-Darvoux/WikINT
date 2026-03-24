@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.exceptions import NotFoundError
-from app.core.minio import generate_presigned_get_url
+from app.core.storage import generate_presigned_get_url
 from app.dependencies.auth import CurrentUser
 from app.dependencies.pagination import PaginationParams
 from app.schemas.annotation import AnnotationOut

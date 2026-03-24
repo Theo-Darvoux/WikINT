@@ -12,7 +12,8 @@ from redis.asyncio import Redis
 from app.config import settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError
 from app.core.file_security import strip_metadata
-from app.core.minio import (
+from app.core.redis import get_redis
+from app.core.storage import (
     delete_object,
     generate_presigned_put,
     get_object_info,
@@ -23,7 +24,6 @@ from app.core.minio import (
     stream_object,
     update_object_content_type,
 )
-from app.core.redis import get_redis
 from app.dependencies.auth import CurrentUser
 from app.dependencies.rate_limit import rate_limit_uploads
 from app.schemas.material import (
@@ -153,7 +153,7 @@ async def request_upload_url(
             paginator = s3.get_paginator("list_objects_v2")
             count = 0
             async for page in paginator.paginate(
-                Bucket=settings.minio_bucket,
+                Bucket=settings.s3_bucket,
                 Prefix=f"uploads/{user.id}/",
             ):
                 count += len(page.get("Contents", []))
@@ -378,7 +378,7 @@ async def complete_upload(
     file_size = obj_info["size"]
 
     # Enforce size limit on the actual uploaded object (declared size is validated
-    # at request-url, but the presigned PUT to MinIO doesn't enforce it)
+    # at request-url, but the presigned PUT doesn't enforce it)
     max_bytes = settings.max_file_size_mb * 1024 * 1024
     if file_size > max_bytes:
         await delete_object(data.file_key)
@@ -426,7 +426,7 @@ async def complete_upload(
         guessed, _encoding = mimetypes.guess_type(file_key)
         authoritative_mime = guessed or "application/octet-stream"
 
-    # Unconditionally overwrite the MinIO content type if it differs from our calculation.
+    # Unconditionally overwrite the stored content type if it differs from our calculation.
     # This strips any malicious Content-Type the client injected during the presigned upload.
     if authoritative_mime and mime_type != authoritative_mime:
         await update_object_content_type(file_key, authoritative_mime)
@@ -458,7 +458,7 @@ async def complete_upload(
                 )
                 async with get_s3_client() as s3:
                     await s3.put_object(
-                        Bucket=settings.minio_bucket,
+                        Bucket=settings.s3_bucket,
                         Key=file_key,
                         Body=clean_bytes,
                         ContentType=obj_info["content_type"],

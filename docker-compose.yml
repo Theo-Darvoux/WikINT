@@ -42,43 +42,6 @@ services:
           cpus: "0.25"
           memory: 128M
 
-  minio:
-    restart: unless-stopped
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    volumes:
-      - minio_data:/data
-    command: server /data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - backend
-    deploy:
-      resources:
-        reservations:
-          cpus: "0.25"
-          memory: 256M
-
-  minio-setup:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: /bin/sh
-    volumes:
-      - ./infra/docker/minio/setup.sh:/setup.sh
-    command: /setup.sh
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    networks:
-      - backend
-
   meilisearch:
     restart: unless-stopped
     image: getmeili/meilisearch:v1.12
@@ -128,12 +91,13 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_PUBLIC_ENDPOINT=${MINIO_PUBLIC_ENDPOINT}
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
-      - MINIO_BUCKET=${MINIO_BUCKET}
-      - MINIO_USE_SSL=${MINIO_USE_SSL}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_PUBLIC_ENDPOINT=${S3_PUBLIC_ENDPOINT}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+      - S3_REGION=${S3_REGION}
+      - S3_USE_SSL=${S3_USE_SSL}
       - MEILI_URL=${MEILI_URL}
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
       - CLAMAV_HOST=${CLAMAV_HOST}
@@ -146,13 +110,12 @@ services:
       - SMTP_FROM=${SMTP_FROM}
       - SMTP_USE_TLS=${SMTP_USE_TLS}
       - FRONTEND_URL=${FRONTEND_URL}
+      - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
       - ENVIRONMENT=production
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      minio:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -178,12 +141,13 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_PUBLIC_ENDPOINT=${MINIO_PUBLIC_ENDPOINT}
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
-      - MINIO_BUCKET=${MINIO_BUCKET}
-      - MINIO_USE_SSL=${MINIO_USE_SSL}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_PUBLIC_ENDPOINT=${S3_PUBLIC_ENDPOINT}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+      - S3_REGION=${S3_REGION}
+      - S3_USE_SSL=${S3_USE_SSL}
       - MEILI_URL=${MEILI_URL}
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
       - CLAMAV_HOST=${CLAMAV_HOST}
@@ -222,11 +186,38 @@ services:
           cpus: "0.25"
           memory: 256M
 
+  onlyoffice:
+    image: onlyoffice/documentserver:8.3.0
+    profiles: ["onlyoffice"]
+    restart: unless-stopped
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
+      - JWT_IN_BODY=true
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_log:/var/log/onlyoffice
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
   nginx:
     restart: unless-stopped
     image: nginx:alpine
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/nginx.onlyoffice.snippet:/etc/nginx/nginx.onlyoffice.snippet:ro
       - ./infra/nginx/error-expired.html:/etc/nginx/html/error-expired.html:ro
     ports:
       - "127.0.0.1:9080:80"
@@ -249,6 +240,7 @@ networks:
 volumes:
   postgres_data:
   redis_data:
-  minio_data:
   meilisearch_data:
   clamav_data:
+  onlyoffice_data:
+  onlyoffice_log:

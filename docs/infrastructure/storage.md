@@ -1,51 +1,42 @@
-# File Storage (MinIO)
+# File Storage (S3-Compatible)
 
-WikINT uses MinIO as an S3-compatible object storage backend for all uploaded files (materials, avatars, PR attachments). The API accesses it via the `aioboto3` library using the standard S3 API.
+WikINT uses S3-compatible object storage for all uploaded files (materials, avatars, PR attachments). In production, this is **Cloudflare R2**. In development, a local **MinIO** container is used. The API accesses storage via the `aioboto3` library using the standard S3 API.
 
-**Key files**: `docker-compose.yml` (minio, minio-setup services), `infra/docker/minio/setup.sh`, `api/app/core/minio.py`, `api/app/config.py`
+**Key files**: `api/app/core/storage.py`, `api/app/config.py`, `docker-compose.dev.yml` (minio service for dev)
 
 ---
 
-## Docker Configuration
+## Production: Cloudflare R2
 
-### MinIO Server
+In production, files are stored in a Cloudflare R2 bucket. R2 is S3-compatible with zero egress fees.
+
+- **Endpoint**: `<account-id>.r2.cloudflarestorage.com`
+- **Public access**: Via a custom domain (e.g., `files.yourdomain.com`) connected to the R2 bucket through Cloudflare, which provides CDN caching automatically.
+- **Region**: `auto` (Cloudflare manages placement)
+
+The browser uploads/downloads files directly via presigned URLs — file bytes never pass through the API server.
+
+## Development: MinIO
+
+In development (`docker-compose.dev.yml`), a local MinIO container provides S3-compatible storage:
 
 ```yaml
 minio:
   image: minio/minio:latest
   command: server /data --console-address ":9001"
-  ports:
-    - "9000:9000"   # S3 API
-    - "9001:9001"   # Web console
   volumes:
     - minio_data:/data
 ```
 
-### Bucket Initialization
+The `minio-setup` service runs once after MinIO is healthy to create the `wikint` bucket with private access (no anonymous access).
 
-The `minio-setup` service runs once after MinIO is healthy:
-
-1. **Alias Setup**: Sets an internal alias for the MinIO server.
-2. **Bucket Creation**: Creates the `wikint` bucket if missing.
-3. **Privacy**: Sets the anonymous access policy to **none** (private).
-4. **Global CORS**: Applies a global CORS policy to the MinIO instance using `mc admin config set local/ api cors_allow_origin="..."`. This is required for open-source MinIO versions to allow the frontend to perform multi-part uploads and authenticated fetches.
-
-All file access must be performed via cryptographically signed URLs or authenticated API calls.
-
-### Access & Proxying
-
-While the API interacts with MinIO internally at `http://minio:9000`, client-side access (for downloads and previews) is routed through the Nginx reverse proxy at `/s3/`.
-
-- **Internal Flow**: `API -> MinIO (9000)`
-- **External Flow**: `Browser -> Nginx (:443/s3/) -> MinIO (9000)`
-
-By proxying storage, we can intercept technical XML errors (like "Request has expired") and serve branded HTML error pages instead. See [reverse-proxy.md](./reverse-proxy.md) for details on error interception.
+Client-side access in dev is routed through the Nginx reverse proxy at `/s3/`, which forwards to MinIO with the correct `Host: minio:9000` header for SigV4 signature validation.
 
 ---
 
 ## S3 Client
 
-`api/app/core/minio.py` provides an async S3 client via aioboto3:
+`api/app/core/storage.py` provides an async S3 client via aioboto3:
 
 ```python
 _s3_config = BotocoreConfig(signature_version="s3v4")
@@ -54,18 +45,16 @@ _s3_config = BotocoreConfig(signature_version="s3v4")
 async def get_s3_client() -> AsyncGenerator:
     async with _session.client(
         "s3",
-        endpoint_url=f"{'https' if settings.minio_use_ssl else 'http'}://{settings.minio_endpoint}",
-        aws_access_key_id=settings.minio_root_user,
-        aws_secret_access_key=settings.minio_root_password,
-        region_name="us-east-1",
+        endpoint_url=f"{'https' if settings.s3_use_ssl else 'http'}://{settings.s3_endpoint}",
+        aws_access_key_id=settings.s3_access_key,
+        aws_secret_access_key=settings.s3_secret_key,
+        region_name=settings.s3_region,
         config=_s3_config,
     ) as client:
         yield client
 ```
 
-The client is created per-operation as a context manager (no persistent connection pool for S3).
-
-> **SigV4 required**: MinIO dropped SigV2 support. All presigned URLs use AWS Signature Version 4 (`X-Amz-Algorithm=AWS4-HMAC-SHA256`). SigV4 signs the `host` header, so nginx **must** forward `Host: minio:9000` (matching the signing endpoint) to MinIO — not the client's original `Host` header.
+> **SigV4 required**: All presigned URLs use AWS Signature Version 4 (`X-Amz-Algorithm=AWS4-HMAC-SHA256`). In dev mode, nginx **must** forward `Host: minio:9000` (matching the signing endpoint) to MinIO. In production with R2, the browser accesses the R2 custom domain directly.
 
 ---
 
@@ -84,7 +73,7 @@ The client is created per-operation as a context manager (no persistent connecti
 
 ### Public Endpoint Rewriting
 
-When `MINIO_PUBLIC_ENDPOINT` is set, presigned URLs have their internal hostname replaced with the public one. This is needed when MinIO is behind a reverse proxy or CDN with a different hostname.
+When `S3_PUBLIC_ENDPOINT` is set, presigned URLs have their internal hostname replaced with the public one. In production with R2, this rewrites R2's internal endpoint to your custom domain (e.g., `files.yourdomain.com`).
 
 ---
 
@@ -107,7 +96,7 @@ Objects in the `wikint` bucket follow this key structure:
 sequenceDiagram
     participant C as Client
     participant API as API Server
-    participant S3 as MinIO
+    participant S3 as S3 Storage
 
     C->>API: POST /api/upload/request-url
     API->>S3: generate_presigned_put("uploads/uuid/file.pdf")
@@ -121,15 +110,13 @@ sequenceDiagram
     API-->>C: { file_key, size, mime_type }
 ```
 
-The two-step presigned URL pattern means file bytes never pass through the API server -- they go directly from the browser to MinIO.
+The two-step presigned URL pattern means file bytes never pass through the API server -- they go directly from the browser to S3 storage.
 
 ---
 
 ## ClamAV Integration
 
-Virus scanning is performed via a separate ClamAV service (see [caching-and-queues.md](./caching-and-queues.md) for the scan timeout configuration). The scan happens during upload completion using the ClamAV TCP protocol on port 3310.
-
-**Key files**: `api/app/core/clamav.py` (if present), ClamAV config at `infra/docker/clamav/clamd.conf`
+Virus scanning is performed via a separate ClamAV service. The scan happens during upload completion: the API fetches the file from S3 and streams it to ClamAV via the TCP protocol on port 3310.
 
 ### ClamAV Configuration
 
@@ -148,7 +135,7 @@ MaxEmbeddedArchives 10MB     # Limit for embedded objects
 AlertExceedsMax yes          # Fail-closed if limits are exceeded
 ```
 
-These limits must match the `MAX_FILE_SIZE_MB` setting in `.env` (default 100 MiB) and the nginx `client_max_body_size`, ensuring any file that can be uploaded can also be scanned. The added recursion and file count limits protect the scanner from "zip-bombs" and decompression-based Denial of Service (DoS) attacks.
+These limits must match the `MAX_FILE_SIZE_MB` setting in `.env` (default 100 MiB) and the nginx `client_max_body_size`, ensuring any file that can be uploaded can also be scanned.
 
 ### Timeouts
 
@@ -165,9 +152,10 @@ Scan timeouts are configurable via environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MINIO_ROOT_USER` | `minioadmin` | MinIO admin username |
-| `MINIO_ROOT_PASSWORD` | `minioadmin` | MinIO admin password |
-| `MINIO_ENDPOINT` | `minio:9000` | Internal S3 API endpoint |
-| `MINIO_PUBLIC_ENDPOINT` | `null` | Public-facing endpoint for presigned URLs |
-| `MINIO_BUCKET` | `wikint` | Bucket name |
-| `MINIO_USE_SSL` | `false` | Use HTTPS for **internal** S3 connections (keep false if using Docker network) |
+| `S3_ACCESS_KEY` | `minioadmin` | S3 access key (MinIO admin user or R2 API token key) |
+| `S3_SECRET_KEY` | `minioadmin` | S3 secret key |
+| `S3_ENDPOINT` | `minio:9000` | S3 API endpoint. MinIO: `minio:9000`, R2: `<account-id>.r2.cloudflarestorage.com` |
+| `S3_PUBLIC_ENDPOINT` | `null` | Public-facing endpoint for presigned URLs |
+| `S3_BUCKET` | `wikint` | Bucket name |
+| `S3_REGION` | `us-east-1` | S3 region. MinIO: `us-east-1`, R2: `auto` |
+| `S3_USE_SSL` | `false` | Use HTTPS for S3 connections (`false` for dev MinIO, `true` for R2) |

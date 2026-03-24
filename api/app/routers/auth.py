@@ -11,7 +11,7 @@ from app.config import settings
 from app.core.database import get_db
 from app.core.exceptions import BadRequestError, RateLimitError, UnauthorizedError
 from app.core.redis import get_redis
-from app.core.security import create_access_token, decode_token
+from app.core.security import decode_token
 from app.dependencies.auth import CurrentUser
 from app.schemas.auth import (
     RefreshResponse,
@@ -25,11 +25,19 @@ from app.services.email import send_verification_code
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+
+async def require_client_id(request: Request):
+    if not request.headers.get("x-client-id"):
+        raise UnauthorizedError("Missing Client-ID header (CSRF Protection)")
+
+
 def get_client_id(request: Request) -> str:
-    client_id = request.headers.get("x-client-id")
-    if client_id:
-        return client_id
-    return get_remote_address(request)
+    ip = get_remote_address(request)
+    client_id = request.headers.get("x-client-id", "unknown")
+    # Combining IP and Client-ID ensures users behind NAT are distinct
+    # but one person can't easily spoof their way out of a limit without both changing IP and ID.
+    return f"{ip}:{client_id}"
+
 
 limiter = Limiter(key_func=get_client_id, enabled=not settings.is_dev)
 
@@ -89,7 +97,7 @@ async def verify_code(
         secure=True,
         samesite="strict",
         max_age=31 * 24 * 3600,
-        path="/api/auth/refresh",
+        path="/api/auth/",
     )
 
     return TokenResponse(
@@ -106,9 +114,10 @@ async def verify_code(
     )
 
 
-@router.post("/refresh", response_model=RefreshResponse)
+@router.post("/refresh", response_model=RefreshResponse, dependencies=[Depends(require_client_id)])
 async def refresh_token(
     request: Request,
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> RefreshResponse:
@@ -124,6 +133,10 @@ async def refresh_token(
     if payload.get("type") != "refresh":
         raise UnauthorizedError("Invalid token type")
 
+    jti = payload.get("jti")
+    if jti and await auth_service.is_token_blacklisted(redis, jti):
+        raise UnauthorizedError("Refresh token has been revoked")
+
     user_id = payload.get("sub")
     if not user_id:
         raise UnauthorizedError("Invalid token")
@@ -134,18 +147,34 @@ async def refresh_token(
     if not user:
         raise UnauthorizedError("User not found")
 
-    new_access_token, _ = create_access_token(
-        user_id=str(user.id), role=user.role.value, email=user.email
+    old_jti = payload.get("jti")
+    old_exp = payload.get("exp")
+    if old_jti and old_exp:
+        remaining = int(old_exp - datetime.now(UTC).timestamp())
+        if remaining > 0:
+            await auth_service.blacklist_token(redis, old_jti, remaining)
+
+    new_access_token, new_refresh_token, _ = auth_service.issue_tokens(user)
+
+    response.set_cookie(
+        key="refresh_token",
+        value=new_refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=31 * 24 * 3600,
+        path="/api/auth/",
     )
 
     return RefreshResponse(access_token=new_access_token)
 
 
-@router.post("/logout")
+@router.post("/logout", dependencies=[Depends(require_client_id)])
 async def logout(
     user: CurrentUser,
     redis: Annotated[Redis, Depends(get_redis)],
     request: Request,
+    response: Response,
 ) -> dict[str, str]:
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
@@ -160,5 +189,26 @@ async def logout(
                     await auth_service.blacklist_token(redis, jti, remaining)
         except Exception:
             pass
+
+    refresh_token = request.cookies.get("refresh_token")
+    if refresh_token:
+        try:
+            refresh_payload = decode_token(refresh_token)
+            refresh_jti = refresh_payload.get("jti")
+            refresh_exp = refresh_payload.get("exp")
+            if refresh_jti and refresh_exp:
+                remaining = int(refresh_exp - datetime.now(UTC).timestamp())
+                if remaining > 0:
+                    await auth_service.blacklist_token(redis, refresh_jti, remaining)
+        except Exception:
+            pass
+
+    response.delete_cookie(
+        key="refresh_token",
+        path="/api/auth/",
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
 
     return {"message": "Logged out"}

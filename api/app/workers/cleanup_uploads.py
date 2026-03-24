@@ -10,7 +10,7 @@ async def cleanup_uploads(ctx: dict) -> None:
 
     from app.config import settings
     from app.core.database import async_session_factory
-    from app.core.minio import delete_object, get_s3_client
+    from app.core.storage import delete_object, get_s3_client
     from app.models.pull_request import PRStatus, PullRequest
 
     # Collect all file_keys referenced by open PRs — these must not be deleted
@@ -32,7 +32,7 @@ async def cleanup_uploads(ctx: dict) -> None:
     deleted = errors = 0
     async with get_s3_client() as client:
         paginator = client.get_paginator("list_objects_v2")
-        async for page in paginator.paginate(Bucket=settings.minio_bucket, Prefix="uploads/"):
+        async for page in paginator.paginate(Bucket=settings.s3_bucket, Prefix="uploads/"):
             for obj in page.get("Contents", []):
                 key = obj["Key"]
                 if key in protected_keys:

@@ -44,7 +44,7 @@ export default function NotificationsPage() {
     const fetchNotifications = useCallback(async () => {
         try {
             const data = await apiFetch<PaginatedNotifications>("/notifications?limit=50");
-            setNotifications(data.items);
+            setNotifications(data.items ?? []);
             const unread = data.items.filter((n) => !n.read).length;
             setUnreadCount(unread);
         } catch {

@@ -1,4 +1,3 @@
-import random
 import secrets
 import string
 from datetime import UTC, datetime
@@ -94,7 +93,7 @@ async def reset_verify_rate_limit(redis: Redis, email: str) -> None:
 async def get_or_create_user(db: AsyncSession, email: str) -> tuple[User, bool]:
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
-    
+
     if user:
         if user.deleted_at is not None:
             user.deleted_at = None
@@ -102,10 +101,10 @@ async def get_or_create_user(db: AsyncSession, email: str) -> tuple[User, bool]:
             user.last_login_at = datetime.now(UTC)
             await db.flush()
             return user, True
-            
+
         user.last_login_at = datetime.now(UTC)
         return user, False
-        
+
     user = User(email=email, role=UserRole.STUDENT)
     db.add(user)
     await db.flush()

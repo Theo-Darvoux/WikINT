@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
-from app.core.minio import object_exists
 from app.core.redis import get_redis
+from app.core.storage import object_exists
 from app.dependencies.auth import get_current_user
 from app.models.material import Material
 from app.models.pull_request import PRComment, PRStatus, PRVote, PullRequest
@@ -41,7 +41,10 @@ async def create_pull_request(
         if len(data.operations) > 50:
             raise BadRequestError("Operations list should have at most 50 items")
         for op in data.operations:
-            if getattr(op, "op", None) == "create_material" and len(getattr(op, "attachments", [])) > 50:
+            if (
+                getattr(op, "op", None) == "create_material"
+                and len(getattr(op, "attachments", [])) > 50
+            ):
                 raise BadRequestError("Attachments list should have at most 50 items")
 
     # Check 5 open PR limit for non-privileged users
@@ -325,7 +328,9 @@ async def vote_pull_request(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
-    raise BadRequestError("Voting on pull requests has been disabled. Only moderators can approve or reject PRs.")
+    raise BadRequestError(
+        "Voting on pull requests has been disabled. Only moderators can approve or reject PRs."
+    )
 
 
 @router.post("/{id}/approve")
@@ -379,7 +384,7 @@ async def reject_pull_request(
     pr.reviewed_by = current_user.id
 
     # Clean up uploaded files from all operations in the batch
-    from app.core.minio import delete_object
+    from app.core.storage import delete_object
 
     for op in pr.payload:
         fk = op.get("file_key")
@@ -444,7 +449,7 @@ async def get_pull_request_preview(
     if not op.get("file_key"):
         raise NotFoundError("No file to preview for this operation")
 
-    from app.core.minio import generate_presigned_get
+    from app.core.storage import generate_presigned_get
 
     file_key = op["file_key"]
     # After approval, files are moved from uploads/ to materials/

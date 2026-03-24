@@ -24,12 +24,16 @@ interface DropZoneState {
     uploadTarget: UploadTarget | null;
     /** Current browse context kept in sync by DirectoryListing (includes ghost dirs) */
     browseContext: UploadTarget | null;
+    /** Callback to dismiss the drag overlay (set by GlobalDropZone, called by UploadDrawer on drop) */
+    dismissOverlay: (() => void) | null;
     /** Open the upload drawer for the given target */
     requestUpload: (target: UploadTarget) => void;
     /** Set dropped files (from the global drop handler) */
     setDroppedFiles: (items: DataTransferItemList | null) => void;
     /** Update the current browse context (called by DirectoryListing) */
     setBrowseContext: (ctx: UploadTarget | null) => void;
+    /** Register the overlay dismiss callback */
+    setDismissOverlay: (cb: (() => void) | null) => void;
     /** Clear everything */
     clear: () => void;
 }
@@ -38,9 +42,11 @@ export const useDropZoneStore = create<DropZoneState>((set) => ({
     droppedFiles: null,
     uploadTarget: null,
     browseContext: null,
+    dismissOverlay: null,
     requestUpload: (target) => set({ uploadTarget: target, droppedFiles: null }),
     setDroppedFiles: (items) => set({ droppedFiles: items }),
     setBrowseContext: (ctx) => set({ browseContext: ctx }),
+    setDismissOverlay: (cb) => set({ dismissOverlay: cb }),
     clear: () => set({ droppedFiles: null, uploadTarget: null }),
 }));
 
@@ -89,26 +95,36 @@ async function resolveBrowseContext(pathname: string): Promise<BrowseContext | n
 export function GlobalDropZone() {
     const pathname = usePathname();
     const [isDragOver, setIsDragOver] = useState(false);
-    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [localDrawerOpen, setLocalDrawerOpen] = useState(false);
     const [target, setTarget] = useState<UploadTarget | null>(null);
     const dragCounterRef = useRef(0);
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
-    const { uploadTarget, browseContext, clear } = useDropZoneStore();
+    const { uploadTarget, browseContext, setDismissOverlay, clear } = useDropZoneStore();
+
+    // Register overlay dismiss so UploadDrawer can clear it on drop
+    const dismiss = useCallback(() => {
+        dragCounterRef.current = 0;
+        setIsDragOver(false);
+    }, []);
+    useEffect(() => {
+        setDismissOverlay(dismiss);
+        return () => setDismissOverlay(null);
+    }, [dismiss, setDismissOverlay]);
 
     // Handle explicit upload requests from other components
     useEffect(() => {
         if (uploadTarget) {
             queueMicrotask(() => {
                 setTarget(uploadTarget);
-                setDrawerOpen(true);
+                setLocalDrawerOpen(true);
             });
         }
     }, [uploadTarget]);
 
     const handleDrawerClose = useCallback(
         (open: boolean) => {
-            setDrawerOpen(open);
+            setLocalDrawerOpen(open);
             if (!open) {
                 clear();
                 setPendingFiles([]);
@@ -143,7 +159,7 @@ export function GlobalDropZone() {
                     });
                 }
             }
-            setDrawerOpen(true);
+            setLocalDrawerOpen(true);
         },
         [browseContext, pathname],
     );
@@ -183,9 +199,7 @@ export function GlobalDropZone() {
         const onDrop = (e: DragEvent) => {
             dragCounterRef.current = 0;
             setIsDragOver(false);
-            if (!drawerOpen) {
-                e.preventDefault();
-            }
+            e.preventDefault();
         };
 
         document.addEventListener("dragenter", onDragEnter);
@@ -199,7 +213,7 @@ export function GlobalDropZone() {
             document.removeEventListener("dragleave", onDragLeave);
             document.removeEventListener("drop", onDrop);
         };
-    }, [drawerOpen]);
+    }, []);
 
     // Drop handler for the overlay element itself
     const handleOverlayDragOver = useCallback((e: React.DragEvent) => {
@@ -224,8 +238,8 @@ export function GlobalDropZone() {
 
     return (
         <>
-            {/* Full-screen overlay when dragging files (hidden when upload drawer is open or requested) */}
-            {isDragOver && !drawerOpen && !uploadTarget && (
+            {/* Full-screen overlay when dragging files */}
+            {isDragOver && (
                 <div
                     className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm"
                     onDragOver={handleOverlayDragOver}
@@ -248,7 +262,7 @@ export function GlobalDropZone() {
             {/* Upload drawer rendered here with the resolved target */}
             {target && (
                 <UploadDrawer
-                    open={drawerOpen}
+                    open={localDrawerOpen}
                     onOpenChange={handleDrawerClose}
                     directoryId={target.directoryId}
                     directoryName={target.directoryName}

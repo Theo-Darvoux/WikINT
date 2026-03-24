@@ -32,6 +32,7 @@ import type { CreateMaterialOp } from "@/lib/staging-store";
 import { cn } from "@/lib/utils";
 import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB } from "@/lib/file-utils";
 import { TagInput } from "@/components/ui/tag-input";
+import { useDropZoneStore } from "@/components/pr/global-drop-zone";
 
 // ---------------------------------------------------------------------------
 // Recursive folder traversal via FileSystem API
@@ -360,6 +361,35 @@ export function UploadDrawer({
             initialFilesProcessedRef.current = false;
         }
     }, [open, initialFiles, addFlatFiles]);
+
+    // When the drawer is open, intercept drops ANYWHERE on the page and add files
+    const dismissOverlay = useDropZoneStore((s) => s.dismissOverlay);
+    useEffect(() => {
+        if (!open) return;
+
+        const onDragOver = (e: DragEvent) => {
+            if (!e.dataTransfer?.types.includes("Files")) return;
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+        };
+
+        const onDrop = (e: DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dismissOverlay?.();
+            if (!e.dataTransfer?.files.length) return;
+            addFlatFiles(Array.from(e.dataTransfer.files));
+        };
+
+        // Use capture phase so we intercept before the Sheet overlay can swallow events
+        document.addEventListener("dragover", onDragOver, true);
+        document.addEventListener("drop", onDrop, true);
+
+        return () => {
+            document.removeEventListener("dragover", onDragOver, true);
+            document.removeEventListener("drop", onDrop, true);
+        };
+    }, [open, addFlatFiles, dismissOverlay]);
 
     /** Process a DataTransferItemList — handles dropped folders recursively. */
     const processDropItems = useCallback(

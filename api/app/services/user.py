@@ -139,7 +139,7 @@ async def update_user_profile(
     academic_year: str | None = None,
     avatar_url: str | None = None,
 ) -> User:
-    from app.core.minio import delete_object, move_object
+    from app.core.storage import delete_object, move_object
 
     if display_name is not None:
         user.display_name = display_name
@@ -254,7 +254,7 @@ async def export_user_data(db: AsyncSession, user: User) -> dict:
 
 
 async def soft_delete_user(db: AsyncSession, user: User) -> None:
-    from app.core.minio import delete_object
+    from app.core.storage import delete_object
 
     if user.avatar_url:
         await delete_object(user.avatar_url)
