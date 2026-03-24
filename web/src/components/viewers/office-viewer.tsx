@@ -36,7 +36,7 @@ function loadOnlyOfficeScript(): Promise<void> {
     if (scriptLoadPromise) return scriptLoadPromise;
     scriptLoadPromise = new Promise((resolve, reject) => {
         // Already loaded (e.g. hot-reload)
-        if (typeof window !== "undefined" && (window as Record<string, unknown>).DocsAPI) {
+        if (typeof window !== "undefined" && (window as unknown as Record<string, unknown>).DocsAPI) {
             resolve();
             return;
         }
