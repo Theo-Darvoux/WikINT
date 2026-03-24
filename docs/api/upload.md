@@ -208,7 +208,7 @@ If `settings.minio_public_endpoint` is configured, presigned URLs rewrite only t
 
 ### Metadata Stripping (Fail-Open)
 
-Metadata stripping (`strip_metadata`) is fail-open by design: if Pillow, pikepdf, or mutagen cannot process a file, the original bytes are kept and the upload proceeds. This is a deliberate trade-off — rejecting files due to metadata-stripping bugs would block legitimate uploads. The ClamAV scan still runs after stripping, so malware is always caught regardless of whether stripping succeeded.
+Metadata stripping (`strip_metadata`) is fail-open by design: if Pillow, pikepdf, mutagen, or ffmpeg cannot process a file, the original bytes are kept and the upload proceeds. This is a deliberate trade-off — rejecting files due to metadata-stripping bugs would block legitimate uploads. The ClamAV scan still runs after stripping, so malware is always caught regardless of whether stripping succeeded.
 
 Formats processed by `strip_metadata`:
 
@@ -216,6 +216,7 @@ Formats processed by `strip_metadata`:
 |--------|---------|------------------|
 | Images (JPEG, PNG, WebP, GIF) | Pillow | EXIF data (GPS, camera info, timestamps) |
 | PDF | pikepdf | Document Info dict, XMP metadata |
+| Video (MP4, WebM, OGG) | ffmpeg | All global/stream metadata (stream-copied, no re-encoding) |
 | Audio (MP3, FLAC, OGG, WAV, M4A) | mutagen | ID3 tags, Vorbis comments, MP4 atoms |
 
 ### Audio MIME Verification

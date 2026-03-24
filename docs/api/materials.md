@@ -134,6 +134,7 @@ To ensure the safety and correctness of course materials, several automated chec
 3.  **Metadata Stripping**: To protect user privacy (PII), files under 50 MB are automatically sanitized during upload completion:
     *   **Images**: EXIF data (GPS, camera info) is removed via Pillow.
     *   **PDFs**: Document Information dictionaries and XMP metadata are stripped via pikepdf.
+    *   **Video** (MP4, WebM, OGG): All metadata is stripped via ffmpeg (stream copy, no re-encoding).
     *   **Audio** (MP3, FLAC, OGG, WAV, M4A): ID3 tags, Vorbis comments, and MP4 atoms are stripped via mutagen.
 
 ---
