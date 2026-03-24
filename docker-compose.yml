@@ -109,6 +109,7 @@ services:
       - SMTP_USE_TLS=${SMTP_USE_TLS}
       - FRONTEND_URL=${FRONTEND_URL}
       - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
+      - ONLYOFFICE_FILE_TOKEN_SECRET=${ONLYOFFICE_FILE_TOKEN_SECRET}
       - ENVIRONMENT=production
     depends_on:
       postgres:
