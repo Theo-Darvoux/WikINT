@@ -35,33 +35,6 @@ async def close_s3_client() -> None:
         _s3 = None
 
 
-def _get_public_endpoint_url() -> str | None:
-    if not settings.s3_public_endpoint:
-        return None
-    scheme = "https" if "localhost" not in settings.s3_public_endpoint else "http"
-    return f"{scheme}://{settings.s3_public_endpoint}"
-
-
-@asynccontextmanager
-async def get_presign_s3_client() -> AsyncGenerator:
-    """Yields a client configured with the public endpoint so the signed Host header matches."""
-    public_url = _get_public_endpoint_url()
-    if not public_url:
-        async with get_s3_client() as client:
-            yield client
-        return
-
-    async with _session.client(
-        "s3",
-        endpoint_url=public_url,
-        aws_access_key_id=settings.s3_access_key,
-        aws_secret_access_key=settings.s3_secret_key,
-        region_name=settings.s3_region,
-        config=_s3_config,
-    ) as client:
-        yield client
-
-
 @asynccontextmanager
 async def get_s3_client() -> AsyncGenerator:
     if _s3:
@@ -78,6 +51,28 @@ async def get_s3_client() -> AsyncGenerator:
     ) as client:
         yield client
 
+def _rewrite_host(url: str, is_put: bool = False) -> str:
+    """Rewrite host for local development. In production, we avoid rewriting S3 endpoint to Custom Domains for PUT, as R2 Custom Domains do not support presigned PUT requests."""
+    if not settings.s3_public_endpoint:
+        return url
+    
+    # Cloudflare R2 custom domains do not support presigned PUTs.
+    # Therefore, we strictly don't rewrite if this is a production setup (public endpoint not containing "localhost") and it's a PUT request.
+    if is_put and "localhost" not in settings.s3_public_endpoint:
+        return url
+        
+    parsed = urlparse(url)
+    scheme = "https" if "localhost" not in settings.s3_public_endpoint else "http"
+    
+    # If the user absolutely wants to use the custom domain for GETs, we must ensure the bucket name is stripped
+    # from the path, because Cloudflare custom domains map directly to the bucket root.
+    path = parsed.path
+    if "localhost" not in settings.s3_public_endpoint:
+        bucket_prefix = f"/{settings.s3_bucket}/"
+        if path.startswith(bucket_prefix):
+            path = path[len(bucket_prefix) - 1:] # Keep the leading slash: /uploads/...
+            
+    return urlunparse(parsed._replace(netloc=settings.s3_public_endpoint, scheme=scheme, path=path))
 
 async def generate_presigned_put(
     file_key: str,
@@ -92,17 +87,16 @@ async def generate_presigned_put(
     }
     if content_length is not None:
         params["ContentLength"] = content_length
-    async with get_presign_s3_client() as client:
+    async with get_s3_client() as client:
         url: str = await client.generate_presigned_url(
             "put_object",
             Params=params,
             ExpiresIn=ttl,
         )
-        return url
-
+        return _rewrite_host(url, is_put=True)
 
 async def generate_presigned_get(file_key: str, ttl: int = 900) -> str:
-    async with get_presign_s3_client() as client:
+    async with get_s3_client() as client:
         url: str = await client.generate_presigned_url(
             "get_object",
             Params={
@@ -111,7 +105,7 @@ async def generate_presigned_get(file_key: str, ttl: int = 900) -> str:
             },
             ExpiresIn=ttl,
         )
-        return url
+        return _rewrite_host(url, is_put=False)
 
 
 async def object_exists(file_key: str) -> bool:
