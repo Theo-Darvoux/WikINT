@@ -190,6 +190,8 @@ services:
       - JWT_ENABLED=true
       - JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
       - JWT_IN_BODY=true
+      - ALLOW_PRIVATE_IP_ADDRESS=true
+      - ALLOW_META_IP_ADDRESS=true
     networks:
       - frontend
     healthcheck:
