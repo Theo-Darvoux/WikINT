@@ -22,11 +22,11 @@ import {
     RotateCcw,
     Package,
     Folder,
-    ShieldCheck,
     ShieldX,
 } from "lucide-react";
 import { toast } from "sonner";
-import { ApiError, apiFetch } from "@/lib/api-client";
+import { API_BASE, getClientId } from "@/lib/api-client";
+import { getAccessToken } from "@/lib/auth-tokens";
 import { useStagingStore } from "@/lib/staging-store";
 import type { CreateMaterialOp } from "@/lib/staging-store";
 import { cn } from "@/lib/utils";
@@ -137,12 +137,6 @@ interface UploadDrawerProps {
     initialFiles?: File[];
 }
 
-interface UploadRequestOut {
-    upload_url: string;
-    file_key: string;
-    mime_type: string;
-}
-
 const MAX_CONCURRENT_UPLOADS = 4; // simultaneous XHR uploads
 const MAX_FILES_PER_BATCH = 50;
 const ACCEPTED_FILE_TYPES = [
@@ -176,7 +170,7 @@ interface FileEntry {
     clientId: string;
     file: File;
     title: string;
-    status: "pending" | "uploading" | "scanned" | "done" | "error" | "virus";
+    status: "pending" | "uploading" | "done" | "error" | "virus";
     progress: number;
     fileKey?: string;
     /** Corrected filename from the server (may differ from file.name if extension was fixed). */
@@ -244,43 +238,40 @@ export function UploadDrawer({
         const runUpload = async (e: FileEntry) => {
             updateEntry(e.clientId, { status: "uploading", progress: 0, error: undefined });
             try {
-                const { upload_url, file_key, mime_type } =
-                    await apiFetch<UploadRequestOut>("/upload/request-url", {
-                        method: "POST",
-                        body: JSON.stringify({
-                            filename: e.file.name,
-                            size: e.file.size,
-                            mime_type: e.file.type || "application/octet-stream",
-                        }),
-                    });
+                const formData = new FormData();
+                formData.append("file", e.file);
 
                 const xhr = new XMLHttpRequest();
                 updateEntry(e.clientId, { xhr });
-                xhr.open("PUT", upload_url, true);
-                xhr.setRequestHeader("Content-Type", mime_type);
+                xhr.open("POST", `${API_BASE}/upload`, true);
+
+                const token = getAccessToken();
+                if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+                xhr.setRequestHeader("X-Client-ID", getClientId());
+
                 xhr.upload.onprogress = (ev) => {
                     if (ev.lengthComputable) {
+                        // 0-90% for upload, 90-100% for server-side scanning
                         updateEntry(e.clientId, {
-                            progress: Math.round((ev.loaded / ev.total) * 100),
+                            progress: Math.round((ev.loaded / ev.total) * 90),
                         });
                     }
                 };
 
-                await new Promise<void>((resolve, reject) => {
-                    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("Upload failed")));
+                const completeResult = await new Promise<{ file_key: string; size: number; mime_type: string }>((resolve, reject) => {
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            resolve(JSON.parse(xhr.responseText));
+                        } else {
+                            let msg = "Upload failed";
+                            try { msg = JSON.parse(xhr.responseText).detail ?? msg; } catch { /* ignore */ }
+                            reject(new Error(msg));
+                        }
+                    };
                     xhr.onerror = () => reject(new Error("Network error"));
                     xhr.onabort = () => reject(new Error("Upload cancelled"));
-                    xhr.send(e.file);
+                    xhr.send(formData);
                 });
-
-                updateEntry(e.clientId, { status: "scanned", progress: 100 });
-                const completeResult = await apiFetch<{ file_key: string; size: number; mime_type: string }>(
-                    "/upload/complete",
-                    {
-                        method: "POST",
-                        body: JSON.stringify({ file_key }),
-                    },
-                );
 
                 // Extract corrected filename from the returned key (last path segment)
                 const correctedName = completeResult.file_key.split("/").pop() ?? e.file.name;
@@ -297,8 +288,7 @@ export function UploadDrawer({
             } catch (err) {
                 const msg = err instanceof Error ? err.message : "Upload failed";
                 if (msg !== "Upload cancelled") {
-                    const isVirus = err instanceof ApiError && err.status === 400
-                        && msg.toLowerCase().includes("virus");
+                    const isVirus = msg.toLowerCase().includes("malware") || msg.toLowerCase().includes("virus");
                     updateEntry(e.clientId, {
                         status: isVirus ? "virus" : "error",
                         error: msg,
@@ -477,7 +467,7 @@ export function UploadDrawer({
 
     const doneFiles = files.filter((f) => f.status === "done");
     const inFlightFiles = files.filter(
-        (f) => f.status === "uploading" || f.status === "scanned" || f.status === "pending",
+        (f) => f.status === "uploading" || f.status === "pending",
     );
     const errorFiles = files.filter((f) => f.status === "error" || f.status === "virus");
 
@@ -780,9 +770,6 @@ export function UploadDrawer({
                                         {f.status === "uploading" && (
                                             <Loader2 className="h-4 w-4 animate-spin text-primary" />
                                         )}
-                                        {f.status === "scanned" && (
-                                            <ShieldCheck className="h-4 w-4 animate-pulse text-amber-500" />
-                                        )}
                                         {f.status === "pending" && (
                                             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                         )}
@@ -817,17 +804,6 @@ export function UploadDrawer({
                                                 value={f.progress}
                                                 className="h-1.5"
                                             />
-                                        )}
-                                        {f.status === "scanned" && (
-                                            <div className="space-y-1">
-                                                <Progress
-                                                    value={100}
-                                                    className="h-1.5 [&>div]:bg-amber-500 [&>div]:animate-pulse"
-                                                />
-                                                <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                                                    Scanning for viruses…
-                                                </p>
-                                            </div>
                                         )}
                                         {f.status === "virus" && (
                                             <div className="rounded-md bg-destructive/10 px-2 py-1.5">

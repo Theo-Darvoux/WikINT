@@ -138,7 +138,7 @@ Also document this trade-off in `docs/infrastructure/onlyoffice.md`.
 ### Strengths
 
 - **Tool selection is correct.** Alternatives are all disqualifying for this context: Google Docs sends data externally; LibreOffice headless adds pipeline complexity with lower PPTX fidelity; converting to PDF requires a full async conversion queue. ONLYOFFICE self-hosted satisfies the data-sovereignty requirement with best-in-class format fidelity.
-- **Network isolation is sound.** OO sits only on `frontend` and can reach `api:8000` but has no path to Postgres, Redis, MinIO, Meilisearch, or ClamAV. This correctly minimizes blast radius if OO is compromised.
+- **Network isolation is sound.** OO sits only on `frontend` and can reach `api:8000` but has no path to Postgres, Redis, MinIO, or Meilisearch. This correctly minimizes blast radius if OO is compromised.
 - **The file serving chain is justified.** `OO → API → MinIO` is longer than `OO → MinIO` directly, but the indirection enforces authorization on every file fetch. MinIO credentials and presigned URLs stay fully out of OO's reach.
 - **The React DOM integration is correct.** The imperative `editorDiv` pattern (appending outside React's vdom to an always-childless container ref) is the standard solution to the OO/React reconciler conflict. The comment explains exactly why.
 - **Lazy nginx upstream resolution is correct.** `set $onlyoffice_upstream http://onlyoffice` forces DNS resolution at request time via Docker's `127.0.0.11`, preventing Nginx startup failure during OO's 30-60 second cold start.

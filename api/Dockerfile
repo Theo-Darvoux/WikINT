@@ -4,6 +4,9 @@ WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Install system dependencies for yara-python
+RUN apt-get update && apt-get install -y --no-install-recommends libyara-dev && rm -rf /var/lib/apt/lists/*
+
 # Create user early and take ownership of the working directory
 RUN groupadd -r appuser && useradd -r -g appuser -m appuser && chown appuser:appuser /app
 

@@ -137,7 +137,7 @@ export default function LoginPage() {
                                     </div>
                                 </div>
                                 <p className="text-center text-xs text-muted-foreground">
-                                    Check your school email for an 8-character code.
+                                    Check your email for a sign-in link or enter the 8-character code.
                                     <br/>
                                     <span className="opacity-80">Valid for 10 minutes. Maximum 5 attempts.</span>
                                 </p>

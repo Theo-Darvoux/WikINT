@@ -6,30 +6,6 @@ Common issues and their solutions when running WikINT.
 
 ## Startup Issues
 
-### ClamAV is slow to start / health check fails
-
-ClamAV downloads virus signature databases on first boot, which takes 1-2 minutes. The Docker health check has `start_period: 120s` to accommodate this. On subsequent starts, signatures are cached in the `clamav_data` volume.
-
-If ClamAV consistently fails to start, check its logs:
-
-```bash
-docker compose logs clamav
-```
-
-Common causes: network restrictions blocking signature downloads, insufficient disk space.
-
-### ClamAV remains "unhealthy" after initialization
-
-If the logs show `Clamd is up` but the container is still marked as `unhealthy`, the health check command might be failing to contact the daemon. 
-
-1. **Verify Socket**: Ensure your `clamd.conf` includes `LocalSocket /tmp/clamd.socket`. Many images require this for internal health scripts.
-2. **Robust Check**: If `clamdcheck.sh` fails, use a direct TCP ping in `docker-compose.yml`:
-   ```yaml
-   healthcheck:
-     test: ["CMD-SHELL", "echo 'PING' | nc -w 5 127.0.0.1 3310 | grep PONG"]
-   ```
-3. **Check Resolution**: Some health check scripts fail to resolve `localhost`. Using `127.0.0.1` explicitly is more reliable.
-
 ### API or Worker fails with "Permission denied" on `.venv`
 
 If you see errors like `failed to remove file /app/.venv/.gitignore: Permission denied (os error 13)`, it means the host environment's `.venv` directory was shadowing the container's environment. 
@@ -114,11 +90,10 @@ If SSE drops sooner, check that `proxy_buffering off` is set in the nginx config
 
 ### File uploads fail
 
-1. **413 Request Entity Too Large**: The file exceeds nginx's `client_max_body_size` (must match `MAX_FILE_SIZE_MB` in `.env`, default 100 MiB). This limit also applies to presigned URLs if they pass through nginx.
-2. **Presigned URL expired**: URLs are valid for 1 hour (PUT) or 15 minutes (GET). If the upload takes too long, request a new URL.
-3. **ClamAV scan fails**: Check ClamAV is running and accessible on port 3310:
+1. **413 Request Entity Too Large**: The file exceeds nginx's `client_max_body_size` (must match `MAX_FILE_SIZE_MB` in `.env`, default 100 MiB).
+2. **Malware scan fails**: Check that YARA rules are present in `api/yara_rules/` and that MalwareBazaar is reachable (the API needs outbound HTTPS access to `mb-api.abuse.ch`). Check API logs for scanner errors:
    ```bash
-   docker compose exec api python -c "import socket; s=socket.socket(); s.connect(('clamav', 3310)); print('OK')"
+   docker compose logs api | grep -i scanner
    ```
 
 ### Email not sending

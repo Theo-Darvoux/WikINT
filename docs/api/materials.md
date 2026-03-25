@@ -127,10 +127,10 @@ All file access (downloads and streams) is recorded in the `download_audit` tabl
 To ensure the safety and correctness of course materials, several automated checks are performed:
 
 1.  **MIME/Extension Auto-Correction**: During upload completion, the API reads the file's magic bytes and detects the real MIME type. If the detected type doesn't match the file extension, the file is automatically renamed with the correct extension (e.g., a `.ogg` file detected as MP3 becomes `.mp3`). The corrected `file_key` is returned to the frontend.
-2.  **Mandatory Malware Scanning**: Every uploaded file is scanned synchronously by ClamAV before `upload/complete` returns.
+2.  **Mandatory Malware Scanning**: Every uploaded file is scanned synchronously by the YARA + MalwareBazaar scanner before the upload endpoint returns.
     *   Results are stored in the `virus_scan_result` column of `PullRequest` and `MaterialVersion`.
     *   **Hard Blocking**: A Pull Request **cannot be approved** (manually or automatically) until the scan result is `CLEAN` or `SKIPPED`.
-    *   **Automatic Rejection**: If a file is found to be `INFECTED`, the file is deleted from storage and the upload rejected with 400.
+    *   **Automatic Rejection**: If a file is found to be `INFECTED`, the upload is rejected with 400 (the file is never stored).
 3.  **Metadata Stripping**: To protect user privacy (PII), files under 50 MB are automatically sanitized during upload completion:
     *   **Images**: EXIF data (GPS, camera info) is removed via Pillow.
     *   **PDFs**: Document Information dictionaries and XMP metadata are stripped via pikepdf.

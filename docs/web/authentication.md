@@ -1,12 +1,43 @@
 # Frontend Authentication
 
-Authentication in the frontend is a multi-step flow: email entry, code verification, and onboarding for new users. Tokens are managed in localStorage with automatic refresh on 401 responses.
+Authentication in the frontend supports two methods: **magic link** (click a link in the email) or **manual code entry**. Both are sent in the same email. Tokens are managed in-memory with automatic refresh on 401 responses.
 
-**Key files**: `web/src/app/login/page.tsx`, `web/src/app/onboarding/page.tsx`, `web/src/hooks/use-auth.ts`, `web/src/lib/auth-tokens.ts`, `web/src/lib/stores.ts`, `web/src/components/auth-guard.tsx`, `web/src/components/layout-shell.tsx`
+**Key files**: `web/src/app/login/page.tsx`, `web/src/app/login/verify/page.tsx`, `web/src/app/onboarding/page.tsx`, `web/src/hooks/use-auth.ts`, `web/src/lib/auth-tokens.ts`, `web/src/lib/stores.ts`, `web/src/components/auth-guard.tsx`, `web/src/components/layout-shell.tsx`
 
 ---
 
 ## Login Flow
+
+### Option A: Magic Link
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant V as Verify Page
+    participant H as useAuth Hook
+    participant A as API
+    participant S as Auth Store
+
+    U->>U: Click magic link in email
+    U->>V: /login/verify?token=...
+    V->>V: Strip token from URL (Referer protection)
+    V->>H: verifyMagicLink(token)
+    H->>A: POST /auth/verify-magic-link
+    A-->>H: {access_token, user, is_new_user}
+    H->>S: setUser(user), store token
+    alt New or not onboarded
+        V->>V: Navigate to /onboarding
+    else Existing onboarded user
+        V->>V: Navigate to /browse
+    end
+```
+
+The magic link landing page (`web/src/app/login/verify/page.tsx`):
+- Extracts token from URL search params
+- Immediately strips the token from the URL via `history.replaceState` to prevent Referer leakage
+- Shows loading state while verifying; error state with "Back to login" link on failure
+
+### Option B: Code Entry
 
 ```mermaid
 sequenceDiagram
@@ -22,7 +53,7 @@ sequenceDiagram
     A-->>H: 200 OK
     L->>L: Switch to code step
 
-    U->>L: Enter 6-digit code
+    U->>L: Enter 8-character code
     L->>H: verifyCode(email, code)
     H->>A: POST /auth/verify-code
     A-->>H: {access_token, user, is_new_user}
@@ -36,7 +67,7 @@ sequenceDiagram
 
 The login page (`web/src/app/login/page.tsx`) has two steps:
 1. **Email step**: Input field with submit button. Shows link to Zimbra webmail.
-2. **Code step**: 6-digit input. Option to return to email step.
+2. **Code step**: 8-character input with visual boxes. Option to return to email step.
 
 ### Automatic Redirect
 If an already authenticated user visits the `/login` page, they are automatically redirected:
@@ -62,8 +93,9 @@ The API client (`web/src/lib/api-client.ts`) auto-injects the token as a `Bearer
 
 | Method | API Call | Effect |
 |--------|----------|--------|
-| `requestCode(email)` | `POST /auth/request-code` | Sends verification email |
+| `requestCode(email)` | `POST /auth/request-code` | Sends email with magic link + verification code |
 | `verifyCode(email, code)` | `POST /auth/verify-code` | Stores token, updates auth store, returns `{is_new_user}` |
+| `verifyMagicLink(token)` | `POST /auth/verify-magic-link` | Stores token, updates auth store, returns `{is_new_user}` |
 | `logout()` | `POST /auth/logout` | Clears token, resets store |
 | `fetchMe()` | `GET /users/me` | Refreshes user data; on 401, clears token and logs out |
 

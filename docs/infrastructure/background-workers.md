@@ -82,7 +82,7 @@ Removes stale temporary uploads from S3 storage:
 
 **Error handling**: Database and S3 connection failures propagate to arq for automatic retry (no outer try/except wrapping the whole function). Per-file deletion errors are caught individually and logged, so a single failed delete does not abort the rest of the cleanup run. A summary count of failed deletions is logged at the end.
 
-This catches uploads where the user obtained a presigned URL but never completed the upload flow, while protecting files that are still needed by open PRs.
+This catches uploads where the user started an upload but never completed the PR submission flow, while protecting files that are still needed by open PRs.
 
 ### `cleanup_orphans` -- Daily at 03:30 UTC
 
@@ -157,7 +157,7 @@ worker:
       condition: service_healthy
 ```
 
-The worker uses the same Docker image as the API (same `Dockerfile`, same dependencies). It receives the same environment variables. The worker does not need `CLAMAV_HOST`/`CLAMAV_PORT` (virus scanning is done synchronously by the API during upload), nor `SMTP_*` or `FRONTEND_URL`.
+The worker uses the same Docker image as the API (same `Dockerfile`, same dependencies). It receives the same environment variables. The worker does not need `YARA_RULES_DIR`/`MALWAREBAZAAR_TIMEOUT` (malware scanning is done synchronously by the API during upload), nor `SMTP_*` or `FRONTEND_URL`.
 
 In development, the worker bind-mounts `./api:/app` for live code reloading.
 

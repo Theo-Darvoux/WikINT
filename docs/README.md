@@ -26,7 +26,7 @@ FastAPI routers, services, and business logic.
 - [Annotations](./api/annotations.md) -- Threading model, SSE real-time updates, material-scoped events
 - [Comments](./api/comments.md) -- Polymorphic comment system, target types
 - [Search](./api/search.md) -- Meilisearch indexing pipeline, split identifiers, multi-index search
-- [Upload](./api/upload.md) -- Presigned URL flow, MIME magic byte detection, ClamAV scanning
+- [Upload](./api/upload.md) -- Multipart upload flow, MIME magic byte detection, YARA + MalwareBazaar scanning
 - [Notifications](./api/notifications.md) -- Notification types, SSE delivery, Redis queue system
 - [Flags & Moderation](./api/flags-and-moderation.md) -- Flag lifecycle, moderation actions, moderator powers
 - [Users](./api/users.md) -- Profiles, reputation, GDPR compliance, data export
@@ -53,7 +53,7 @@ Docker services, configuration, and operational details.
 
 - [Infrastructure Overview](./infrastructure/overview.md) -- Service topology, startup order, health checks, prod vs dev
 - [Database (PostgreSQL)](./infrastructure/database.md) -- Connection pool, session management, schema, SQL views
-- [File Storage (MinIO)](./infrastructure/storage.md) -- S3 client, presigned URLs, file organization, ClamAV integration
+- [File Storage (MinIO)](./infrastructure/storage.md) -- S3 client, presigned URLs, file organization, malware scanner integration
 - [Search Engine (Meilisearch)](./infrastructure/search-engine.md) -- Index setup, document structure, typo tolerance, reindexing
 - [Caching & Queues (Redis)](./infrastructure/caching-and-queues.md) -- ARQ queue, rate limiting, token blacklist, SSE queues
 - [Reverse Proxy (Nginx)](./infrastructure/reverse-proxy.md) -- Routing, TLS, security headers, certbot

@@ -19,9 +19,10 @@ from app.schemas.auth import (
     TokenResponse,
     UserBrief,
     VerifyCodeIn,
+    VerifyMagicLinkIn,
 )
 from app.services import auth as auth_service
-from app.services.email import send_verification_code
+from app.services.email import send_verification_email
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -58,8 +59,12 @@ async def request_code(
     code = auth_service.generate_code()
     await auth_service.store_code(redis, email, code)
 
+    magic_token = auth_service.generate_magic_token()
+    await auth_service.store_magic_token(redis, email, magic_token)
+    magic_link = f"{settings.frontend_url}/login/verify?token={magic_token}"
+
     try:
-        await send_verification_code(email, code)
+        await send_verification_email(email, code, magic_link)
     except Exception as e:
         import logging
 
@@ -85,6 +90,47 @@ async def verify_code(
     if not await auth_service.verify_code(redis, email, data.code):
         await auth_service.increment_verify_rate_limit(redis, email)
         raise BadRequestError("Invalid or expired verification code")
+
+    await auth_service.reset_verify_rate_limit(redis, email)
+    user, is_new = await auth_service.get_or_create_user(db, email)
+    access_token, refresh_token, _ = auth_service.issue_tokens(user)
+
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=31 * 24 * 3600,
+        path="/api/auth/",
+    )
+
+    return TokenResponse(
+        access_token=access_token,
+        user=UserBrief(
+            id=str(user.id),
+            email=user.email,
+            display_name=user.display_name,
+            avatar_url=user.avatar_url,
+            role=user.role.value,
+            onboarded=user.onboarded,
+        ),
+        is_new_user=is_new,
+    )
+
+
+@router.post("/verify-magic-link", response_model=TokenResponse)
+@limiter.limit("10/15minutes" if not settings.is_dev else "10000/minute")
+async def verify_magic_link(
+    request: Request,
+    data: VerifyMagicLinkIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+    response: Response,
+) -> TokenResponse:
+    email = await auth_service.verify_magic_token(redis, data.token)
+    if not email:
+        raise BadRequestError("Invalid or expired magic link")
 
     await auth_service.reset_verify_rate_limit(redis, email)
     user, is_new = await auth_service.get_or_create_user(db, email)

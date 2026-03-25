@@ -25,10 +25,10 @@ class Settings(BaseSettings):
 
     max_file_size_mb: int = 100
 
-    clamav_host: str = "localhost"
-    clamav_port: int = 3310
-    clamav_scan_timeout_base: int = 60
-    clamav_scan_timeout_per_gb: int = 120
+    yara_rules_dir: str = "yara_rules"
+    yara_scan_timeout: int = 60
+    malwarebazaar_timeout: int = 10
+    malwarebazaar_url: str = "https://mb-api.abuse.ch/api/v1/"
 
     smtp_host: str = "smtp.example.com"
     smtp_port: int = 587

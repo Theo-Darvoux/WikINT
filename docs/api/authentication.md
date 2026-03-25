@@ -1,12 +1,14 @@
 # Authentication
 
-WikINT uses passwordless email-based authentication. Users receive a 6-digit verification code at their school email, then exchange it for JWT tokens. Only `@telecom-sudparis.eu` and `@imt-bs.eu` domains are accepted.
+WikINT uses passwordless email-based authentication. Users receive an email containing both a **magic sign-in link** and an **8-character verification code**. Either method can be used to authenticate — using one invalidates the other. Only `@telecom-sudparis.eu` and `@imt-bs.eu` domains are accepted.
 
 **Key files**: `api/app/routers/auth.py`, `api/app/services/auth.py`, `api/app/core/security.py`, `api/app/dependencies/auth.py`
 
 ---
 
 ## Login Flow
+
+### Option A: Magic Link
 
 ```mermaid
 sequenceDiagram
@@ -19,11 +21,29 @@ sequenceDiagram
     A->>A: Validate domain, no + aliases
     A->>R: Check rate limit (auth:rate:{email})
     A->>R: Store code (auth:code:{email}, 10min TTL)
-    A->>S: Send verification email
+    A->>R: Store magic token (auth:magic:{token} + auth:magic_ref:{email}, 10min TTL)
+    A->>S: Send email with magic link + code
     A-->>U: {"message": "Verification code sent"}
 
+    U->>U: Click magic link in email
+    U->>A: POST /api/auth/verify-magic-link {token}
+    A->>R: Look up token, delete token + code (mutual invalidation)
+    A->>A: Get or create user
+    A->>A: Issue access + refresh tokens
+    A-->>U: {access_token, user: UserBrief, is_new_user}
+    Note over U: Refresh token set as HTTP-only cookie
+```
+
+### Option B: Verification Code
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as API
+    participant R as Redis
+
     U->>A: POST /api/auth/verify-code {email, code}
-    A->>R: Retrieve and delete code
+    A->>R: Retrieve and delete code + magic token (mutual invalidation)
     A->>A: Get or create user
     A->>A: Issue access + refresh tokens
     A-->>U: {access_token, user: UserBrief, is_new_user}
@@ -47,24 +67,40 @@ sequenceDiagram
 
 **Logic**:
 1. Check rate limit via Redis key `auth:rate:{email}` (pipeline: INCR + EXPIRE)
-2. Generate 6-digit zero-padded code (`random.randint(0, 999999)`)
-3. Store in Redis at `auth:code:{email}` with 600s TTL
-4. Send HTML email via `api/app/services/email.py:send_verification_code`
+2. Generate 8-character alphanumeric code (`secrets.choice`, excluding O/0/I/1)
+3. Store code in Redis at `auth:code:{email}` with 600s TTL
+4. Generate magic link token (`secrets.token_urlsafe(48)`, 384-bit entropy)
+5. Store magic token in Redis: `auth:magic:{token}` → email, `auth:magic_ref:{email}` → token (both 600s TTL)
+6. Send HTML email with magic link button + code via `api/app/services/email.py:send_verification_email`
 
 **Response**: `{"message": "Verification code sent"}`
 
 ### POST `/api/auth/verify-code`
 
-**Request**: `{"email": "user@telecom-sudparis.eu", "code": "123456"}`
+**Request**: `{"email": "user@telecom-sudparis.eu", "code": "A2B3C4D5"}`
 
 **Dev bypass**: Code `"000000"` always succeeds when `settings.is_dev`.
 
 **Logic**:
 1. Retrieve code from Redis `auth:code:{email}`
-2. Compare and delete on match
+2. Compare and delete on match; also delete paired magic token (mutual invalidation)
 3. `get_or_create_user()`: find existing non-deleted user or create new STUDENT
 4. Update `last_login_at`
 5. Issue tokens via `api/app/core/security.py`
+
+### POST `/api/auth/verify-magic-link`
+
+**Request**: `{"token": "..."}`
+
+**Rate limiting**: 10 requests per 15 minutes per IP:clientID.
+
+**Logic**:
+1. Look up `auth:magic:{token}` in Redis to get email
+2. If not found, return 400 ("Invalid or expired magic link")
+3. Delete magic token, reverse reference, and paired verification code (mutual invalidation)
+4. `get_or_create_user()`: find existing non-deleted user or create new STUDENT
+5. Update `last_login_at`
+6. Issue tokens via `api/app/core/security.py`
 
 **Response**:
 ```json

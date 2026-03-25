@@ -23,7 +23,6 @@ graph TB
             Redis["Redis 7<br/>:6379"]
             MinIO["MinIO (S3)<br/>:9000/:9001"]
             Meili["Meilisearch<br/>:7700"]
-            ClamAV["ClamAV<br/>:3310"]
         end
     end
 
@@ -35,8 +34,6 @@ graph TB
     API --> Redis
     API --> MinIO
     API --> Meili
-    API --> ClamAV
-
     Worker --> PG
     Worker --> Redis
     Worker --> MinIO
@@ -57,9 +54,8 @@ graph TB
 | **Worker** | ARQ (async Redis queue) | Background tasks: search indexing, upload cleanup, GDPR purge, academic year rollover |
 | **PostgreSQL** | PostgreSQL 16 | Primary data store. 15 tables, 2 junction tables, 2 SQL views |
 | **Redis** | Redis 7 | Rate limiting, JWT blacklist, ARQ job queue, SSE state |
-| **MinIO** | MinIO (S3-compatible) | File storage for all uploaded materials. Presigned URLs for upload/download |
+| **MinIO** | MinIO (S3-compatible) | File storage for all uploaded materials. Presigned URLs for downloads, API-proxied uploads |
 | **Meilisearch** | Meilisearch 1.12 | Full-text search with typo tolerance across materials and directories |
-| **ClamAV** | ClamAV daemon | Virus scanning for all uploaded files. Fail-closed design |
 
 Configuration for all services lives in `docker-compose.yml` (production) and `docker-compose.dev.yml` (development overrides).
 
@@ -169,28 +165,20 @@ sequenceDiagram
     participant B as Browser
     participant A as API
     participant M as MinIO
-    participant C as ClamAV
 
-    B->>A: POST /api/upload/request-url {filename, size}
-    A->>M: Generate presigned PUT URL
-    A-->>B: {upload_url, file_key}
-
-    B->>M: PUT file directly (presigned URL)
-    M-->>B: 200 OK
-
-    B->>A: POST /api/upload/complete {file_key}
-    A->>M: Read file metadata + first bytes
+    B->>A: POST /api/upload (multipart)
     A->>A: Detect MIME from magic bytes
-    A->>C: Scan file for viruses
-    alt Virus detected
-        A->>M: DELETE infected file
+    A->>A: Strip metadata, SVG safety check
+    A->>A: YARA scan + MalwareBazaar hash lookup
+    alt Threat detected
         A-->>B: 400 Threat detected
     else Clean
+        A->>M: Upload file to S3
         A-->>B: {file_key, size, mime_type}
     end
 ```
 
-Files are uploaded via presigned URLs directly to MinIO, bypassing the API server for large files. The key format is `uploads/{user_id}/{uuid}/{filename}`. When a pull request is approved, files are moved from `uploads/` to `materials/`.
+File bytes flow through the API server for malware scanning (YARA rules + MalwareBazaar hash lookup) before being stored in S3. The key format is `uploads/{user_id}/{uuid}/{filename}`. When a pull request is approved, files are moved from `uploads/` to `materials/`.
 
 ---
 

@@ -29,17 +29,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     from app.core.meilisearch import setup_meilisearch
     from app.core.redis import close_arq_pool, init_arq_pool
+    from app.core.scanner import close_scanner, init_scanner
     from app.core.storage import close_s3_client, init_s3_client
 
+    # Soft-fail: degraded but non-critical services
     try:
         await setup_meilisearch()
-        await init_arq_pool()
-        await init_s3_client()
     except Exception as e:
-        logger.error(f"Failed to setup search or storage: {e}")
+        logger.error("MeiliSearch setup failed (search degraded): %s", e)
+
+    try:
+        await init_arq_pool()
+    except Exception as e:
+        logger.error("ARQ pool setup failed (background jobs degraded): %s", e)
+
+    # Hard-fail: storage and scanner are required for safe operation
+    await init_s3_client()
+    init_scanner()
 
     yield
     logger.info("WikINT API shutting down")
+    await close_scanner()
     await close_arq_pool()
     await close_s3_client()
     from app.core.redis import redis_client

@@ -21,7 +21,8 @@ WikINT is built with a modern async Python backend and a React-based frontend, o
 | **ARQ** | 0.26+ | Async Redis-backed job queue. Cron scheduling for background tasks |
 | **aioboto3** | 13.0+ | Async S3 client for MinIO operations (presigned URLs, file management) |
 | **meilisearch-python-async** | 3.0+ | Async Meilisearch SDK for search index management and queries |
-| *(ClamAV INSTREAM)* | — | Zero-dependency async TCP client for ClamAV virus scanning (in `upload.py`) |
+| **YARA** | — | Local pattern-matching malware scanner (rules in `api/yara_rules/`) |
+| **MalwareBazaar** | — | Online SHA-256 hash lookup via Abuse.ch (free, unlimited) |
 | **aiosmtplib** | 3.0+ | Async SMTP client for sending verification emails |
 | **slowapi** | 0.1.9+ | Rate limiting middleware backed by Redis |
 | **sse-starlette** | 2.0+ | Server-Sent Events for real-time notification and annotation streaming |
@@ -75,12 +76,12 @@ WikINT is built with a modern async Python backend and a React-based frontend, o
 
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| **Docker Compose** | v2 | Multi-service orchestration (11 services) |
+| **Docker Compose** | v2 | Multi-service orchestration (10 services) |
 | **PostgreSQL** | 16 | Primary relational database. UUID PK with `gen_random_uuid()`, JSONB columns |
 | **Redis** | 7 | Cache, rate limiter, JWT blacklist, ARQ job queue. 256MB max, LRU eviction |
 | **MinIO** | Latest | S3-compatible object storage. Self-hosted, presigned URL uploads/downloads |
 | **Meilisearch** | 1.12 | Full-text search. Typo tolerance, multi-index, filterable attributes |
-| **ClamAV** | Latest | Antivirus daemon. Max scan size matches `MAX_FILE_SIZE_MB` (default 100 MiB), TCP socket on port 3310 |
+| **YARA + MalwareBazaar** | — | Hybrid malware scanner. YARA rules for local pattern matching, MalwareBazaar for SHA-256 hash lookups |
 | **Nginx** | Alpine | Reverse proxy, SSL termination (Let's Encrypt), security headers, WebSocket upgrade |
 | **Certbot** | Latest | SSL certificate management (Let's Encrypt) |
 
@@ -103,8 +104,8 @@ Lightweight, single-binary deployment. Built-in typo tolerance is essential for 
 ### Why ARQ over Celery?
 ARQ is async-native and uses Redis (already in the stack). Celery would require an additional broker and doesn't integrate as cleanly with the async codebase.
 
-### Why presigned URLs for uploads?
-Files go directly from browser to MinIO, bypassing the API server. This avoids memory pressure on the API for large files and allows progress tracking via XMLHttpRequest.
+### Why multipart uploads through the API?
+File bytes flow through the API server so they can be scanned for malware (YARA + MalwareBazaar) before reaching S3 storage. This ensures infected files are never stored.
 
 ### Why Server-Sent Events over WebSocket?
 SSE is simpler for the unidirectional notification/annotation event streams. No need for bidirectional communication. EventSource auto-reconnects on network drops. The multi-tab coordination via BroadcastChannel prevents duplicate connections.

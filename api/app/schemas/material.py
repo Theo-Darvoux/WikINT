@@ -55,25 +55,6 @@ class MaterialDetail(MaterialOut):
     current_version_info: MaterialVersionOut | None = None
 
 
-class UploadRequestIn(BaseModel):
-    filename: str = Field(..., min_length=1, max_length=255)
-    size: int = Field(..., ge=0)  # upper bound enforced by router via MAX_FILE_SIZE_MB setting
-    mime_type: str = Field(..., max_length=200)
-
-
-class UploadRequestOut(BaseModel):
-    upload_url: str
-    file_key: str
-    mime_type: str
-
-
-class UploadCompleteIn(BaseModel):
-    file_key: str = Field(
-        ...,
-        pattern=r"^uploads/[0-9a-f\-]{36}/[0-9a-f\-]{36}/.{1,255}$",
-    )
-
-
 class UploadCompleteOut(BaseModel):
     file_key: str
     size: int

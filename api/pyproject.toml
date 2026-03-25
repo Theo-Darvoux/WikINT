@@ -27,6 +27,7 @@ dependencies = [
     "Pillow>=11.0.0",
     "pikepdf>=9.0.0",
     "mutagen>=1.47",
+    "yara-python>=4.5",
 ]
 
 [project.optional-dependencies]

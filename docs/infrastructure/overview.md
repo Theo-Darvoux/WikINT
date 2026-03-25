@@ -1,6 +1,6 @@
 # Infrastructure Overview
 
-WikINT runs as a Docker Compose stack of 11 services. This document covers the service topology, networking, health checks, and how production vs development modes differ.
+WikINT runs as a Docker Compose stack of 10 services. This document covers the service topology, networking, health checks, and how production vs development modes differ.
 
 **Key files**: `docker-compose.yml`, `docker-compose.dev.yml`, `run.sh`
 
@@ -25,7 +25,6 @@ graph TD
         MinIO["minio<br/>:9000, :9001"]
         MinIOSetup["minio-setup<br/>(init only)"]
         Meili["meilisearch<br/>:7700"]
-        ClamAV["clamav<br/>:3310"]
         Certbot["certbot<br/>(manual runs)"]
     end
 
@@ -36,7 +35,6 @@ graph TD
     API --> Redis
     API --> MinIO
     API --> Meili
-    API --> ClamAV
     API --> SMTP
     Worker --> Postgres
     Worker --> Redis
@@ -57,7 +55,6 @@ graph TD
 | `minio` | `minio/minio:latest` | S3-compatible file storage | 9000 (API), 9001 (console) |
 | `minio-setup` | `minio/mc:latest` | One-shot: creates the `wikint` bucket | none |
 | `meilisearch` | `getmeili/meilisearch:v1.12` | Full-text search engine | 7700 |
-| `clamav` | `clamav/clamav:latest` | Antivirus scanning | 3310 |
 | `api` | Custom (Python 3.12-slim) | FastAPI backend with Gunicorn (4 workers) | 8000 |
 | `worker` | Custom (same as api) | ARQ background job processor | none |
 | `web` | Custom (Node 20-alpine) | Next.js frontend | 3000 |
@@ -73,7 +70,7 @@ All long-running services have `restart: unless-stopped` to auto-recover from cr
 Docker Compose `depends_on` with `condition: service_healthy` enforces this boot sequence (in both production and development):
 
 ```
-1. postgres, redis, minio, meilisearch, clamav  (infrastructure, parallel)
+1. postgres, redis, minio, meilisearch           (infrastructure, parallel)
 2. minio-setup                                    (waits for minio healthy)
 3. api                                            (waits for postgres, redis, minio)
 4. worker                                         (waits for postgres, redis)
@@ -91,10 +88,7 @@ Docker Compose `depends_on` with `condition: service_healthy` enforces this boot
 | `redis` | `redis-cli ping` | 5s | default |
 | `minio` | `mc ready local` | 5s | default |
 | `meilisearch` | `curl -f http://localhost:7700/health` | 5s | default |
-| `clamav` | `echo 'PING' | nc -w 5 127.0.0.1 3310 | grep PONG` | 30s | **120s** (signature download) |
 | `api` | Python `urllib.request.urlopen('http://localhost:8000/api/health')` | 10s | default |
-
-ClamAV has a 120-second start period because it must download virus signature databases before becoming ready.
 
 ---
 
@@ -142,7 +136,6 @@ volumes:
   redis_data:       # RDB snapshots
   minio_data:       # Uploaded files
   meilisearch_data: # Search indexes
-  clamav_data:      # Virus signature databases
 ```
 
 All persistent data lives in Docker named volumes. Removing these volumes destroys all data.

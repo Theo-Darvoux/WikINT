@@ -71,14 +71,12 @@ Supports MinIO (development) and Cloudflare R2 (production).
 | `MEILI_MASTER_KEY` | `change-me-to-a-random-key` | Master API key. Generate with `openssl rand -hex 16` |
 | `MEILI_URL` | `http://meilisearch:7700` | Internal Meilisearch endpoint |
 
-### ClamAV
+### Malware Scanner
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAMAV_HOST` | `clamav` | ClamAV daemon hostname |
-| `CLAMAV_PORT` | `3310` | ClamAV daemon TCP port |
-| `CLAMAV_SCAN_TIMEOUT_BASE` | `60` | Base scan timeout in seconds |
-| `CLAMAV_SCAN_TIMEOUT_PER_GB` | `120` | Additional seconds per GB of file size |
+| `YARA_RULES_DIR` | `yara_rules` | Directory containing YARA rule files for local pattern matching |
+| `MALWAREBAZAAR_TIMEOUT` | `10` | Timeout in seconds for MalwareBazaar SHA-256 hash lookups |
 
 ### SMTP (Email)
 

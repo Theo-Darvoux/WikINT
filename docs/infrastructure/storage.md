@@ -14,7 +14,7 @@ In production, files are stored in a Cloudflare R2 bucket. R2 is S3-compatible w
 - **Public access**: Via a custom domain (e.g., `files.yourdomain.com`) connected to the R2 bucket through Cloudflare, which provides CDN caching automatically.
 - **Region**: `auto` (Cloudflare manages placement)
 
-The browser uploads/downloads files directly via presigned URLs — file bytes never pass through the API server.
+For downloads, the browser fetches files directly via presigned URLs. For uploads, file bytes flow through the API server for malware scanning before being stored in S3.
 
 ## Development: MinIO
 
@@ -98,53 +98,26 @@ sequenceDiagram
     participant API as API Server
     participant S3 as S3 Storage
 
-    C->>API: POST /api/upload/request-url
-    API->>S3: generate_presigned_put("uploads/uuid/file.pdf")
-    S3-->>API: Presigned PUT URL
-    API-->>C: { url, file_key }
-
-    C->>S3: PUT file to presigned URL
-    C->>API: POST /api/upload/complete { file_key }
-    API->>S3: read_object_bytes (first 2KB for MIME detection)
-    API->>S3: head_object (verify exists, get size)
+    C->>API: POST /api/upload (multipart)
+    Note over API: MIME detection, metadata stripping,<br/>YARA + MalwareBazaar scan
+    API->>S3: Upload clean file
     API-->>C: { file_key, size, mime_type }
 ```
 
-The two-step presigned URL pattern means file bytes never pass through the API server -- they go directly from the browser to S3 storage.
+File bytes flow through the API server, where they are scanned for malware before being stored in S3. Downloads use presigned GET URLs, going directly from S3 to the browser.
 
 ---
 
-## ClamAV Integration
+## Malware Scanner Integration
 
-Virus scanning is performed via a separate ClamAV service. The scan happens during upload completion: the API fetches the file from S3 and streams it to ClamAV via the TCP protocol on port 3310.
+Malware scanning is performed inline by the API during upload, using a hybrid YARA + MalwareBazaar approach (see `api/app/core/scanner.py`). Files are scanned before they reach S3 storage.
 
-### ClamAV Configuration
-
-```
-TCPSocket 3310
-TCPAddr 0.0.0.0
-LocalSocket /tmp/clamd.socket
-MaxFileSize 104857600        # 100 MiB — must match MAX_FILE_SIZE_MB
-MaxScanSize 104857600        # 100 MiB
-StreamMaxLength 104857600    # 100 MiB
-
-# Zip-bomb & DoS Protection
-MaxRecursion 16              # Max nested archive depth
-MaxFiles 10000               # Max files per archive
-MaxEmbeddedArchives 10MB     # Limit for embedded objects
-AlertExceedsMax yes          # Fail-closed if limits are exceeded
-```
-
-These limits must match the `MAX_FILE_SIZE_MB` setting in `.env` (default 100 MiB) and the nginx `client_max_body_size`, ensuring any file that can be uploaded can also be scanned.
-
-### Timeouts
-
-Scan timeouts are configurable via environment variables:
+### Scanner Configuration
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `CLAMAV_SCAN_TIMEOUT_BASE` | 60s | Base timeout for any scan |
-| `CLAMAV_SCAN_TIMEOUT_PER_GB` | 120s | Additional seconds per GB of file size |
+| `YARA_RULES_DIR` | `api/yara_rules/` | Directory containing YARA rule files |
+| `MALWAREBAZAAR_TIMEOUT` | 10s | Timeout for MalwareBazaar SHA-256 hash lookup |
 
 ---
 

@@ -101,7 +101,7 @@ async def create_pull_request(
                 if not await object_exists(att_fk):
                     raise BadRequestError(f"Attachment file not found in storage: {att_fk}")
 
-    # Verify every file has been scanned (prevents bypassing complete_upload)
+    # Verify every file has been scanned (prevents bypassing the upload endpoint)
     for op in data.operations:
         fk = getattr(op, "file_key", None)
         if fk and not await redis.get(f"{_SCAN_CACHE_PREFIX}{fk}"):

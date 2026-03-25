@@ -35,8 +35,17 @@ def generate_code() -> str:
     return "".join(secrets.choice(alphabet) for _ in range(8))
 
 
+def generate_magic_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
 async def store_code(redis: Redis, email: str, code: str) -> None:
     await redis.setex(f"auth:code:{email}", CODE_TTL_SECONDS, code)
+
+
+async def store_magic_token(redis: Redis, email: str, token: str) -> None:
+    await redis.setex(f"auth:magic:{token}", CODE_TTL_SECONDS, email)
+    await redis.setex(f"auth:magic_ref:{email}", CODE_TTL_SECONDS, token)
 
 
 async def verify_code(redis: Redis, email: str, code: str) -> bool:
@@ -46,8 +55,26 @@ async def verify_code(redis: Redis, email: str, code: str) -> bool:
     stored = await redis.get(f"auth:code:{email}")
     if stored and stored == code:
         await redis.delete(f"auth:code:{email}")
+        # Mutual invalidation: delete the paired magic link token
+        magic_token = await redis.get(f"auth:magic_ref:{email}")
+        if magic_token:
+            await redis.delete(f"auth:magic:{magic_token}")
+            await redis.delete(f"auth:magic_ref:{email}")
         return True
     return False
+
+
+async def verify_magic_token(redis: Redis, token: str) -> str | None:
+    email = await redis.get(f"auth:magic:{token}")
+    if not email:
+        return None
+
+    # Single-use: delete the token and its reverse reference
+    await redis.delete(f"auth:magic:{token}")
+    await redis.delete(f"auth:magic_ref:{email}")
+    # Mutual invalidation: delete the paired verification code
+    await redis.delete(f"auth:code:{email}")
+    return email
 
 
 async def check_rate_limit(redis: Redis, email: str) -> bool:

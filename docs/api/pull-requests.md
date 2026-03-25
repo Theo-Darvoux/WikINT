@@ -39,7 +39,7 @@ A PR contains an array of operations in its `payload` JSONB column. Operations a
 - Maximum **50 operations** per PR
 - Maximum **5 open PRs** per student (unlimited for BUREAU/VIEUX)
 - `file_key` must start with `uploads/{user_id}/` (ownership check)
-- **Scan verification**: All `file_key`s must have a Redis scan cache entry (`upload:scanned:{file_key}`), proving they passed virus scanning via `complete_upload`. Files that haven't been scanned are rejected at PR creation.
+- **Scan verification**: All `file_key`s must have a Redis scan cache entry (`upload:scanned:{file_key}`), proving they passed malware scanning during upload. Files that haven't been scanned are rejected at PR creation.
 - **File key claiming**: Each `file_key` can only be referenced by one open PR at a time. Attempting to reuse a `file_key` that is already attached to another open PR returns an error.
 - **Attachment validation**: Attachments are validated with a typed `AttachmentOp` model that enforces the same validators as `CreateMaterialOp` (title, type, file_key, file_name, tags, metadata).
 - Attachments cannot be nested (no attachments on attachments)
@@ -74,12 +74,12 @@ Cyclic dependencies are detected and rejected with a `BadRequestError`.
 
 ## Virus Scanning
 
-Virus scanning happens **synchronously** during `POST /api/upload/complete`. By the time a `file_key` is returned to the client, the file has already been:
+Virus scanning happens **synchronously** during `POST /api/upload`. By the time a `file_key` is returned to the client, the file has already been:
 1. Checked for MIME/extension consistency
 2. Stripped of metadata (EXIF, PDF Info) if <50MB
-3. Scanned by ClamAV via the INSTREAM protocol
+3. Scanned by YARA rules (local) and MalwareBazaar SHA-256 hash lookup (online)
 
-If the scan fails or ClamAV is unavailable, the upload is rejected (fail-closed with 503). Infected files are deleted and rejected with 400.
+If the scan fails or the scanner is unavailable, the upload is rejected (fail-closed with 503). Infected files are rejected with 400 and never stored.
 
 Every PR carries a `virus_scan_result` field (VARCHAR(20)). Since all files are pre-scanned, PRs are created with `virus_scan_result = clean` (if files present) or `skipped` (no files). The `pending`, `error`, and `infected` states are no longer set at PR creation.
 

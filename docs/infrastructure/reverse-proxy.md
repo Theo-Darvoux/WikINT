@@ -92,7 +92,7 @@ The web upstream also has:
 | `tcp_nopush` | `on` |
 | `keepalive_timeout` | `65` |
 
-The `client_max_body_size` must be >= `MAX_FILE_SIZE_MB` in `.env` (default 100 MiB) and match the ClamAV `MaxFileSize` limit.
+The `client_max_body_size` must be >= `MAX_FILE_SIZE_MB` in `.env` (default 100 MiB).
 
 ### CORS Handling
 

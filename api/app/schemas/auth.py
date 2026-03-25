@@ -21,6 +21,10 @@ class VerifyCodeIn(BaseModel):
     code: str
 
 
+class VerifyMagicLinkIn(BaseModel):
+    token: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     user: "UserBrief"

@@ -67,7 +67,7 @@ Complex file upload interface:
 - Supports `initialFiles` prop for pre-loading files from GlobalDropZone
 
 **File statuses**: `pending` → `uploading` → `scanned` → `done` | `error` | `virus`
-- `scanned`: amber pulsing progress bar with "Scanning for viruses…" text (while `upload/complete` runs)
+- `scanned`: amber pulsing progress bar with "Scanning for viruses…" text (while the server scans the file)
 - `done`: green check icon
 - `error`: red alert icon with error message and retry button
 - `virus`: distinct threat UI — `ShieldX` icon with shake animation, red pulsing border, danger background, and explicit "Threat detected — file rejected" message. No retry button (file is deleted server-side). Detected by checking for `ApiError` with status 400 and message containing "virus"
@@ -88,11 +88,9 @@ Modal for editing materials (title, description, tags) or directories (name, des
 
 ## useUpload Hook
 
-`web/src/hooks/use-upload.ts` manages the three-phase upload:
+`web/src/hooks/use-upload.ts` manages the upload:
 
-1. `POST /api/upload/request-url` → get `upload_url` and `file_key`
-2. `PUT upload_url` (XHR with progress tracking, 10-90% range)
-3. `POST /api/upload/complete` → virus scan, final metadata
+1. `POST /api/upload` (multipart, with progress tracking) → malware scan, MIME detection, metadata stripping, and S3 storage all happen server-side
 
 Returns: `{ uploading, progress, error, fileKey, upload, reset }`
 

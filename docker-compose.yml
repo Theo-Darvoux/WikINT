@@ -62,26 +62,6 @@ services:
           cpus: "0.25"
           memory: 256M
 
-  clamav:
-    restart: unless-stopped
-    image: clamav/clamav:latest
-    volumes:
-      - clamav_data:/var/lib/clamav
-      - ./infra/docker/clamav/clamd.conf:/etc/clamav/clamd.conf
-    healthcheck:
-      test: ["CMD-SHELL", "echo 'PING' | nc -w 5 127.0.0.1 3310 | grep PONG"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
-    networks:
-      - backend
-    deploy:
-      resources:
-        reservations:
-          cpus: "0.5"
-          memory: 1G
-
   api:
     image: ghcr.io/theo-darvoux/wikint/api:latest
     restart: unless-stopped
@@ -98,8 +78,6 @@ services:
       - S3_USE_SSL=${S3_USE_SSL}
       - MEILI_URL=${MEILI_URL}
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
-      - CLAMAV_HOST=${CLAMAV_HOST}
-      - CLAMAV_PORT=${CLAMAV_PORT}
       - SECRET_KEY=${SECRET_KEY}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
@@ -147,8 +125,6 @@ services:
       - S3_USE_SSL=${S3_USE_SSL}
       - MEILI_URL=${MEILI_URL}
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
-      - CLAMAV_HOST=${CLAMAV_HOST}
-      - CLAMAV_PORT=${CLAMAV_PORT}
       - SECRET_KEY=${SECRET_KEY}
       - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
       - ONLYOFFICE_FILE_TOKEN_SECRET=${ONLYOFFICE_FILE_TOKEN_SECRET}
@@ -239,6 +215,5 @@ volumes:
   postgres_data:
   redis_data:
   meilisearch_data:
-  clamav_data:
   onlyoffice_data:
   onlyoffice_log:

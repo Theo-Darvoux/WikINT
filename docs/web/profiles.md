@@ -10,7 +10,7 @@ User profiles display personal information, reputation, contribution history, an
 
 ### Own Profile (`/profile`)
 Protected by `AuthGuard`. Fetches from `GET /api/users/me`. Features:
-- Avatar upload via presigned URL flow (request URL → PUT → complete → PATCH /users/me)
+- Avatar upload via multipart POST flow (POST /api/upload → PATCH /users/me)
 - Editable profile fields (display name, bio, academic year)
 - "Recently Viewed" section
 - Contribution tabs

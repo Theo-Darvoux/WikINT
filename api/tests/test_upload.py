@@ -1,10 +1,11 @@
+import io
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BadRequestError
+from app.core.exceptions import BadRequestError, ServiceUnavailableError
 from app.models.user import User, UserRole
 
 
@@ -29,22 +30,26 @@ def _auth_headers(user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-@patch("app.routers.upload.generate_presigned_put", new_callable=AsyncMock)
+def _make_pdf_file(content: bytes = b"%PDF-1.4 test content") -> dict:
+    """Create a multipart file tuple for httpx."""
+    return {"file": ("test.pdf", io.BytesIO(content), "application/pdf")}
+
+
+@patch("app.routers.upload.scan_file", new_callable=AsyncMock)
 @patch("app.routers.upload.get_s3_client")
-async def test_request_upload_url(
-    mock_s3_cm, mock_generate, client: AsyncClient, db_session: AsyncSession
+async def test_upload_success(
+    mock_s3_cm,
+    mock_scan,
+    client: AsyncClient,
+    db_session: AsyncSession,
 ) -> None:
-    mock_generate.return_value = "https://presigned.url/put"
+    mock_scan.return_value = None
 
-    # Mock s3 client and paginator to avoid real network calls
     mock_s3 = AsyncMock()
-    # Correctly mock the async context manager
     mock_s3_cm.return_value.__aenter__.return_value = mock_s3
-
     mock_paginator = MagicMock()
     mock_s3.get_paginator = MagicMock(return_value=mock_paginator)
 
-    # paginate returns an AsyncIterator
     class MockAsyncIterator:
         def __init__(self, items):
             self.items = items
@@ -62,131 +67,141 @@ async def test_request_upload_url(
     user = await _create_user(db_session)
     await db_session.commit()
 
-    payload = {"filename": "test.pdf", "size": 1024, "mime_type": "application/pdf"}
-
     response = await client.post(
-        "/api/upload/request-url", json=payload, headers=_auth_headers(user)
+        "/api/upload",
+        files=_make_pdf_file(),
+        headers=_auth_headers(user),
     )
     assert response.status_code == 200
     data = response.json()
-    assert "upload_url" in data
+    assert data["mime_type"] == "application/pdf"
+    assert data["size"] > 0
     assert "file_key" in data
-    assert data["mime_type"] == "application/pdf"
+    assert data["file_key"].startswith(f"uploads/{user.id}/")
+
+    mock_scan.assert_called_once()
+    mock_s3.put_object.assert_called_once()
 
 
-async def test_request_upload_url_too_large(client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_upload_extension_not_allowed(client: AsyncClient, db_session: AsyncSession) -> None:
     user = await _create_user(db_session)
     await db_session.commit()
-
-    payload = {
-        "filename": "huge.iso",
-        "size": 2 * 1024 * 1024 * 1024,  # 2 GB
-        "mime_type": "application/x-iso9660-image",
-    }
 
     response = await client.post(
-        "/api/upload/request-url", json=payload, headers=_auth_headers(user)
+        "/api/upload",
+        files={"file": ("malware.exe", io.BytesIO(b"MZ..."), "application/x-executable")},
+        headers=_auth_headers(user),
     )
     assert response.status_code == 400
-    assert "exceeds maximum" in response.json()["detail"]
+    assert "not supported" in response.json()["detail"]
 
 
-@patch("app.routers.upload.get_object_info", new_callable=AsyncMock)
-@patch("app.routers.upload._scan_instream", new_callable=AsyncMock)
-@patch("app.routers.upload.read_object_bytes", new_callable=AsyncMock)
-@patch("app.routers.upload.read_full_object", new_callable=AsyncMock)
-@patch("app.routers.upload.get_redis", new_callable=AsyncMock)
-async def test_complete_upload_success(
-    mock_get_redis,
-    mock_read_full,
-    mock_read_bytes,
+async def test_upload_too_large(client: AsyncClient, db_session: AsyncSession) -> None:
+    user = await _create_user(db_session)
+    await db_session.commit()
+
+    # Create a file just over 100 MiB (the default max)
+    # We don't actually send 100MB — the test just verifies the limit logic
+    # by patching max_file_size_mb to a small value
+    with patch("app.routers.upload.settings") as mock_settings:
+        mock_settings.max_file_size_mb = 0  # 0 MiB limit
+        mock_settings.s3_bucket = "test"
+
+        response = await client.post(
+            "/api/upload",
+            files=_make_pdf_file(b"%PDF-1.4 some content here"),
+            headers=_auth_headers(user),
+        )
+        assert response.status_code == 400
+        assert "exceeds maximum" in response.json()["detail"]
+
+
+@patch("app.routers.upload.scan_file", new_callable=AsyncMock)
+async def test_upload_malware_detected(
     mock_scan,
-    mock_info,
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    mock_info.return_value = {"size": 1024, "content_type": "application/pdf"}
-    mock_scan.return_value = True
-    mock_read_bytes.return_value = b"%PDF-1.4"
-    mock_read_full.return_value = b"%PDF-1.4 content"
-
-    # Mock redis
-    mock_redis = AsyncMock()
-    mock_redis.get.return_value = None
-    m_gen = MagicMock()
-    m_gen.__anext__.return_value = mock_redis
-    mock_get_redis.return_value = m_gen
+    mock_scan.side_effect = BadRequestError("File failed malware scan")
 
     user = await _create_user(db_session)
     await db_session.commit()
 
-    payload = {"file_key": f"uploads/{user.id}/{uuid.uuid4()}/file.pdf"}
-
-    response = await client.post("/api/upload/complete", json=payload, headers=_auth_headers(user))
-    assert response.status_code == 200
-    data = response.json()
-    assert data["size"] == 1024
-    assert data["mime_type"] == "application/pdf"
-
-
-@patch("app.routers.upload.get_object_info", new_callable=AsyncMock)
-@patch("app.routers.upload.get_redis", new_callable=AsyncMock)
-async def test_complete_upload_not_found(
-    mock_get_redis, mock_info, client: AsyncClient, db_session: AsyncSession
-) -> None:
-    mock_info.side_effect = Exception("Not found")
-
-    # Mock redis
-    mock_redis = AsyncMock()
-    mock_redis.get.return_value = None
-    m_gen = MagicMock()
-    m_gen.__anext__.return_value = mock_redis
-    mock_get_redis.return_value = m_gen
-
-    user = await _create_user(db_session)
-    await db_session.commit()
-
-    payload = {"file_key": f"uploads/{user.id}/{uuid.uuid4()}/fake.pdf"}
-
-    response = await client.post("/api/upload/complete", json=payload, headers=_auth_headers(user))
+    response = await client.post(
+        "/api/upload",
+        files=_make_pdf_file(),
+        headers=_auth_headers(user),
+    )
     assert response.status_code == 400
-    assert "not found in storage" in response.json()["detail"]
+    assert "malware scan" in response.json()["detail"]
 
 
-@patch("app.routers.upload.get_object_info", new_callable=AsyncMock)
-@patch("app.routers.upload._scan_instream", new_callable=AsyncMock)
-@patch("app.routers.upload.delete_object", new_callable=AsyncMock)
-@patch("app.routers.upload.read_object_bytes", new_callable=AsyncMock)
-@patch("app.routers.upload.read_full_object", new_callable=AsyncMock)
-@patch("app.routers.upload.get_redis", new_callable=AsyncMock)
-async def test_complete_upload_virus_detected(
-    mock_get_redis,
-    mock_read_full,
-    mock_read_bytes,
-    mock_delete,
+@patch("app.routers.upload.scan_file", new_callable=AsyncMock)
+async def test_upload_scanner_unavailable(
     mock_scan,
-    mock_info,
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    mock_info.return_value = {"size": 1024, "content_type": "application/pdf"}
-    mock_scan.side_effect = BadRequestError("File failed virus scan")
-    mock_read_bytes.return_value = b"%PDF-1.4"
-    mock_read_full.return_value = b"%PDF-1.4 content"
-
-    # Mock redis
-    mock_redis = AsyncMock()
-    mock_redis.get.return_value = None
-    m_gen = MagicMock()
-    m_gen.__anext__.return_value = mock_redis
-    mock_get_redis.return_value = m_gen
+    mock_scan.side_effect = ServiceUnavailableError(
+        "Malware scanner unavailable — file rejected (fail-closed)"
+    )
 
     user = await _create_user(db_session)
     await db_session.commit()
 
-    payload = {"file_key": f"uploads/{user.id}/{uuid.uuid4()}/virus.pdf"}
+    response = await client.post(
+        "/api/upload",
+        files=_make_pdf_file(),
+        headers=_auth_headers(user),
+    )
+    assert response.status_code == 503
+    assert "fail-closed" in response.json()["detail"]
 
-    response = await client.post("/api/upload/complete", json=payload, headers=_auth_headers(user))
+
+@patch("app.routers.upload.scan_file", new_callable=AsyncMock)
+async def test_upload_svg_xss_rejected(
+    mock_scan,
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    svg_with_script = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+
+    user = await _create_user(db_session)
+    response = await client.post(
+        "/api/upload",
+        files={"file": ("image.svg", io.BytesIO(svg_with_script), "image/svg+xml")},
+        headers=_auth_headers(user),
+    )
+    # SVG safety check runs before scanner, so scanner should not be called
     assert response.status_code == 400
-    assert "failed virus scan" in response.json()["detail"]
-    mock_delete.assert_called_once_with(payload["file_key"])
+    assert (
+        "scripts" in response.json()["detail"].lower()
+        or "active content" in response.json()["detail"].lower()
+    )
+    mock_scan.assert_not_called()
+
+
+async def test_deprecated_request_url(client: AsyncClient, db_session: AsyncSession) -> None:
+    user = await _create_user(db_session)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/upload/request-url",
+        json={"filename": "test.pdf", "size": 1024, "mime_type": "application/pdf"},
+        headers=_auth_headers(user),
+    )
+    assert response.status_code == 400
+    assert "removed" in response.json()["detail"]
+
+
+async def test_deprecated_complete(client: AsyncClient, db_session: AsyncSession) -> None:
+    user = await _create_user(db_session)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/upload/complete",
+        json={"file_key": "uploads/fake/fake/test.pdf"},
+        headers=_auth_headers(user),
+    )
+    assert response.status_code == 400
+    assert "removed" in response.json()["detail"]

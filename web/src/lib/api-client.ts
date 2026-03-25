@@ -51,7 +51,7 @@ function refreshTokenOnce(): Promise<string | null> {
     return refreshPromise;
 }
 
-function getClientId(): string {
+export function getClientId(): string {
     if (typeof window === "undefined") return "server-client";
     let clientId = localStorage.getItem("wikint_client_id");
     if (!clientId) {

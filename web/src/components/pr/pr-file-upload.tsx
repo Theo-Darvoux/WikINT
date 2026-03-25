@@ -2,16 +2,11 @@
 
 import { useState, useRef } from "react";
 import { UploadCloud, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { API_BASE, getClientId } from "@/lib/api-client";
+import { getAccessToken } from "@/lib/auth-tokens";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB } from "@/lib/file-utils";
-
-interface UploadRequestOut {
-    upload_url: string;
-    file_key: string;
-    mime_type: string;
-}
 
 interface UploadCompleteOut {
     file_key: string;
@@ -28,7 +23,7 @@ interface UploadResult {
 
 export function PRFileUpload({ onUploadComplete }: { onUploadComplete: (result: UploadResult) => void }) {
     const [file, setFile] = useState<File | null>(null);
-    const [status, setStatus] = useState<"idle" | "uploading" | "scanning" | "success" | "error">("idle");
+    const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
     const [progress, setProgress] = useState(0);
     const [errorMsg, setErrorMsg] = useState("");
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -54,41 +49,35 @@ export function PRFileUpload({ onUploadComplete }: { onUploadComplete: (result: 
         setErrorMsg("");
 
         try {
-            // 1. Request presigned URL
-            const { upload_url, file_key, mime_type } = await apiFetch<UploadRequestOut>("/upload/request-url", {
-                method: "POST",
-                body: JSON.stringify({
-                    filename: file.name,
-                    size: file.size,
-                    mime_type: file.type || "application/octet-stream",
-                })
-            });
+            const formData = new FormData();
+            formData.append("file", file);
 
-            // 2. PUT to presigned URL
             const xhr = new XMLHttpRequest();
-            xhr.open("PUT", upload_url, true);
-            xhr.setRequestHeader("Content-Type", mime_type);
+            xhr.open("POST", `${API_BASE}/upload`, true);
+
+            const token = getAccessToken();
+            if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+            xhr.setRequestHeader("X-Client-ID", getClientId());
 
             xhr.upload.onprogress = (e) => {
                 if (e.lengthComputable) {
-                    setProgress(Math.round((e.loaded / e.total) * 100));
+                    // 0-90% for upload, 90-100% for server-side scanning
+                    setProgress(Math.round((e.loaded / e.total) * 90));
                 }
             };
 
-            await new Promise<void>((resolve, reject) => {
+            const result = await new Promise<UploadCompleteOut>((resolve, reject) => {
                 xhr.onload = () => {
-                    if (xhr.status >= 200 && xhr.status < 300) resolve();
-                    else reject(new Error("Upload failed"));
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(JSON.parse(xhr.responseText));
+                    } else {
+                        let msg = "Upload failed";
+                        try { msg = JSON.parse(xhr.responseText).detail ?? msg; } catch { /* ignore */ }
+                        reject(new Error(msg));
+                    }
                 };
                 xhr.onerror = () => reject(new Error("Network error"));
-                xhr.send(file);
-            });
-
-            // 3. Complete & scan
-            setStatus("scanning");
-            const result = await apiFetch<UploadCompleteOut>("/upload/complete", {
-                method: "POST",
-                body: JSON.stringify({ file_key })
+                xhr.send(formData);
             });
 
             setStatus("success");
@@ -151,18 +140,12 @@ export function PRFileUpload({ onUploadComplete }: { onUploadComplete: (result: 
             {status === "uploading" && (
                 <div className="space-y-3 max-w-xs mx-auto">
                     <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
-                    <div className="text-sm font-medium">Uploading... {progress}%</div>
+                    <div className="text-sm font-medium">
+                        {progress >= 90 ? "Scanning for malware..." : `Uploading... ${progress}%`}
+                    </div>
                     <div className="h-2 bg-secondary rounded-full overflow-hidden">
                         <div className="h-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
                     </div>
-                </div>
-            )}
-
-            {status === "scanning" && (
-                <div className="space-y-3">
-                    <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
-                    <div className="text-sm font-medium">Scanning for viruses...</div>
-                    <div className="text-xs text-muted-foreground">This may take a minute for large files.</div>
                 </div>
             )}
 

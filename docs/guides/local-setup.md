@@ -35,7 +35,7 @@ cp .env.example .env
 ./run.sh --dev
 ```
 
-This starts all 11 services with hot-reloading enabled. First run will take several minutes to build images and download dependencies.
+This starts all 10 services with hot-reloading enabled. First run will take several minutes to build images and download dependencies.
 
 ---
 
@@ -155,7 +155,7 @@ Services are split across two Docker networks for isolation:
 | Network | Services |
 |---------|----------|
 | `frontend` | nginx, web, api |
-| `backend` | api, worker, postgres, redis, minio, meilisearch, clamav |
+| `backend` | api, worker, postgres, redis, minio, meilisearch |
 
 The `api` service bridges both networks: it receives proxied requests from nginx on the `frontend` network and communicates with databases and storage on the `backend` network. Nginx also joins both networks so it can proxy to both `api` and `web` on the frontend and reach `minio` on the backend for the `/s3/` location.
 
@@ -181,10 +181,6 @@ Production limits are lower (see the upload and download endpoint documentation)
 ---
 
 ## Troubleshooting
-
-### ClamAV takes a long time to start
-
-ClamAV downloads virus signature databases on first start (~120 seconds). The `start_period: 120s` health check accounts for this. Subsequent starts use cached signatures from the `clamav_data` volume.
 
 ### Port conflicts
 
