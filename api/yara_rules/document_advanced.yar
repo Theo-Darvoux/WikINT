@@ -6,7 +6,7 @@ rule RTF_Equation_Editor_Exploit
 
     strings:
         // RTF magic
-        $rtf = "{\\rtf" at 0
+        $rtf = "{\\rtf"
         // Equation Editor OLE class IDs (common exploit targets)
         $eq1 = "0002CE02" ascii nocase
         $eq2 = "0002ce02-0000-0000-c000-000000000046" ascii nocase
@@ -17,7 +17,7 @@ rule RTF_Equation_Editor_Exploit
         $objemb = "\\objclass" ascii nocase
 
     condition:
-        $rtf and ($obj or $objemb) and any of ($eq*)
+        $rtf at 0 and ($obj or $objemb) and any of ($eq*)
 }
 
 rule RTF_Embedded_Object_Suspicious
@@ -27,7 +27,7 @@ rule RTF_Embedded_Object_Suspicious
         severity = "medium"
 
     strings:
-        $rtf = "{\\rtf" at 0
+        $rtf = "{\\rtf"
         $obj = "\\object" ascii
         $embed = "\\objdata" ascii
         // Package shell object — used to embed arbitrary files
@@ -35,7 +35,7 @@ rule RTF_Embedded_Object_Suspicious
         $shell = "OLE2Link" ascii nocase
 
     condition:
-        $rtf and $obj and $embed and ($pkg or $shell)
+        $rtf at 0 and $obj and $embed and ($pkg or $shell)
 }
 
 rule XLM_Excel4_Macro
@@ -70,7 +70,7 @@ rule OOXML_VBA_Project
         severity = "medium"
 
     strings:
-        $pk = "PK\x03\x04" at 0
+        $pk = "PK\x03\x04"
         // VBA project binary inside the ZIP
         $vba1 = "vbaProject.bin" ascii
         $vba2 = "VBAProject" ascii
@@ -85,7 +85,7 @@ rule OOXML_VBA_Project
         $exec4 = "cmd.exe" ascii wide nocase
 
     condition:
-        $pk and any of ($vba*) and
+        $pk at 0 and any of ($vba*) and
         (any of ($auto*) or any of ($exec*))
 }
 
@@ -96,7 +96,7 @@ rule PDF_Name_Hex_Obfuscation
         severity = "high"
 
     strings:
-        $pdf = "%PDF-" at 0
+        $pdf = "%PDF-"
         // Hex-obfuscated /JavaScript — e.g. /J#61vaScript, /Jav#61Script
         $js_obf1 = /\/J#[0-9a-fA-F]{2}/ ascii
         $js_obf2 = /\/Ja#[0-9a-fA-F]{2}/ ascii
@@ -106,7 +106,7 @@ rule PDF_Name_Hex_Obfuscation
         $la_obf = /\/L#[0-9a-fA-F]{2}unch/ ascii
 
     condition:
-        $pdf and any of ($js_obf*, $oa_obf, $la_obf)
+        $pdf at 0 and any of ($js_obf*, $oa_obf, $la_obf)
 }
 
 rule Encrypted_Document_Indicator
@@ -138,7 +138,7 @@ rule DDE_In_OOXML
         severity = "high"
 
     strings:
-        $pk = "PK\x03\x04" at 0
+        $pk = "PK\x03\x04"
         $dde1 = "DDEAUTO" ascii nocase
         $dde2 = "DDE" ascii nocase
         // DDE typically targets these executables
@@ -148,5 +148,5 @@ rule DDE_In_OOXML
         $cmd4 = "certutil" ascii nocase
 
     condition:
-        $pk and any of ($dde*) and any of ($cmd*)
+        $pk at 0 and any of ($dde*) and any of ($cmd*)
 }

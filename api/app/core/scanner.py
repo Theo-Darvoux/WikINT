@@ -116,10 +116,15 @@ async def _check_malwarebazaar(sha256: str, filename: str) -> str | None:
     if _http_client is None:
         raise RuntimeError("Scanner not initialized — call init_scanner() first")
 
+    headers = {}
+    if settings.malwarebazaar_api_key:
+        headers["Auth-Key"] = settings.malwarebazaar_api_key
+
     try:
         resp = await _http_client.post(
             settings.malwarebazaar_url,
             data={"query": "get_info", "hash": sha256},
+            headers=headers,
         )
     except httpx.TimeoutException:
         raise ServiceUnavailableError(

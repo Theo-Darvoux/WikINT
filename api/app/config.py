@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     yara_scan_timeout: int = 60
     malwarebazaar_timeout: int = 10
     malwarebazaar_url: str = "https://mb-api.abuse.ch/api/v1/"
+    malwarebazaar_api_key: str | None = None
 
     smtp_host: str = "smtp.example.com"
     smtp_port: int = 587
