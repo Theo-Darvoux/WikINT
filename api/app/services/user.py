@@ -1,3 +1,4 @@
+import typing
 import uuid
 from datetime import UTC, datetime
 
@@ -13,6 +14,7 @@ from app.models.notification import Notification
 from app.models.pull_request import PRComment, PRVote, PullRequest
 from app.models.user import User
 from app.models.view_history import ViewHistory
+from app.services.material import material_orm_to_dict
 
 
 async def onboard_user(
@@ -69,19 +71,34 @@ async def get_user_stats(db: AsyncSession, user_id: str) -> dict[str, int]:
     }
 
 
-async def get_recently_viewed(db: AsyncSession, user_id: str, limit: int = 10) -> list[Material]:
+async def get_recently_viewed(db: AsyncSession, user_id: str, limit: int = 10) -> list[dict]:
     uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
     from sqlalchemy.orm import selectinload
 
-    result = await db.execute(
-        select(Material)
+    from app.models.material import MaterialVersion
+
+    stmt = (
+        select(Material, MaterialVersion)
         .options(selectinload(Material.directory))
         .join(ViewHistory, ViewHistory.material_id == Material.id)
+        .outerjoin(
+            MaterialVersion,
+            (Material.id == MaterialVersion.material_id)
+            & (Material.current_version == MaterialVersion.version_number),
+        )
         .where(ViewHistory.user_id == uid)
         .order_by(ViewHistory.viewed_at.desc())
         .limit(limit)
     )
-    return list(result.scalars().all())
+    result = await db.execute(stmt)
+
+    materials_out = []
+    for material, version in result.all():
+        mat_dict = material_orm_to_dict(material)
+        if version:
+            mat_dict["current_version_info"] = version
+        materials_out.append(mat_dict)
+    return materials_out
 
 
 async def get_user_contributions(
@@ -90,7 +107,7 @@ async def get_user_contributions(
     contribution_type: str,
     limit: int,
     offset: int,
-) -> tuple[list[PullRequest] | list[Material] | list[Annotation], int]:
+) -> tuple[list[PullRequest] | list[dict[str, typing.Any]] | list[Annotation], int]:
     uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
     from sqlalchemy.orm import selectinload
 
@@ -106,16 +123,31 @@ async def get_user_contributions(
         )
         return list(result.scalars().all()), total
     elif contribution_type == "materials":
+        from app.models.material import MaterialVersion
+
         mat_base = select(Material).where(Material.author_id == uid)
         count_result = await db.execute(select(func.count()).select_from(mat_base.subquery()))
         total = count_result.scalar_one()
         result = await db.execute(
-            mat_base.options(selectinload(Material.directory))
+            select(Material, MaterialVersion)
+            .where(Material.author_id == uid)
+            .options(selectinload(Material.directory))
+            .outerjoin(
+                MaterialVersion,
+                (Material.id == MaterialVersion.material_id)
+                & (Material.current_version == MaterialVersion.version_number),
+            )
             .order_by(Material.created_at.desc())
             .offset(offset)
             .limit(limit)
         )
-        return list(result.scalars().all()), total
+        materials_out = []
+        for material, version in result.all():
+            mat_dict = material_orm_to_dict(material)
+            if version:
+                mat_dict["current_version_info"] = version
+            materials_out.append(mat_dict)
+        return materials_out, total
     elif contribution_type == "annotations":
         ann_base = select(Annotation).where(Annotation.author_id == uid)
         count_result = await db.execute(select(func.count()).select_from(ann_base.subquery()))

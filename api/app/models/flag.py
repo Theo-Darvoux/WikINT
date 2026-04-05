@@ -47,5 +47,5 @@ class Flag(UUIDMixin, Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    reporter: Mapped[User | None] = relationship(foreign_keys=[reporter_id])  # noqa: F821
-    resolver: Mapped[User | None] = relationship(foreign_keys=[resolved_by])  # noqa: F821
+    reporter: Mapped[User | None] = relationship(foreign_keys=[reporter_id])
+    resolver: Mapped[User | None] = relationship(foreign_keys=[resolved_by])

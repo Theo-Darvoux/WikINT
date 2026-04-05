@@ -5,6 +5,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.constants import PRIVILEGED_ROLES
 from app.core.database import get_db
 from app.core.exceptions import RateLimitError
 from app.core.redis import get_redis
@@ -53,17 +54,21 @@ async def rate_limit_downloads(
         )
 
 
+# Per-role rate limit tiers: (per_minute, per_day) for prod / dev
+_UPLOAD_LIMITS: dict[str, tuple[int, int]] = {
+    "default": (10, 100) if not settings.is_dev else (100, 1000),
+    "privileged": (50, 500) if not settings.is_dev else (200, 5000),
+}
+
+
 async def rate_limit_uploads(
     request: Request,
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> None:
-    if user.role in ("member", "bureau", "vieux"):
-        return
-
-    minute_limit = 100 if settings.is_dev else 10
-    daily_limit = 1000 if settings.is_dev else 100
+    tier = "privileged" if user.role in PRIVILEGED_ROLES else "default"
+    minute_limit, daily_limit = _UPLOAD_LIMITS[tier]
 
     user_id = str(user.id)
 

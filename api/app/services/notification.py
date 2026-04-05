@@ -10,7 +10,7 @@ from app.models.user import User, UserRole
 
 logger = logging.getLogger("wikint")
 
-MODERATOR_ROLES = (UserRole.MEMBER, UserRole.BUREAU, UserRole.VIEUX)
+MODERATOR_ROLES = (UserRole.MODERATOR, UserRole.BUREAU, UserRole.VIEUX)
 
 
 async def create_notification(

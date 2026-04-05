@@ -21,7 +21,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # ENUM types
     user_role = postgresql.ENUM(
-        "student", "member", "bureau", "vieux", name="userrole", create_type=False
+        "student", "moderator", "bureau", "vieux", name="userrole", create_type=False
     )
     directory_type = postgresql.ENUM("module", "folder", name="directorytype", create_type=False)
     pr_type = postgresql.ENUM(

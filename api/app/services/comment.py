@@ -117,7 +117,7 @@ async def delete_comment(
     if not comment:
         raise NotFoundError("Comment not found")
 
-    is_moderator = user.role in (UserRole.MEMBER, UserRole.BUREAU, UserRole.VIEUX)
+    is_moderator = user.role in (UserRole.MODERATOR, UserRole.BUREAU, UserRole.VIEUX)
     if comment.author_id != user.id and not is_moderator:
         raise ForbiddenError("Only the author or a moderator can delete this comment")
 

@@ -10,7 +10,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useUIStore } from "@/lib/stores";
-import { EXT_BADGE_COLORS } from "@/lib/file-utils";
+import { EXT_BADGE_COLORS, getFileBadgeLabel, getFileExtension } from "@/lib/file-utils";
 
 const TYPE_COLORS: Record<string, string> = {
     polycopie: "bg-blue-100 text-blue-800",
@@ -103,9 +103,11 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
 
     // Extract file name from current version info if available
     let fileName = "";
+    let mimeType = "";
     if (material.current_version_info && typeof material.current_version_info === "object") {
         const vi = material.current_version_info as Record<string, unknown>;
         fileName = vi.file_name ? String(vi.file_name) : "";
+        mimeType = vi.file_mime_type ? String(vi.file_mime_type) : "";
     }
 
     const base = pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
@@ -115,17 +117,33 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
     let badgeLabel = TYPE_LABELS[type] ?? type;
     let Icon = TYPE_ICONS[type] ?? File;
 
-    if (type === "document" && fileName) {
-        const extMatch = fileName.match(/\.([^.]+)$/);
-        if (extMatch && extMatch[1]) {
-            const ext = extMatch[1].toLowerCase();
-            badgeLabel = ext.toUpperCase();
-            if (EXT_ICONS[ext]) {
-                Icon = EXT_ICONS[ext];
-            }
-            if (EXT_BADGE_COLORS[ext]) {
-                badgeColor = EXT_BADGE_COLORS[ext];
-            }
+    if (type === "document") {
+        const fallbackLabel = getFileBadgeLabel(fileName, mimeType);
+        if (fallbackLabel && fallbackLabel !== "FILE") {
+            badgeLabel = fallbackLabel;
+        }
+
+        const ext = getFileExtension(fileName);
+        if (ext && EXT_ICONS[ext]) {
+            Icon = EXT_ICONS[ext];
+        } else if (mimeType && mimeType.includes("pdf")) {
+            Icon = FileText;
+        }
+
+        // Try to get a meaningful color
+        let newColor = badgeColor;
+        if (ext && EXT_BADGE_COLORS[ext]) {
+            newColor = EXT_BADGE_COLORS[ext];
+        } else if (mimeType) {
+            if (mimeType === "application/pdf") newColor = EXT_BADGE_COLORS["pdf"];
+            else if (mimeType.startsWith("image/")) newColor = EXT_BADGE_COLORS["jpg"];
+            else if (mimeType.startsWith("video/")) newColor = EXT_BADGE_COLORS["mp4"];
+            else if (mimeType.startsWith("audio/")) newColor = EXT_BADGE_COLORS["mp3"];
+            else if (mimeType.includes("document") || mimeType.includes("msword")) newColor = EXT_BADGE_COLORS["doc"];
+            else if (mimeType.includes("sheet") || mimeType.includes("excel")) newColor = EXT_BADGE_COLORS["xls"];
+        }
+        if (newColor && newColor !== badgeColor) {
+            badgeColor = newColor;
         }
     }
 
@@ -198,7 +216,11 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
 
             <div className="flex shrink-0 items-center gap-1">
                 {isMobile ? (
-                    <Link href={materialPath} onClick={(e) => e.stopPropagation()}>
+                    <Link
+                        href={materialPath}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`View ${title}`}
+                    >
                         <Eye className="h-5 w-5 text-muted-foreground" />
                     </Link>
                 ) : (
@@ -207,6 +229,7 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
                             onClick={handleChat}
                             className="rounded-md p-2 hover:bg-muted"
                             title="Chat"
+                            aria-label={`Open chat for ${title}`}
                         >
                             <MessageSquare className="h-4 w-4 text-muted-foreground" />
                         </button>
@@ -214,10 +237,17 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
                             onClick={handleDetails}
                             className="rounded-md p-2 hover:bg-muted"
                             title="Details"
+                            aria-label={`View details for ${title}`}
                         >
                             <Info className="h-4 w-4 text-muted-foreground" />
                         </button>
-                        <Link href={materialPath} className="rounded-md p-2 hover:bg-muted" title="Preview" onClick={(e) => e.stopPropagation()}>
+                        <Link
+                            href={materialPath}
+                            className="rounded-md p-2 hover:bg-muted"
+                            title="Preview"
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`Preview ${title}`}
+                        >
                             <Eye className="h-4 w-4 text-muted-foreground" />
                         </Link>
                     </>

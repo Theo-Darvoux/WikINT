@@ -18,7 +18,7 @@ http {
     # the frontend only — API responses get a restrictive policy.
     map $uri $csp_value {
         ~^/api/   "default-src 'none'; frame-ancestors 'none'";
-        default   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'self'; connect-src 'self' ws://localhost wss://localhost;";
+        default   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://unpkg.com; worker-src 'self' blob: https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'self'; connect-src 'self' ws://localhost wss://localhost blob: https://unpkg.com;";
     }
 
     upstream web {

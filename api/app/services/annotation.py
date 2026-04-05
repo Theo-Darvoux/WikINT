@@ -100,10 +100,10 @@ async def get_annotations(
                 reply_map.setdefault(reply.thread_id, []).append(reply)
 
         for root in root_annotations:
-            root._replies = reply_map.get(root.id, [])  # type: ignore[attr-defined]
+            root._replies = reply_map.get(root.id, [])
     else:
         for root in root_annotations:
-            root._replies = []  # type: ignore[attr-defined]
+            root._replies = []
 
     return root_annotations, total
 
@@ -219,7 +219,7 @@ async def delete_annotation(
     if not annotation:
         raise NotFoundError("Annotation not found")
 
-    is_moderator = user.role in (UserRole.MEMBER, UserRole.BUREAU, UserRole.VIEUX)
+    is_moderator = user.role in (UserRole.MODERATOR, UserRole.BUREAU, UserRole.VIEUX)
     if annotation.author_id != user.id and not is_moderator:
         raise ForbiddenError("Only the author or a moderator can delete this annotation")
 

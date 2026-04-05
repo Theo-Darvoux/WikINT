@@ -18,7 +18,7 @@ class AnnotationAuthor(BaseModel):
 class AnnotationCreateIn(BaseModel):
     body: str = Field(min_length=1, max_length=1000)
     selection_text: str | None = None
-    position_data: dict | None = None
+    position_data: dict[str, object] | None = None
     page: int | None = None
     reply_to_id: str | None = None
 
@@ -36,7 +36,7 @@ class AnnotationOut(BaseModel):
     body: str
     page: int | None
     selection_text: str | None
-    position_data: dict | None
+    position_data: dict[str, object] | None
     thread_id: OptStrFromUUID
     reply_to_id: OptStrFromUUID
     created_at: datetime

@@ -118,6 +118,16 @@ export async function apiFetch<T>(
     return res.json() as Promise<T>;
 }
 
+export async function apiFetchWithResponse<T>(
+    path: string,
+    options: FetchOptions = {},
+): Promise<{ data: T; response: Response }> {
+    const response = await apiRequest(path, options);
+    if (response.status === 204) return { data: undefined as T, response };
+    const data = await response.json() as T;
+    return { data, response };
+}
+
 export async function apiFetchBlob(
     path: string,
     options: FetchOptions = {},

@@ -7,15 +7,16 @@ from sqlalchemy.orm import joinedload
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.models.annotation import Annotation
+from app.models.base import UUIDMixin
 from app.models.comment import Comment
 from app.models.flag import Flag, FlagStatus
 from app.models.material import Material
 from app.models.pull_request import PRComment, PullRequest
 from app.models.user import User, UserRole
 
-MODERATOR_ROLES = (UserRole.MEMBER, UserRole.BUREAU, UserRole.VIEUX)
+MODERATOR_ROLES = (UserRole.MODERATOR, UserRole.BUREAU, UserRole.VIEUX)
 
-TARGET_TABLE_MAP: dict[str, type] = {
+TARGET_TABLE_MAP: dict[str, type[UUIDMixin]] = {
     "material": Material,
     "annotation": Annotation,
     "pull_request": PullRequest,
@@ -34,9 +35,7 @@ async def _validate_target(db: AsyncSession, target_type: str, target_id: uuid.U
     model = TARGET_TABLE_MAP.get(target_type)
     if not model:
         raise BadRequestError(f"Invalid target_type: {target_type}")
-    from sqlalchemy.engine import Result
-
-    target_res: Result = await db.execute(select(model).where(model.id == target_id))  # type: ignore[attr-defined, assignment]
+    target_res = await db.execute(select(model).where(model.id == target_id))
     if not target_res.scalar_one_or_none():
         raise NotFoundError(f"{target_type} not found")
 

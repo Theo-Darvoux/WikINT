@@ -88,8 +88,8 @@ async def get_onlyoffice_config(
     from app.core.exceptions import NotFoundError
     from app.services.material import check_material_access, get_material_with_version
 
-    material_id = str(material_id)
-    data = await get_material_with_version(db, material_id)
+    material_id_str = str(material_id)
+    data = await get_material_with_version(db, material_id_str)
     material_obj = data.get("material")
     if material_obj and user:
         check_material_access(user.id, material_obj)
@@ -105,11 +105,11 @@ async def get_onlyoffice_config(
     # Embedded in the query string because ONLYOFFICE's file downloader does not
     # forward custom requestHeaders — it only sends its own JWT.  This is an
     # internal container-to-container URL, never exposed to the browser.
-    file_token = await _create_file_token_async(material_id, redis)
-    file_url = f"{settings.onlyoffice_internal_api_base_url}/api/onlyoffice/file/{material_id}?token={file_token}"
+    file_token = await _create_file_token_async(material_id_str, redis)
+    file_url = f"{settings.onlyoffice_internal_api_base_url}/api/onlyoffice/file/{material_id_str}?token={file_token}"
 
     # Cache key: version_number invalidates on new uploads.
-    doc_key = f"{material_id}-v{version.version_number}"
+    doc_key = f"{material_id_str}-v{version.version_number}"
     if settings.is_dev:
         # Dev-only: bust OO's cache without uploading a new version.
         # Remove this when iterating on config changes is no longer needed.
@@ -179,7 +179,7 @@ async def serve_file_to_onlyoffice(
     from app.core.exceptions import NotFoundError, UnauthorizedError
     from app.services.material import get_material_file_info
 
-    material_id = str(material_id)
+    material_id_str = str(material_id)
     token = request.query_params.get("token") or request.headers.get("X-OO-File-Token")
     if not token:
         raise UnauthorizedError()
@@ -187,11 +187,11 @@ async def serve_file_to_onlyoffice(
     if request.method == "HEAD":
         # HEAD is ONLYOFFICE's preflight probe — verify the token is valid but do NOT
         # consume the JTI. The subsequent GET will consume it.
-        if not _verify_file_token_claims(token, material_id):
+        if not _verify_file_token_claims(token, material_id_str):
             raise UnauthorizedError()
     else:
         # GET: validate and consume the JTI atomically (single-use enforcement).
-        if not await _verify_file_token_async(token, material_id, redis):
+        if not await _verify_file_token_async(token, material_id_str, redis):
             raise UnauthorizedError()
 
     version = await get_material_file_info(db, material_id)

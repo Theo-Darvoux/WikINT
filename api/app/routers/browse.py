@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.schemas.directory import DirectoryBreadcrumb, DirectoryOut
-from app.schemas.material import MaterialOut
+from app.schemas.material import MaterialDetail, MaterialOut
 from app.services.directory import (
     get_directory_by_id,
     get_directory_children,
@@ -21,8 +21,14 @@ router = APIRouter(prefix="/api", tags=["browse"])
 async def browse_root(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    roots = await get_root_directories(db)
-    return {"type": "directory_listing", "directory": None, "directories": roots, "materials": []}
+    result = await get_root_directories(db)
+    materials = [MaterialDetail.model_validate(m).model_dump() for m in result.get("materials", [])]
+    return {
+        "type": "directory_listing",
+        "directory": None,
+        "directories": result.get("directories", []),
+        "materials": materials,
+    }
 
 
 @router.get("/browse/{path:path}")
@@ -76,9 +82,9 @@ async def browse_path(
     materials = []
     for m in result.get("materials", []):
         if isinstance(m, dict):
-            materials.append(m)
+            materials.append(MaterialDetail.model_validate(m).model_dump())
         else:
-            materials.append(MaterialOut.model_validate(m).model_dump())
+            materials.append(MaterialDetail.model_validate(m).model_dump())
 
     return {
         "type": "directory_listing",
@@ -104,7 +110,7 @@ async def get_children(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     children = await get_directory_children(db, directory_id)
-    materials = [MaterialOut.model_validate(m).model_dump() for m in children["materials"]]
+    materials = [MaterialDetail.model_validate(m).model_dump() for m in children["materials"]]
     return {"directories": children["directories"], "materials": materials}
 
 

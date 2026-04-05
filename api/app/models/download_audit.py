@@ -30,5 +30,5 @@ class DownloadAudit(UUIDMixin, Base):
         DateTime(timezone=True), server_default=func.now(), index=True
     )
 
-    user: Mapped[User] = relationship()  # noqa: F821
-    material: Mapped[Material] = relationship()  # noqa: F821
+    user: Mapped[User] = relationship()
+    material: Mapped[Material] = relationship()

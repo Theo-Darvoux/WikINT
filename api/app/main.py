@@ -1,6 +1,6 @@
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
@@ -11,6 +11,26 @@ from slowapi.util import get_remote_address
 from starlette.responses import JSONResponse
 
 from app.config import settings
+from app.core.exceptions import AppError
+from app.routers.admin import router as admin_router
+from app.routers.annotations import (
+    annotations_router,
+    material_annotations_router,
+)
+from app.routers.auth import router as auth_router
+from app.routers.browse import router as browse_router
+from app.routers.comments import router as comments_router
+from app.routers.directories import router as directories_router
+from app.routers.flags import router as flags_router
+from app.routers.materials import router as materials_router
+from app.routers.notifications import router as notifications_router
+from app.routers.onlyoffice import router as onlyoffice_router
+from app.routers.pr_comments import router as pr_comments_router
+from app.routers.pull_requests import router as pull_requests_router
+from app.routers.search import router as search_router
+from app.routers.tus import router as tus_router
+from app.routers.upload import router as upload_api_router
+from app.routers.users import router as users_router
 from app.schemas.common import HealthResponse
 
 logger = logging.getLogger("wikint")
@@ -29,8 +49,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     from app.core.meilisearch import setup_meilisearch
     from app.core.redis import close_arq_pool, init_arq_pool
-    from app.core.scanner import close_scanner, init_scanner
+    from app.core.scanner import MalwareScanner, close_scanner, init_scanner
     from app.core.storage import close_s3_client, init_s3_client
+    from app.core.telemetry import setup_telemetry
+
+    # Initialize OpenTelemetry
+    setup_telemetry(app)
 
     # Soft-fail: degraded but non-critical services
     try:
@@ -45,10 +69,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Hard-fail: storage and scanner are required for safe operation
     await init_s3_client()
+
+    # Modern DI-based scanner
+    scanner = MalwareScanner()
+    scanner.initialize()
+    app.state.scanner = scanner
+
+    # Backward compatibility for code not yet refactored to DI
     init_scanner()
 
     yield
     logger.info("WikINT API shutting down")
+    await scanner.close()
     await close_scanner()
     await close_arq_pool()
     await close_s3_client()
@@ -66,17 +98,65 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── Security Headers (S23) ───────────────────────────────────────────────────
+
+@app.middleware("http")
+async def add_security_headers(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    response = await call_next(request)
+    # Defense-in-depth CSP — primary protection should still come from Nginx.
+    # We allow:
+    # - self: for the API's own assets/responses
+    # - data:: for base64 images
+    # - blob:: for PDF/media object URLs
+    # - inline styles/scripts are blocked by default.
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self'; "
+        "connect-src 'self' " + settings.frontend_url + "; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self';"
+    )
+    response.headers["Content-Security-Policy"] = csp
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
 app.state.limiter = limiter
 
 
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+async def rate_limit_handler(request: Request, exc: Exception) -> Response:
+    if not isinstance(exc, RateLimitExceeded):
+        raise exc
     return JSONResponse(
         status_code=429,
         content={"detail": "Too many requests"},
     )
 
 
-app.add_exception_handler(RateLimitExceeded, rate_limit_handler)  # type: ignore[arg-type]
+async def app_error_handler(request: Request, exc: Exception) -> Response:
+    if not isinstance(exc, AppError):
+        raise exc
+    code = getattr(exc, "code", None)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error_code": code,
+            "error_message": exc.detail,
+            "detail": exc.detail,  # backward compat
+        },
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
+app.add_exception_handler(AppError, app_error_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -87,8 +167,9 @@ app.add_middleware(
 )
 
 
+
 @app.middleware("http")
-async def log_requests(request: Request, call_next) -> Response:  # type: ignore[no-untyped-def]
+async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     start = time.perf_counter()
     response: Response = await call_next(request)
     elapsed = time.perf_counter() - start
@@ -104,27 +185,47 @@ async def log_requests(request: Request, call_next) -> Response:  # type: ignore
 
 @app.get("/api/health", response_model=HealthResponse, tags=["health"])
 async def health() -> HealthResponse:
-    return HealthResponse(status="ok")
+    from app.core.redis import arq_pool, redis_client
+
+    redis_ok = False
+    try:
+        await redis_client.ping()
+        redis_ok = True
+    except Exception:
+        pass
+
+    return HealthResponse(
+        status="ok" if redis_ok and arq_pool else "degraded",
+        details={
+            "redis": "connected" if redis_ok else "disconnected",
+            "arq_pool": "initialized" if arq_pool else "not_initialized",
+        },
+    )
 
 
-from app.routers.admin import router as admin_router  # noqa: E402
-from app.routers.annotations import (  # noqa: E402
-    annotations_router,
-    material_annotations_router,
-)
-from app.routers.auth import router as auth_router  # noqa: E402
-from app.routers.browse import router as browse_router  # noqa: E402
-from app.routers.comments import router as comments_router  # noqa: E402
-from app.routers.directories import router as directories_router  # noqa: E402
-from app.routers.flags import router as flags_router  # noqa: E402
-from app.routers.materials import router as materials_router  # noqa: E402
-from app.routers.notifications import router as notifications_router  # noqa: E402
-from app.routers.onlyoffice import router as onlyoffice_router  # noqa: E402
-from app.routers.pr_comments import router as pr_comments_router  # noqa: E402
-from app.routers.pull_requests import router as pull_requests_router  # noqa: E402
-from app.routers.search import router as search_router  # noqa: E402
-from app.routers.upload import router as upload_router  # noqa: E402
-from app.routers.users import router as users_router  # noqa: E402
+@app.get("/metrics", include_in_schema=False)
+async def metrics(request: Request) -> Response:
+    """Prometheus metrics scrape endpoint.
+
+    Protected by a bearer token when ``METRICS_TOKEN`` is set in config.
+    Leave unset (default) for unauthenticated scraping inside private networks.
+    """
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    from app.core.metrics import REGISTRY
+
+    if settings.metrics_token:
+        import hmac
+        token = request.headers.get("Authorization", "").removeprefix(
+            "Bearer "
+        ).strip() or request.query_params.get("token", "")
+        if not hmac.compare_digest(token, settings.metrics_token):
+            return Response(status_code=403, content="Forbidden")
+
+    data = generate_latest(REGISTRY)
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+
+
 
 app.include_router(admin_router)
 app.include_router(annotations_router)
@@ -140,16 +241,44 @@ app.include_router(pr_comments_router)
 app.include_router(pull_requests_router)
 app.include_router(search_router)
 app.include_router(onlyoffice_router)
-app.include_router(upload_router)
+app.include_router(tus_router)
+app.include_router(upload_api_router)
 app.include_router(users_router)
 
 if settings.is_dev:
     try:
         from sqladmin import Admin, ModelView
+        from sqladmin.authentication import AuthenticationBackend
+        from starlette.requests import Request
+        from starlette.responses import RedirectResponse
 
         from app.core.database import engine
 
-        admin = Admin(app, engine)
+        class SimpleAdminAuth(AuthenticationBackend):
+            async def login(self, request: Request) -> bool:
+                form = await request.form()
+                username, password = form.get("username"), form.get("password")
+                # Basic dev-only auth. Use metrics_token if set, else allow anyone.
+                # (S22) Recommends basic auth even in dev.
+                expected = settings.metrics_token or "dev-admin-secret"
+                if username == "admin" and password == expected:
+                    request.session.update({"token": password})
+                    return True
+                return False
+
+            async def logout(self, request: Request) -> bool:
+                request.session.clear()
+                return True
+
+            async def authenticate(self, request: Request) -> RedirectResponse | bool:
+                token = request.session.get("token")
+                expected = settings.metrics_token or "dev-admin-secret"
+                if not token or token != expected:
+                    return RedirectResponse(request.url_for("admin:login"))
+                return True
+
+        authentication_backend = SimpleAdminAuth(secret_key=settings.secret_key.get_secret_value())
+        admin = Admin(app, engine, authentication_backend=authentication_backend)
 
         from app.models.annotation import Annotation
         from app.models.comment import Comment

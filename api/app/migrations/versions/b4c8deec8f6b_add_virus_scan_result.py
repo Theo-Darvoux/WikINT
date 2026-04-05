@@ -18,11 +18,6 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Use existing enum or create if needed
-    # (Actually we defined it as Enum(VirusScanResult) in models,
-    # and since it's a StrEnum, it usually maps to VARCHAR in some setups,
-    # but with Postgres + SQLAlchemy Enum it often tries to create a native type)
-
     op.add_column(
         "material_versions",
         sa.Column(

@@ -20,6 +20,10 @@ if TYPE_CHECKING:
 
 class Annotation(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "annotations"
+    __allow_unmapped__ = True
+
+    _replies: list[Annotation]
+
 
     material_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("materials.id", ondelete="CASCADE"), nullable=False
@@ -32,7 +36,7 @@ class Annotation(UUIDMixin, TimestampMixin, Base):
 
     page: Mapped[int | None] = mapped_column(Integer)
     selection_text: Mapped[str | None] = mapped_column(Text)
-    position_data: Mapped[dict | None] = mapped_column(JSONB)
+    position_data: Mapped[dict[str, object] | None] = mapped_column(JSONB)
 
     thread_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("annotations.id", ondelete="CASCADE")
@@ -41,8 +45,8 @@ class Annotation(UUIDMixin, TimestampMixin, Base):
         ForeignKey("annotations.id", ondelete="SET NULL")
     )
 
-    material: Mapped[Material] = relationship(back_populates="annotations")  # noqa: F821
-    author: Mapped[User | None] = relationship(back_populates="annotations")  # noqa: F821
+    material: Mapped[Material] = relationship(back_populates="annotations")
+    author: Mapped[User | None] = relationship(back_populates="annotations")
     thread_root: Mapped[Annotation | None] = relationship(
         remote_side="Annotation.id", foreign_keys=[thread_id]
     )

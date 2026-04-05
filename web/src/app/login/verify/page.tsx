@@ -23,7 +23,7 @@ function MagicLinkVerifier() {
         window.history.replaceState({}, "", "/login/verify");
 
         if (!token) {
-            setError("Invalid magic link — no token provided.");
+            setTimeout(() => setError("Invalid magic link — no token provided."), 0);
             return;
         }
 

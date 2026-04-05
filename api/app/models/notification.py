@@ -27,4 +27,4 @@ class Notification(UUIDMixin, Base):
     read: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    user: Mapped[User] = relationship(back_populates="notifications")  # noqa: F821
+    user: Mapped[User] = relationship(back_populates="notifications")

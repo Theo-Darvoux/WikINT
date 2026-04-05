@@ -153,7 +153,7 @@ async def test_delete_comment_author(client: AsyncClient, db_session: AsyncSessi
 
 async def test_delete_comment_moderator(client: AsyncClient, db_session: AsyncSession) -> None:
     student = await _create_user(db_session)
-    mod = await _create_user(db_session, role=UserRole.MEMBER)
+    mod = await _create_user(db_session, role=UserRole.MODERATOR)
     directory = await _create_directory(db_session, student)
     comment = await _create_comment(db_session, student, directory)
     await db_session.commit()

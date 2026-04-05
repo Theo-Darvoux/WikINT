@@ -6,7 +6,9 @@ from httpx import AsyncClient
 async def test_health(client: AsyncClient) -> None:
     response = await client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    data = response.json()
+    assert data["status"] in ("ok", "degraded")
+    assert "details" in data
 
 
 async def test_request_code_invalid_domain(client: AsyncClient) -> None:

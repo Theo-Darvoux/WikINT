@@ -1,4 +1,5 @@
 import re
+import typing
 import unicodedata
 import uuid
 
@@ -54,7 +55,7 @@ async def get_directory_paths(
     return {row.id: row.full_path for row in result.all()}
 
 
-async def get_root_directories(db: AsyncSession) -> list[dict]:
+async def get_root_directories(db: AsyncSession) -> dict[str, list[dict[str, typing.Any]]]:
     stmt = (
         select(Directory)
         .options(selectinload(Directory.tags))
@@ -92,7 +93,69 @@ async def get_root_directories(db: AsyncSession) -> list[dict]:
             "child_material_count": mat_count or 0,
         }
         items.append(item)
-    return items
+
+    # Also fetch root-level materials (where directory_id is NULL)
+    child_material = Material.__table__.alias("child_mat")
+    att_count_subq = (
+        select(func.count())
+        .select_from(child_material)
+        .where(child_material.c.parent_material_id == Material.id)
+        .correlate(Material)
+        .scalar_subquery()
+        .label("attachment_count")
+    )
+
+    mat_stmt = (
+        select(Material, MaterialVersion, att_count_subq)
+        .options(selectinload(Material.tags))
+        .outerjoin(
+            MaterialVersion,
+            (Material.id == MaterialVersion.material_id)
+            & (Material.current_version == MaterialVersion.version_number),
+        )
+        .where(Material.directory_id.is_(None), Material.parent_material_id.is_(None))
+        .order_by(Material.title)
+    )
+    mat_result = await db.execute(mat_stmt)
+
+    materials_out = []
+    for material, version, att_count in mat_result.all():
+        mat_dict = {
+            "id": material.id,
+            "directory_id": material.directory_id,
+            "title": material.title,
+            "slug": material.slug,
+            "description": material.description,
+            "type": material.type,
+            "current_version": material.current_version,
+            "parent_material_id": material.parent_material_id,
+            "author_id": material.author_id,
+            "metadata": material.metadata_,
+            "download_count": material.download_count,
+            "tags": [t.name for t in material.tags],
+            "created_at": material.created_at,
+            "updated_at": material.updated_at,
+            "attachment_count": att_count or 0,
+        }
+
+        if version:
+            mat_dict["current_version_info"] = {
+                "id": version.id,
+                "material_id": version.material_id,
+                "version_number": version.version_number,
+                "file_key": version.file_key,
+                "file_name": version.file_name,
+                "file_size": version.file_size,
+                "file_mime_type": version.file_mime_type,
+                "diff_summary": version.diff_summary,
+                "author_id": version.author_id,
+                "pr_id": version.pr_id,
+                "virus_scan_result": version.virus_scan_result,
+                "created_at": version.created_at,
+            }
+        materials_out.append(mat_dict)
+
+    return {"directories": items, "materials": materials_out}
 
 
 async def get_directory_by_id(db: AsyncSession, directory_id: str | uuid.UUID) -> Directory:
@@ -214,6 +277,7 @@ async def get_directory_children(db: AsyncSession, directory_id: str | uuid.UUID
                 "diff_summary": version.diff_summary,
                 "author_id": version.author_id,
                 "pr_id": version.pr_id,
+                "virus_scan_result": version.virus_scan_result,
                 "created_at": version.created_at,
             }
         materials_out.append(mat_dict)
@@ -321,6 +385,7 @@ async def resolve_browse_path(db: AsyncSession, path: str) -> dict:
                         "diff_summary": version.diff_summary,
                         "author_id": version.author_id,
                         "pr_id": version.pr_id,
+                        "virus_scan_result": version.virus_scan_result,
                         "created_at": version.created_at,
                     }
                 materials_out.append(mat_dict)
@@ -358,25 +423,25 @@ async def resolve_browse_path(db: AsyncSession, path: str) -> dict:
             last_material = None
             continue
 
-        if current_dir:
-            mat_result = await db.execute(
-                select(Material)
-                .options(selectinload(Material.tags))
-                .where(
-                    Material.slug == segment,
-                    Material.directory_id == current_dir.id,
-                    Material.parent_material_id.is_(None),
-                )
+        # If no directory found, check for material in current_dir (or root if current_dir is None)
+        mat_result = await db.execute(
+            select(Material)
+            .options(selectinload(Material.tags))
+            .where(
+                Material.slug == segment,
+                Material.directory_id == (current_dir.id if current_dir else None),
+                Material.parent_material_id.is_(None),
             )
-            material = mat_result.scalar_one_or_none()
-            if material:
-                last_material = material
-                if i == len(segments) - 1:
-                    from app.services.material import get_material_with_version
+        )
+        material = mat_result.scalar_one_or_none()
+        if material:
+            last_material = material
+            if i == len(segments) - 1:
+                from app.services.material import get_material_with_version
 
-                    detail = await get_material_with_version(db, str(material.id))
-                    return {"type": "material", "material": detail}
-                continue
+                detail = await get_material_with_version(db, str(material.id))
+                return {"type": "material", "material": detail}
+            continue
 
         raise NotFoundError(f"Path segment '{segment}' not found")
 

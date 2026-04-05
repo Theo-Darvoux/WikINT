@@ -116,7 +116,7 @@ async def test_create_flag_nonexistent_target(
 
 async def test_list_flags_moderator_only(client: AsyncClient, db_session: AsyncSession) -> None:
     student = await _create_user(db_session, UserRole.STUDENT)
-    mod = await _create_user(db_session, UserRole.MEMBER)
+    mod = await _create_user(db_session, UserRole.MODERATOR)
     await db_session.commit()
 
     res = await client.get("/api/flags", headers=_auth_headers(student))
@@ -130,7 +130,7 @@ async def test_list_flags_moderator_only(client: AsyncClient, db_session: AsyncS
 
 async def test_update_flag_moderator_only(client: AsyncClient, db_session: AsyncSession) -> None:
     student = await _create_user(db_session, UserRole.STUDENT)
-    mod = await _create_user(db_session, UserRole.MEMBER)
+    mod = await _create_user(db_session, UserRole.MODERATOR)
     directory = await _create_directory(db_session, mod)
     comment = await _create_comment(db_session, student, directory)
     await db_session.commit()
@@ -160,7 +160,7 @@ async def test_update_flag_moderator_only(client: AsyncClient, db_session: Async
 
 
 async def test_list_flags_with_filters(client: AsyncClient, db_session: AsyncSession) -> None:
-    mod = await _create_user(db_session, UserRole.MEMBER)
+    mod = await _create_user(db_session, UserRole.MODERATOR)
     directory = await _create_directory(db_session, mod)
     comment = await _create_comment(db_session, mod, directory)
     await db_session.commit()

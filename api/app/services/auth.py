@@ -1,5 +1,4 @@
 import secrets
-import string
 from datetime import UTC, datetime
 
 from redis.asyncio import Redis
@@ -11,8 +10,8 @@ from app.core.security import create_access_token, create_refresh_token
 from app.models.user import User, UserRole
 
 ALLOWED_DOMAINS = ("@telecom-sudparis.eu", "@imt-bs.eu")
-CODE_TTL_SECONDS = 600
-RATE_LIMIT_TTL_SECONDS = 600
+CODE_TTL_SECONDS = 900
+RATE_LIMIT_TTL_SECONDS = 900
 RATE_LIMIT_MAX = 3
 VERIFY_RATE_LIMIT_MAX = 5
 VERIFY_RATE_LIMIT_TTL_SECONDS = 600
@@ -28,10 +27,7 @@ def validate_email(email: str) -> str:
 
 
 def generate_code() -> str:
-    # 8 characters, uppercase alphanumeric (avoiding ambiguous characters like O, 0, I, 1 if needed, but secrets is fine)
-    alphabet = string.ascii_uppercase + string.digits
-    # Remove potentially confusing characters: O, 0, I, 1
-    alphabet = alphabet.replace("O", "").replace("0", "").replace("I", "").replace("1", "")
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     return "".join(secrets.choice(alphabet) for _ in range(8))
 
 
@@ -49,13 +45,12 @@ async def store_magic_token(redis: Redis, email: str, token: str) -> None:
 
 
 async def verify_code(redis: Redis, email: str, code: str) -> bool:
-    if settings.is_dev and code == "000000":
+    if settings.is_dev and code == "00000000":
         return True
 
     stored = await redis.get(f"auth:code:{email}")
     if stored and stored == code:
         await redis.delete(f"auth:code:{email}")
-        # Mutual invalidation: delete the paired magic link token
         magic_token = await redis.get(f"auth:magic_ref:{email}")
         if magic_token:
             await redis.delete(f"auth:magic:{magic_token}")
@@ -69,10 +64,8 @@ async def verify_magic_token(redis: Redis, token: str) -> str | None:
     if not email:
         return None
 
-    # Single-use: delete the token and its reverse reference
     await redis.delete(f"auth:magic:{token}")
     await redis.delete(f"auth:magic_ref:{email}")
-    # Mutual invalidation: delete the paired verification code
     await redis.delete(f"auth:code:{email}")
     return email
 

@@ -109,7 +109,7 @@ export function PRComments({ prId }: { prId: string }) {
     const currentUserId = user?.id ?? null;
     const currentUserRole = user?.role ?? null;
     const isModerator =
-        currentUserRole === "member" ||
+        currentUserRole === "moderator" ||
         currentUserRole === "bureau" ||
         currentUserRole === "vieux";
 

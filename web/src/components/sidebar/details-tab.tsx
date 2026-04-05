@@ -280,8 +280,8 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
                 </div>
                 <div className="min-w-0 flex-1">
                     <h3 className="font-semibold leading-tight">{title}</h3>
-                    <span className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${fileName ? getFileBadgeColor(fileName) : "bg-gray-100 text-gray-800 dark:bg-gray-800/40 dark:text-gray-300"}`}>
-                        {fileName ? getFileBadgeLabel(fileName, fileMimeType) : type}
+                    <span className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${(fileName || fileMimeType) ? getFileBadgeColor(fileName, fileMimeType) : "bg-gray-100 text-gray-800 dark:bg-gray-800/40 dark:text-gray-300"}`}>
+                        {(fileName || fileMimeType) ? getFileBadgeLabel(fileName, fileMimeType) : type}
                     </span>
                 </div>
             </div>

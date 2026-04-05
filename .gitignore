@@ -1,4 +1,5 @@
 .claude/
+/*.md
 
 # Python
 __pycache__/

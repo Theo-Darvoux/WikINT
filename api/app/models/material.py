@@ -8,11 +8,13 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -29,10 +31,18 @@ if TYPE_CHECKING:
 
 class Material(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "materials"
-    __table_args__ = (UniqueConstraint("directory_id", "slug", name="uq_material_directory_slug"),)
+    __table_args__ = (
+        UniqueConstraint("directory_id", "slug", name="uq_material_directory_slug"),
+        Index(
+            "uq_material_root_slug",
+            "slug",
+            unique=True,
+            postgresql_where=text("directory_id IS NULL"),
+        ),
+    )
 
-    directory_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("directories.id", ondelete="CASCADE"), nullable=False
+    directory_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("directories.id", ondelete="CASCADE"), nullable=True
     )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     slug: Mapped[str] = mapped_column(String(300), nullable=False)
@@ -43,11 +53,11 @@ class Material(UUIDMixin, TimestampMixin, Base):
         ForeignKey("materials.id", ondelete="CASCADE")
     )
     author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
+    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
     download_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
-    directory: Mapped[Directory] = relationship(back_populates="materials")  # noqa: F821
-    author: Mapped[User | None] = relationship(foreign_keys=[author_id])  # noqa: F821
+    directory: Mapped[Directory] = relationship(back_populates="materials")
+    author: Mapped[User | None] = relationship(foreign_keys=[author_id])
     versions: Mapped[list[MaterialVersion]] = relationship(
         back_populates="material",
         cascade="all, delete-orphan",
@@ -56,8 +66,8 @@ class Material(UUIDMixin, TimestampMixin, Base):
     parent_material: Mapped[Material | None] = relationship(
         remote_side="Material.id", foreign_keys=[parent_material_id]
     )
-    tags: Mapped[list[Tag]] = relationship(secondary="material_tags", back_populates="materials")  # noqa: F821
-    annotations: Mapped[list[Annotation]] = relationship(  # noqa: F821
+    tags: Mapped[list[Tag]] = relationship(secondary="material_tags", back_populates="materials")
+    annotations: Mapped[list[Annotation]] = relationship(
         back_populates="material", cascade="all, delete-orphan"
     )
 
@@ -86,6 +96,10 @@ class MaterialVersion(UUIDMixin, Base):
         default=VirusScanResult.PENDING,
         server_default="pending",
     )
+    # Optimistic concurrency lock — incremented on every edit.
+    # PR operations may include the expected value; a mismatch means a concurrent
+    # edit occurred and the PR should be rejected to prevent data loss.
+    version_lock: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     material: Mapped[Material] = relationship(back_populates="versions")

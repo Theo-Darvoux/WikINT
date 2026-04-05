@@ -35,8 +35,7 @@ async def require_client_id(request: Request):
 def get_client_id(request: Request) -> str:
     ip = get_remote_address(request)
     client_id = request.headers.get("x-client-id", "unknown")
-    # Combining IP and Client-ID ensures users behind NAT are distinct
-    # but one person can't easily spoof their way out of a limit without both changing IP and ID.
+
     return f"{ip}:{client_id}"
 
 
@@ -53,7 +52,7 @@ async def request_code(
     email = data.email
     if not await auth_service.check_rate_limit(redis, email):
         raise RateLimitError(
-            "Too many code requests. You can request up to 3 codes per 10 minutes. Please wait before trying again."
+            "Too many code requests. You can request up to 3 codes per 15 minutes. Please wait before trying again."
         )
 
     code = auth_service.generate_code()

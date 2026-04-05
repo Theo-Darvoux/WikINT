@@ -1,168 +1,303 @@
 import asyncio
 import hashlib
 import logging
+import warnings
 from pathlib import Path
+from typing import Annotated
 
 import httpx
 import yara
+from fastapi import Depends, Request
 
 from app.config import settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError
 
 logger = logging.getLogger("wikint")
 
-_rules: yara.Rules | None = None
-_http_client: httpx.AsyncClient | None = None
+
+class MalwareScanner:
+    """Dependency-injectable malware scanner (YARA + MalwareBazaar)."""
+
+    def __init__(self) -> None:
+        self.rules: yara.Rules | None = None
+        self.client: httpx.AsyncClient | None = None
+
+    def initialize(self) -> None:
+        """Compile YARA rules from disk. Fails hard if no rules found."""
+        rules_dir = Path(settings.yara_rules_dir)
+        if not rules_dir.is_dir():
+            raise RuntimeError(f"YARA rules directory not found: {rules_dir}")
+
+        rule_files = {
+            f.stem: str(f)
+            for f in sorted(rules_dir.rglob("*"))
+            if f.suffix in (".yar", ".yara") and f.is_file()
+        }
+
+        if not rule_files:
+            raise RuntimeError(f"No YARA rule files (*.yar, *.yara) found in {rules_dir}")
+
+        self.rules = yara.compile(filepaths=rule_files)
+        self.client = httpx.AsyncClient(timeout=settings.malwarebazaar_timeout)
+        logger.info("Scanner: compiled %d YARA rule file(s) from %s", len(rule_files), rules_dir)
+
+    async def close(self) -> None:
+        """Shut down the shared HTTP client."""
+        if self.client:
+            await self.client.aclose()
+            self.client = None
+
+    async def scan_file(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        *,
+        bazaar_hash: str | None = None,
+    ) -> None:
+        """Run YARA + MalwareBazaar scans concurrently. Raises on threat or scanner failure."""
+        if bazaar_hash is not None:
+            sha256 = bazaar_hash
+        else:
+            # Non-blocking hash calculation
+            sha256 = await asyncio.to_thread(lambda: hashlib.sha256(file_bytes).hexdigest())
+
+        yara_result, bazaar_result = await asyncio.gather(
+            self._scan_yara(file_bytes, filename),
+            self._check_malwarebazaar(sha256, filename),
+            return_exceptions=True,
+        )
+
+        # Check for exceptions first (fail-closed)
+        errors = []
+        if isinstance(yara_result, Exception):
+            logger.error("YARA scan failed for %s: %s", filename, yara_result)
+            errors.append("YARA")
+        if isinstance(bazaar_result, Exception):
+            logger.error("MalwareBazaar lookup failed for %s: %s", filename, bazaar_result)
+            errors.append("MalwareBazaar")
+
+        if errors:
+            raise ServiceUnavailableError(
+                "Malware scan is temporarily unavailable (fail-closed). Please retry in a few moments."
+            )
+
+        # Check for detections — log all before raising
+        threats = []
+        if yara_result is not None:
+            threats.append(("YARA", yara_result))
+        if bazaar_result is not None:
+            threats.append(("MalwareBazaar", bazaar_result))
+
+        if threats:
+            for source, threat in threats:
+                logger.warning("Malware detected in %s by %s: %s", filename, source, threat)
+            _, signature = threats[-1]
+            raise BadRequestError(f"ERR_MALWARE_DETECTED: {signature}")
+
+    async def scan_file_path(
+        self,
+        file_path: Path,
+        filename: str,
+        *,
+        bazaar_hash: str | None = None,
+    ) -> None:
+        """Run YARA + MalwareBazaar scans concurrently on a file path."""
+        if bazaar_hash is None:
+
+            def _hash_file():
+                hasher = hashlib.sha256()
+                with open(file_path, "rb") as f:
+                    for chunk in iter(lambda: f.read(64 * 1024), b""):
+                        hasher.update(chunk)
+                return hasher.hexdigest()
+
+            bazaar_hash = await asyncio.to_thread(_hash_file)
+
+        assert bazaar_hash is not None
+        yara_result, bazaar_result = await asyncio.gather(
+            self._scan_yara_path(file_path, filename),
+            self._check_malwarebazaar(bazaar_hash, filename),
+            return_exceptions=True,
+        )
+
+        # Check for exceptions first (fail-closed)
+        errors = []
+        if isinstance(yara_result, Exception):
+            logger.error("YARA scan failed for %s: %s", filename, yara_result)
+            errors.append("YARA")
+        if isinstance(bazaar_result, Exception):
+            logger.error("MalwareBazaar lookup failed for %s: %s", filename, bazaar_result)
+            errors.append("MalwareBazaar")
+
+        if errors:
+            raise ServiceUnavailableError(
+                "Malware scan is temporarily unavailable (fail-closed). Please retry in a few moments."
+            )
+
+        # Check for detections — log all before raising
+        threats = []
+        if yara_result is not None:
+            threats.append(("YARA", yara_result))
+        if bazaar_result is not None:
+            threats.append(("MalwareBazaar", bazaar_result))
+
+        if threats:
+            for source, threat in threats:
+                logger.warning("Malware detected in %s by %s: %s", filename, source, threat)
+            _, signature = threats[-1]
+            raise BadRequestError(f"ERR_MALWARE_DETECTED: {signature}")
+
+    async def _scan_yara(self, file_bytes: bytes, filename: str) -> str | None:
+        """Match file against compiled YARA rules. Runs in thread executor."""
+        if self.rules is None:
+            raise RuntimeError("Scanner YARA rules not initialized")
+        rules = self.rules
+
+        loop = asyncio.get_running_loop()
+        matches = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: rules.match(data=file_bytes, timeout=settings.yara_scan_timeout),
+            ),
+            timeout=settings.yara_scan_timeout + 5,
+        )
+
+        if matches:
+            rule_names = [m.rule for m in matches]
+            logger.warning("YARA match in %s: %s", filename, ", ".join(rule_names))
+            return rule_names[0]
+        return None
+
+    async def _scan_yara_path(self, file_path: Path, filename: str) -> str | None:
+        """Match file on disk against compiled YARA rules. Runs in thread executor."""
+        if self.rules is None:
+            raise RuntimeError("Scanner YARA rules not initialized")
+        rules = self.rules
+
+        loop = asyncio.get_running_loop()
+        matches = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: rules.match(filepath=str(file_path), timeout=settings.yara_scan_timeout),
+            ),
+            timeout=settings.yara_scan_timeout + 5,
+        )
+
+        if matches:
+            rule_names = [m.rule for m in matches]
+            logger.warning("YARA match in %s: %s", filename, ", ".join(rule_names))
+            return rule_names[0]
+        return None
+
+    async def _check_malwarebazaar(self, sha256: str, filename: str) -> str | None:
+        """Query MalwareBazaar for known malware by SHA-256 hash.
+
+        This check is 'fail-soft': if the service is down or times out, we log a warning
+        and return None, allowing local YARA rules to remain the authoritative gatekeeper.
+        """
+        if self.client is None:
+            logger.error("Scanner HTTP client not initialized")
+            return None
+
+        headers = {}
+        if settings.malwarebazaar_api_key:
+            headers["Auth-Key"] = settings.malwarebazaar_api_key
+
+        try:
+            resp = await self.client.post(
+                settings.malwarebazaar_url,
+                data={"query": "get_info", "hash": sha256},
+                headers=headers,
+            )
+        except (httpx.TimeoutException, httpx.HTTPError) as e:
+            if settings.malwarebazaar_fail_closed:
+                # Propagates to scan_file_path → errors list → ServiceUnavailableError
+                raise
+            logger.warning(
+                "Malware scanner (MalwareBazaar) is temporarily unavailable: %s. "
+                "Continuing with local scan results only.",
+                e,
+            )
+            return None
+
+        if resp.status_code != 200:
+            logger.warning(
+                "MalwareBazaar returned HTTP %d for %s — skipping external check.",
+                resp.status_code,
+                filename,
+            )
+            return None
+
+        try:
+            body = resp.json()
+        except (ValueError, TypeError):
+            logger.warning("MalwareBazaar returned invalid JSON for %s — skipping.", filename)
+            return None
+
+        status = body.get("query_status")
+
+        if status in ("hash_not_found", "no_results"):
+            return None
+
+        if status == "ok":
+            data = body.get("data", [{}])
+            if isinstance(data, list) and data:
+                threat = data[0].get("signature") or data[0].get("file_name", "unknown")
+            else:
+                threat = "known malware"
+            logger.warning("MalwareBazaar hit for %s (sha256=%s): %s", filename, sha256, threat)
+            return threat
+
+        logger.warning("MalwareBazaar unexpected status '%s' — skipping check.", status)
+        return None
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Dependency and Backward Compatibility
+# ────────────────────────────────────────────────────────────────────────────────
+
+
+def get_scanner(request: Request) -> MalwareScanner:
+    """Retrieve the singleton scanner instance from app state."""
+    return request.app.state.scanner
+
+
+# Singleton instance for code outside FastAPI request context (e.g. background tasks)
+_global_scanner: MalwareScanner | None = None
 
 
 def init_scanner() -> None:
-    """Compile YARA rules from disk at startup. Fails hard if no rules found."""
-    global _rules, _http_client
-
-    rules_dir = Path(settings.yara_rules_dir)
-    if not rules_dir.is_dir():
-        raise RuntimeError(f"YARA rules directory not found: {rules_dir}")
-
-    rule_files = {
-        f.stem: str(f)
-        for f in sorted(rules_dir.rglob("*"))
-        if f.suffix in (".yar", ".yara") and f.is_file()
-    }
-
-    if not rule_files:
-        raise RuntimeError(f"No YARA rule files (*.yar, *.yara) found in {rules_dir}")
-
-    _rules = yara.compile(filepaths=rule_files)
-    _http_client = httpx.AsyncClient(timeout=settings.malwarebazaar_timeout)
-    logger.info("Scanner: compiled %d YARA rule file(s) from %s", len(rule_files), rules_dir)
+    """Backward compatibility: initializes global singleton."""
+    global _global_scanner
+    _global_scanner = MalwareScanner()
+    _global_scanner.initialize()
 
 
 async def close_scanner() -> None:
-    """Shut down the shared HTTP client."""
-    global _http_client
-    if _http_client:
-        await _http_client.aclose()
-        _http_client = None
+    """Backward compatibility: closes global singleton."""
+    if _global_scanner:
+        await _global_scanner.close()
 
 
-async def scan_file(file_bytes: bytes, filename: str) -> None:
-    """Run YARA + MalwareBazaar scans concurrently. Raises on threat or scanner failure.
+async def scan_file(file_bytes: bytes, filename: str, *, bazaar_hash: str | None = None) -> None:
+    """Backward compatibility wrapper — prefer scan_file_path() for large files.
 
-    Fail-closed: if either scanner encounters an error, the file is rejected.
+    .. deprecated::
+        ``scan_file(bytes)`` loads the entire file into memory and is
+        memory-unsafe for large uploads.  Use ``scan_file_path(Path)`` instead.
     """
-    sha256 = hashlib.sha256(file_bytes).hexdigest()
-
-    yara_result, bazaar_result = await asyncio.gather(
-        _scan_yara(file_bytes, filename),
-        _check_malwarebazaar(sha256, filename),
-        return_exceptions=True,
+    warnings.warn(
+        "scan_file(bytes) is deprecated and memory-unsafe for large files. "
+        "Use MalwareScanner.scan_file_path(Path) instead.",
+        DeprecationWarning,
+        stacklevel=2,
     )
+    if _global_scanner is None:
+        # Auto-init if accessed before main.py lifespan (useful for tests)
+        init_scanner()
 
-    # Check for exceptions first (fail-closed)
-    errors = []
-    if isinstance(yara_result, Exception):
-        logger.error("YARA scan failed for %s: %s", filename, yara_result)
-        errors.append("YARA")
-    if isinstance(bazaar_result, Exception):
-        logger.error("MalwareBazaar lookup failed for %s: %s", filename, bazaar_result)
-        errors.append("MalwareBazaar")
-
-    if errors:
-        raise ServiceUnavailableError("Malware scan unavailable — file rejected (fail-closed)")
-
-    # Check for detections — log all before raising
-    threats = []
-    if yara_result is not None:
-        threats.append(("YARA", yara_result))
-    if bazaar_result is not None:
-        threats.append(("MalwareBazaar", bazaar_result))
-
-    if threats:
-        for source, threat in threats:
-            logger.warning("Malware detected in %s by %s: %s", filename, source, threat)
-        raise BadRequestError("File failed malware scan")
+    assert _global_scanner is not None
+    await _global_scanner.scan_file(file_bytes, filename, bazaar_hash=bazaar_hash)
 
 
-async def _scan_yara(file_bytes: bytes, filename: str) -> str | None:
-    """Match file against compiled YARA rules. Runs in thread executor (CPU-bound).
-
-    Returns the first matching rule name, or None if clean.
-    """
-    if _rules is None:
-        raise RuntimeError("Scanner not initialized — call init_scanner() first")
-
-    loop = asyncio.get_running_loop()
-    matches = await asyncio.wait_for(
-        loop.run_in_executor(
-            None,
-            lambda: _rules.match(data=file_bytes, timeout=settings.yara_scan_timeout),
-        ),
-        timeout=settings.yara_scan_timeout + 5,
-    )
-
-    if matches:
-        rule_names = [m.rule for m in matches]
-        logger.warning("YARA match in %s: %s", filename, ", ".join(rule_names))
-        return rule_names[0]
-    return None
-
-
-async def _check_malwarebazaar(sha256: str, filename: str) -> str | None:
-    """Query MalwareBazaar for known malware by SHA-256 hash.
-
-    Returns threat name if known malware, None if hash not found.
-    Raises on timeout or API error (fail-closed).
-    """
-    if _http_client is None:
-        raise RuntimeError("Scanner not initialized — call init_scanner() first")
-
-    headers = {}
-    if settings.malwarebazaar_api_key:
-        headers["Auth-Key"] = settings.malwarebazaar_api_key
-
-    try:
-        resp = await _http_client.post(
-            settings.malwarebazaar_url,
-            data={"query": "get_info", "hash": sha256},
-            headers=headers,
-        )
-    except httpx.TimeoutException:
-        raise ServiceUnavailableError(
-            "MalwareBazaar lookup timed out — file rejected (fail-closed)"
-        )
-    except httpx.HTTPError as e:
-        raise ServiceUnavailableError(
-            f"MalwareBazaar lookup failed: {e} — file rejected (fail-closed)"
-        )
-
-    if resp.status_code != 200:
-        raise ServiceUnavailableError(
-            f"MalwareBazaar returned HTTP {resp.status_code} — file rejected (fail-closed)"
-        )
-
-    try:
-        body = resp.json()
-    except (ValueError, TypeError):
-        raise ServiceUnavailableError(
-            "MalwareBazaar returned invalid JSON — file rejected (fail-closed)"
-        )
-
-    status = body.get("query_status")
-
-    if status in ("hash_not_found", "no_results"):
-        return None
-
-    if status == "ok":
-        # Known malware — extract signature name
-        data = body.get("data", [{}])
-        if isinstance(data, list) and data:
-            threat = data[0].get("signature") or data[0].get("file_name", "unknown")
-        else:
-            threat = "known malware"
-        logger.warning("MalwareBazaar hit for %s (sha256=%s): %s", filename, sha256, threat)
-        return threat
-
-    # Unexpected status — fail closed
-    raise ServiceUnavailableError(
-        f"MalwareBazaar unexpected status '{status}' — file rejected (fail-closed)"
-    )
+ScannerDep = Annotated[MalwareScanner, Depends(get_scanner)]

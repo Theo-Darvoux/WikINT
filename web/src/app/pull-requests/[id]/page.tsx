@@ -20,6 +20,7 @@ import {
     Eye,
     ExternalLink,
     ChevronDown,
+    Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,7 @@ interface PullRequestDetail {
     description: string | null;
     author: { id: string; display_name: string } | null;
     created_at: string;
+    updated_at: string;
     vote_score: number;
     user_vote: number;
     payload: Record<string, unknown>[] | Record<string, unknown>;
@@ -195,6 +197,7 @@ function OperationRow({
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [loadingPreview, setLoadingPreview] = useState(false);
     const [browseUrl, setBrowseUrl] = useState<string | null>(null);
+    const [isExpanded, setIsExpanded] = useState(false);
 
     const opType = String(op.op ?? op.pr_type ?? "unknown");
     const Icon = OP_ICONS[opType] ?? FilePlus;
@@ -208,11 +211,12 @@ function OperationRow({
         ? `/browse/${String(op.result_browse_path)}`
         : null;
 
-    // Resolve file preview URL (works for both open and merged PRs)
+    // (O8) Lazy-load preview only when expanded or if explicitly requested
     useEffect(() => {
-        if (!hasFile) return;
+        if (!hasFile || !isExpanded || previewUrl || loadingPreview) return;
+        
         let cancelled = false;
-        Promise.resolve().then(() => { if (!cancelled) setLoadingPreview(true); });
+        setLoadingPreview(true);
         apiFetch<{ url: string }>(
             `/pull-requests/${prId}/preview?opIndex=${index}`,
         )
@@ -220,7 +224,7 @@ function OperationRow({
             .catch(() => {})
             .finally(() => { if (!cancelled) setLoadingPreview(false); });
         return () => { cancelled = true; };
-    }, [prId, index, hasFile]);
+    }, [prId, index, hasFile, isExpanded, previewUrl, loadingPreview]);
 
     // Resolve browse URL for directory operations (only when NOT approved)
     useEffect(() => {
@@ -253,10 +257,14 @@ function OperationRow({
         <AccordionItem
             value={`op-${index}`}
             className="border-b last:border-0"
+            onMouseEnter={() => { if (hasFile) setIsExpanded(true); }} // Pre-fetch on hover for better UX
         >
             {/* Row: trigger + preview buttons side by side */}
             <AccordionPrimitive.Header className="flex items-center">
-                <AccordionPrimitive.Trigger className="flex flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40 [&[data-state=open]>svg.chevron]:rotate-180">
+                <AccordionPrimitive.Trigger 
+                    className="flex flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40 [&[data-state=open]>svg.chevron]:rotate-180"
+                    onClick={() => setIsExpanded(true)}
+                >
                     <div
                         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border ${colorClass}`}
                     >
@@ -282,7 +290,7 @@ function OperationRow({
                     {hasFile && (
                         loadingPreview ? (
                             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                        ) : previewUrl ? (
+                        ) : (previewUrl && previewUrl.startsWith("https://")) ? (
                             <Button
                                 variant="ghost"
                                 size="sm"
@@ -424,7 +432,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
     }
 
     const isModerator =
-        user?.role === "member" ||
+        user?.role === "moderator" ||
         user?.role === "bureau" ||
         user?.role === "vieux";
     const status = STATUS_CONFIG[pr.status] ?? STATUS_CONFIG.open;
@@ -433,6 +441,11 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
     const initials = pr.author?.display_name
         ? getInitials(pr.author.display_name)
         : "?";
+
+    // ── Expiration calculation (Issue 3.5) ──
+    const updatedDate = new Date(pr.updated_at);
+    const expiresDate = new Date(updatedDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const isExpiringSoon = pr.status === "open" && (expiresDate.getTime() - Date.now() < 24 * 60 * 60 * 1000);
 
     return (
         <div className="container mx-auto max-w-4xl space-y-6 px-4 py-6">
@@ -482,6 +495,15 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                 addSuffix: true,
                             })}
                         </span>
+                        {pr.status === "open" && (
+                            <>
+                                <span className="text-muted-foreground">·</span>
+                                <span className={`flex items-center gap-1 ${isExpiringSoon ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
+                                    <Clock className="h-3 w-3" />
+                                    Expires {formatDistanceToNow(expiresDate, { addSuffix: true })}
+                                </span>
+                            </>
+                        )}
                     </div>
 
                     {/* Description */}

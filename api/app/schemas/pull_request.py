@@ -47,7 +47,7 @@ def _validate_tags(tags: list[str] | None) -> list[str] | None:
     return out
 
 
-def _validate_metadata(metadata: dict | None) -> dict | None:
+def _validate_metadata(metadata: dict[str, object] | None) -> dict[str, object] | None:
     """Limit metadata size to prevent abuse."""
     if metadata is None:
         return None
@@ -90,7 +90,7 @@ class AttachmentOp(BaseModel):
     file_size: int | None = Field(None, ge=0)
     file_mime_type: str | None = Field(None, max_length=200)
     tags: list[str] = Field(default_factory=list)
-    metadata: dict = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
 
     @field_validator("type")
     @classmethod
@@ -116,7 +116,7 @@ class AttachmentOp(BaseModel):
 
     @field_validator("metadata")
     @classmethod
-    def validate_metadata(cls, v: dict) -> dict:
+    def validate_metadata(cls, v: dict[str, object]) -> dict[str, object]:
         return _validate_metadata(v) or {}
 
 
@@ -128,8 +128,9 @@ class CreateMaterialOp(BaseModel):
         max_length=50,
         description="Client-assigned temp ID starting with $ for inter-op references",
     )
-    directory_id: uuid.UUID | str = Field(
-        ..., description="Real UUID or $temp-id of a directory created in this batch"
+    directory_id: uuid.UUID | str | None = Field(
+        None,
+        description="Real UUID or $temp-id of a directory created in this batch (None for root)",
     )
     title: str = Field(..., min_length=1, max_length=100, pattern=r"^\s*\S.*$")
     type: str
@@ -139,7 +140,7 @@ class CreateMaterialOp(BaseModel):
     file_name: str | None = None
     file_size: int | None = Field(None, ge=0)  # upper bound enforced via MAX_FILE_SIZE_MB setting
     file_mime_type: str | None = Field(None, max_length=200)
-    metadata: dict = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
     parent_material_id: uuid.UUID | str | None = None
     attachments: list[AttachmentOp] = Field(default_factory=list)
 
@@ -157,7 +158,7 @@ class CreateMaterialOp(BaseModel):
 
     @field_validator("metadata")
     @classmethod
-    def validate_metadata(cls, v: dict) -> dict:
+    def validate_metadata(cls, v: dict[str, object]) -> dict[str, object]:
         return _validate_metadata(v) or {}
 
     @field_validator("file_key")
@@ -183,7 +184,7 @@ class EditMaterialOp(BaseModel):
     file_size: int | None = Field(None, ge=0)  # upper bound enforced via MAX_FILE_SIZE_MB setting
     file_mime_type: str | None = Field(None, max_length=200)
     diff_summary: str | None = Field(None, max_length=MAX_DIFF_SUMMARY_LENGTH)
-    metadata: dict | None = None
+    metadata: dict[str, object] | None = None
 
     @field_validator("type")
     @classmethod
@@ -199,7 +200,7 @@ class EditMaterialOp(BaseModel):
 
     @field_validator("metadata")
     @classmethod
-    def validate_metadata(cls, v: dict | None) -> dict | None:
+    def validate_metadata(cls, v: dict[str, object] | None) -> dict[str, object] | None:
         return _validate_metadata(v)
 
     @field_validator("file_key")
@@ -231,7 +232,7 @@ class CreateDirectoryOp(BaseModel):
     type: str = "folder"
     description: str | None = Field(None, max_length=1000)
     tags: list[str] = Field(default_factory=list)
-    metadata: dict = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
 
     @field_validator("type")
     @classmethod
@@ -247,7 +248,7 @@ class CreateDirectoryOp(BaseModel):
 
     @field_validator("metadata")
     @classmethod
-    def validate_metadata(cls, v: dict) -> dict:
+    def validate_metadata(cls, v: dict[str, object]) -> dict[str, object]:
         return _validate_metadata(v) or {}
 
 
@@ -258,7 +259,7 @@ class EditDirectoryOp(BaseModel):
     type: str | None = None
     description: str | None = Field(None, max_length=1000)
     tags: list[str] | None = None
-    metadata: dict | None = None
+    metadata: dict[str, object] | None = None
 
     @field_validator("type")
     @classmethod
@@ -274,7 +275,7 @@ class EditDirectoryOp(BaseModel):
 
     @field_validator("metadata")
     @classmethod
-    def validate_metadata(cls, v: dict | None) -> dict | None:
+    def validate_metadata(cls, v: dict[str, object] | None) -> dict[str, object] | None:
         return _validate_metadata(v)
 
 
@@ -290,10 +291,11 @@ class MoveItemOp(BaseModel):
     new_parent_id: uuid.UUID | str | None
 
 
-def _get_op_discriminator(v: dict | BaseModel) -> str:
+def _get_op_discriminator(v: dict[str, object] | BaseModel) -> str:
     if isinstance(v, dict):
-        return v.get("op", "")
-    return getattr(v, "op", "")
+        res = v.get("op", "")
+        return str(res)
+    return str(getattr(v, "op", ""))
 
 
 Operation = Annotated[
@@ -326,7 +328,7 @@ class PullRequestCreate(BaseModel):
 
     @field_validator("operations")
     @classmethod
-    def validate_temp_ids_unique(cls, v: list) -> list:
+    def validate_temp_ids_unique(cls, v: list[Operation]) -> list[Operation]:
         temp_ids: list[str] = []
         for op in v:
             tid = getattr(op, "temp_id", None)
@@ -343,7 +345,7 @@ class PullRequestOut(BaseModel):
     status: str
     title: str
     description: str | None
-    payload: list[dict]
+    payload: list[dict[str, object]]
     summary_types: list[str] = Field(default_factory=list)
     author_id: uuid.UUID | None
     reviewed_by: uuid.UUID | None
@@ -351,6 +353,7 @@ class PullRequestOut(BaseModel):
     author: UserOut | None
     created_at: datetime
     updated_at: datetime
+    expires_at: datetime | None = None
     vote_score: int | None = None
     user_vote: int | None = None
 

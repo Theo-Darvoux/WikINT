@@ -49,7 +49,8 @@ async def list_annotations(
     threads = [
         ThreadOut(
             root=AnnotationOut.model_validate(r),
-            replies=[AnnotationOut.model_validate(rep) for rep in r._replies],  # type: ignore[attr-defined]
+            replies=[AnnotationOut.model_validate(rep) for rep in r._replies],
+
         )
         for r in roots
     ]

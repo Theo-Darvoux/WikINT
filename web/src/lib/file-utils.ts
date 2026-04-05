@@ -2,6 +2,28 @@
 export const MAX_FILE_SIZE_MB = parseInt(process.env.NEXT_PUBLIC_MAX_FILE_SIZE_MB || "100", 10);
 export const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024;
 
+/** Comma-separated string of accepted file extensions for <input accept="...">. */
+export const ACCEPTED_FILE_TYPES = [
+    // Documents
+    ".pdf", ".epub", ".djvu", ".djv",
+    // Images
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
+    // Audio
+    ".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a",
+    // Video
+    ".mp4", ".webm",
+    // Office (modern + legacy + ODF)
+    ".docx", ".xlsx", ".pptx", ".doc", ".xls", ".ppt", ".odt", ".ods",
+    // Text / markup
+    ".md", ".markdown", ".txt", ".csv", ".json", ".xml", ".yaml", ".yml", ".toml",
+    ".ini", ".cfg", ".conf", ".tex", ".latex", ".log",
+    // Code
+    ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".c", ".cpp", ".h", ".hpp",
+    ".rs", ".go", ".rb", ".php", ".cs", ".swift", ".kt", ".scala",
+    ".css", ".scss", ".sql", ".sh", ".bash", ".zsh", ".lua", ".r", ".m", ".ml",
+    ".hs", ".ex", ".exs", ".clj",
+].join(",");
+
 export function formatFileSize(bytes: number): string {
     if (bytes === 0) return "0 B";
     const units = ["B", "KB", "MB", "GB"];
@@ -57,9 +79,20 @@ export const EXT_BADGE_COLORS: Record<string, string> = {
 const DEFAULT_BADGE_COLOR = "bg-gray-100 text-gray-800 dark:bg-gray-800/40 dark:text-gray-300";
 
 /** Get badge color classes for a file, by extension or MIME type. */
-export function getFileBadgeColor(fileName: string): string {
+export function getFileBadgeColor(fileName: string, mimeType?: string): string {
     const ext = getFileExtension(fileName);
-    return EXT_BADGE_COLORS[ext] ?? DEFAULT_BADGE_COLOR;
+    if (ext && EXT_BADGE_COLORS[ext]) return EXT_BADGE_COLORS[ext];
+    
+    if (mimeType) {
+        if (mimeType === "application/pdf") return EXT_BADGE_COLORS["pdf"];
+        if (mimeType.startsWith("image/")) return EXT_BADGE_COLORS["jpg"];
+        if (mimeType.startsWith("video/")) return EXT_BADGE_COLORS["mp4"];
+        if (mimeType.startsWith("audio/")) return EXT_BADGE_COLORS["mp3"];
+        if (mimeType.includes("document") || mimeType.includes("msword")) return EXT_BADGE_COLORS["doc"];
+        if (mimeType.includes("sheet") || mimeType.includes("excel")) return EXT_BADGE_COLORS["xls"];
+    }
+    
+    return DEFAULT_BADGE_COLOR;
 }
 
 /** Short uppercase label for a file, e.g. "PDF", "MP3". Falls back to MIME subtype. */
@@ -84,6 +117,66 @@ export function isPreviewable(mimeType: string): boolean {
         "application/xml",
     ];
     return previewable.some((type) => mimeType.startsWith(type));
+}
+
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Client-side image compression
+// ────────────────────────────────────────────────────────────────────────────────
+
+import imageCompression from "browser-image-compression";
+
+const COMPRESSIBLE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MIN_COMPRESSION_SIZE = 512 * 1024; // 512 KB — skip small files to avoid overhead
+
+export interface CompressResult {
+    file: File;
+    /** True if client-side compression was actually applied and reduced the file size. */
+    compressed: boolean;
+}
+
+/**
+ * Compress image if it meets criteria (JPEG/PNG/WebP, ≥512 KB).
+ * Skips GIF (animation loss), SVG (needs raw bytes for security checks), and small files.
+ * Fails open: returns original File if compression fails or is not applicable.
+ *
+ * @param file The original File object
+ * @param skip Whether to skip compression entirely
+ * @returns Promise resolving to `{ file, compressed }` — `compressed` is true when the
+ *          file was actually shrunk client-side.
+ */
+export async function compressImageIfNeeded(file: File, skip = false): Promise<CompressResult> {
+    if (skip) return { file, compressed: false };
+
+    // Skip non-compressible image types
+    if (!COMPRESSIBLE_IMAGE_TYPES.has(file.type)) {
+        return { file, compressed: false };
+    }
+
+    // Skip small files (compression overhead not worth it)
+    if (file.size < MIN_COMPRESSION_SIZE) {
+        return { file, compressed: false };
+    }
+
+    try {
+        const compressedFile = await imageCompression(file, {
+            maxSizeMB: 4, // Increased from 2 MB
+            maxWidthOrHeight: 4096, // Increased from 1920 to preserve 4K (U10)
+            useWebWorker: true, // Non-blocking
+            initialQuality: 0.85, // Increased from 0.8
+            fileType: file.type, // Preserve original format
+            preserveExif: false, // Remove EXIF (server will strip anyway, but reduce size)
+        });
+
+        // Use compressed only if it actually reduced size
+        if (compressedFile.size < file.size) {
+            return { file: compressedFile, compressed: true };
+        }
+        return { file, compressed: false };
+    } catch {
+        // Fail open: return original file on any error
+        return { file, compressed: false };
+    }
 }
 
 

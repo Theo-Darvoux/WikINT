@@ -259,7 +259,7 @@ async def test_delete_annotation_author(client: AsyncClient, db_session: AsyncSe
 
 async def test_delete_annotation_moderator(client: AsyncClient, db_session: AsyncSession) -> None:
     student = await _create_user(db_session)
-    mod = await _create_user(db_session, role=UserRole.MEMBER)
+    mod = await _create_user(db_session, role=UserRole.MODERATOR)
     material, version = await _create_material(db_session, student)
     annotation = await _create_annotation(db_session, student, material, version)
     await db_session.commit()

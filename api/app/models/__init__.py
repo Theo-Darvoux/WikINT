@@ -1,6 +1,7 @@
 from app.models.annotation import Annotation
 from app.models.base import Base
 from app.models.comment import Comment
+from app.models.dead_letter import DeadLetterJob
 from app.models.directory import Directory
 from app.models.download_audit import DownloadAudit
 from app.models.flag import Flag
@@ -15,6 +16,7 @@ __all__ = [
     "Annotation",
     "Base",
     "Comment",
+    "DeadLetterJob",
     "Directory",
     "DownloadAudit",
     "Flag",

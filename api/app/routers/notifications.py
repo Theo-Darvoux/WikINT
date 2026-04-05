@@ -31,7 +31,7 @@ async def list_notifications(
     pagination: Annotated[PaginationParams, Depends()],
 ) -> list[NotificationOut]:
     items, _total = await get_notifications(db, user.id, pagination.limit, pagination.offset)
-    return items
+    return [NotificationOut.model_validate(n) for n in items]
 
 
 @router.get("/unread-count")
@@ -49,7 +49,7 @@ async def read_notification(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, str]:
-    await mark_read(db, notification_id, user.id)
+    await mark_read(db, str(notification_id), user.id)
     return {"status": "ok"}
 
 

@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 class UserRole(enum.StrEnum):
     STUDENT = "student"
-    MEMBER = "member"
+    MODERATOR = "moderator"
     BUREAU = "bureau"
     VIEUX = "vieux"
 
@@ -44,12 +44,12 @@ class User(UUIDMixin, Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    pull_requests: Mapped[list[PullRequest]] = relationship(  # noqa: F821
+    pull_requests: Mapped[list[PullRequest]] = relationship(
         back_populates="author",
         foreign_keys="PullRequest.author_id",
     )
-    annotations: Mapped[list[Annotation]] = relationship(back_populates="author")  # noqa: F821
-    comments: Mapped[list[Comment]] = relationship(back_populates="author")  # noqa: F821
-    notifications: Mapped[list[Notification]] = relationship(  # noqa: F821
+    annotations: Mapped[list[Annotation]] = relationship(back_populates="author")
+    comments: Mapped[list[Comment]] = relationship(back_populates="author")
+    notifications: Mapped[list[Notification]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )

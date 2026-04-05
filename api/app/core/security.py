@@ -19,7 +19,7 @@ def create_access_token(user_id: str, role: str, email: str) -> tuple[str, str]:
         "exp": expire,
         "type": "access",
     }
-    token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+    token = jwt.encode(payload, settings.secret_key.get_secret_value(), algorithm=ALGORITHM)
     return token, jti
 
 
@@ -32,11 +32,10 @@ def create_refresh_token(user_id: str) -> str:
         "exp": expire,
         "type": "refresh",
     }
-    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
-
+    return jwt.encode(payload, settings.secret_key.get_secret_value(), algorithm=ALGORITHM)
 
 def decode_token(token: str) -> dict:
-    return jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    return jwt.decode(token, settings.secret_key.get_secret_value(), algorithms=[ALGORITHM])
 
 
 def get_jti(token: str) -> str:

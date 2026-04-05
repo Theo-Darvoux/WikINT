@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { DirectoryLineItem } from "@/components/browse/directory-line-item";
 import { MaterialLineItem } from "@/components/browse/material-line-item";
 import { Breadcrumbs } from "@/components/browse/breadcrumbs";
@@ -164,14 +164,14 @@ export function DirectoryListing({
     const clearClipboard = useSelectionStore((s) => s.clearClipboard);
 
     // When viewing a ghost dir, the effective id/name come from the ghost entry
-    const realDirId = directory?.id ? String(directory.id) : "";
+    const realDirId = directory?.id ? String(directory.id) : null;
     const realDirName = directory?.name ? String(directory.name) : "Root";
     const dirId = activeGhostDir ? activeGhostDir.tempId : realDirId;
     const dirName = activeGhostDir ? activeGhostDir.name : realDirName;
 
     // Keep the global drop-zone store in sync with the effective directory
     useEffect(() => {
-        setBrowseContext({ directoryId: dirId, directoryName: dirName });
+        setBrowseContext({ directoryId: dirId || "", directoryName: dirName });
         return () => setBrowseContext(null);
     }, [dirId, dirName, setBrowseContext]);
 
@@ -194,8 +194,26 @@ export function DirectoryListing({
         );
 
     // When inside a ghost dir, there are no real items
-    const effectiveDirs = activeGhostDir ? [] : directories;
-    const effectiveMats = activeGhostDir ? [] : materials;
+    const effectiveDirs = useMemo(
+        () => (activeGhostDir ? [] : directories),
+        [activeGhostDir, directories],
+    );
+    const effectiveMats = useMemo(
+        () => (activeGhostDir ? [] : materials),
+        [activeGhostDir, materials],
+    );
+
+    const sortedDirs = useMemo(() => {
+        return [...effectiveDirs].sort((a, b) =>
+            String(a.name ?? "").localeCompare(String(b.name ?? "")),
+        );
+    }, [effectiveDirs]);
+
+    const sortedMats = useMemo(() => {
+        return [...effectiveMats].sort((a, b) =>
+            String(a.title ?? "").localeCompare(String(b.title ?? "")),
+        );
+    }, [effectiveMats]);
 
     const isEmpty =
         effectiveDirs.length === 0 &&
@@ -235,6 +253,12 @@ export function DirectoryListing({
         allSelectableItems.every((item) => selected.has(item.id));
 
     const handleBatchDelete = () => {
+        const count = selected.size;
+        if (count > 1) {
+            const confirmed = window.confirm(`Are you sure you want to delete ${count} selected items?`);
+            if (!confirmed) return;
+        }
+
         const ops: Operation[] = [];
         let skipped = 0;
         for (const item of selected.values()) {
@@ -256,9 +280,9 @@ export function DirectoryListing({
             return;
         }
         addOperations(ops);
-        const count = ops.length;
+        const stagedCount = ops.length;
         toast.success(
-            `Deletion of ${count} item${count !== 1 ? "s" : ""} staged` +
+            `Deletion of ${stagedCount} item${stagedCount !== 1 ? "s" : ""} staged` +
             (skipped > 0 ? ` (${skipped} already staged)` : ""),
         );
         setSelectMode(false);
@@ -638,13 +662,7 @@ export function DirectoryListing({
                 !isEmpty && (
                     <div className="divide-y rounded-lg border">
                         {/* Real directories */}
-                        {effectiveDirs
-                            .sort((a, b) =>
-                                String(a.name ?? "").localeCompare(
-                                    String(b.name ?? ""),
-                                ),
-                            )
-                            .map((dir) => {
+                        {sortedDirs.map((dir) => {
                                 const id = String(dir.id);
                                 return (
                                     <DirectoryLineItem
@@ -720,13 +738,7 @@ export function DirectoryListing({
                         })}
 
                         {/* Real materials */}
-                        {effectiveMats
-                            .sort((a, b) =>
-                                String(a.title ?? "").localeCompare(
-                                    String(b.title ?? ""),
-                                ),
-                            )
-                            .map((mat) => {
+                        {sortedMats.map((mat) => {
                                 const id = String(mat.id);
                                 return (
                                     <MaterialLineItem
@@ -797,7 +809,7 @@ export function DirectoryListing({
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 requestUpload({
-                                                    directoryId: dirId,
+                                                    directoryId: dirId ?? "",
                                                     directoryName: op.title,
                                                     parentMaterialId: op.temp_id!,
                                                 });

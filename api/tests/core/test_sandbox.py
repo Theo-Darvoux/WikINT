@@ -1,0 +1,100 @@
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from app.core.sandbox import _resolve_bwrap, sandboxed_run
+
+# ── Command Construction Unit Tests (Mocked) ────────────────────────────────
+
+def test_resolve_bwrap_found():
+    with patch("shutil.which", return_value="/usr/bin/bwrap"):
+        with patch("app.core.sandbox._bwrap_path", False): # Reset cache
+            assert _resolve_bwrap() == "/usr/bin/bwrap"
+
+def test_resolve_bwrap_missing():
+    with patch("shutil.which", return_value=None):
+        with patch("app.core.sandbox._bwrap_path", False): # Reset cache
+            with pytest.raises(RuntimeError, match=r"bwrap \(bubblewrap\) is required"):
+                _resolve_bwrap()
+
+def test_sandboxed_run_basic_command():
+    # Mock resolve_bwrap to return dummy path
+    with patch("app.core.sandbox._resolve_bwrap", return_value="/usr/bin/bwrap"):
+        # Mock subprocess.run to avoid actual execution
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            cmd = ["ffmpeg", "-version"]
+            sandboxed_run(cmd, rw_paths=["/tmp/test"], timeout=10)
+
+            # Verify the bwrap command construction
+            args, kwargs = mock_run.call_args
+            bwrap_cmd = args[0]
+
+            assert bwrap_cmd[0] == "/usr/bin/bwrap"
+            assert "--unshare-all" in bwrap_cmd
+
+            # Check for --disable-userns only if in Docker
+            if os.path.exists("/.dockerenv"):
+                assert "--disable-userns" in bwrap_cmd
+
+            assert "--bind" in bwrap_cmd
+            assert "/tmp/test" in bwrap_cmd
+
+            # Check for procfs mount (reverted from bind-mount)
+            assert "--proc" in bwrap_cmd
+            assert "/proc" in bwrap_cmd
+
+            assert "--" in bwrap_cmd
+            assert bwrap_cmd[-2] == "ffmpeg"
+            assert bwrap_cmd[-1] == "-version"
+            assert kwargs["timeout"] == 10
+
+# ── Real Environment Smoke Tests (Functional) ───────────────────────────────
+
+@pytest.mark.skipif(shutil.which("bwrap") is None, reason="bwrap not installed on this host")
+def test_sandboxed_run_smoke_test(tmp_path: Path):
+    """Wait! This test actually runs bwrap on the current host.
+
+    This is intended to catch environment-specific failures like the 'mount proc'
+    permission error we've seen in Docker.
+    """
+    # A trivial command that should always succeed in a working sandbox
+    cmd = ["/bin/ls", "/"]
+
+    # We provide a temp dir to test bind-mount functionality
+    test_dir = tmp_path / "sandbox_test"
+    test_dir.mkdir()
+    (test_dir / "canary.txt").write_text("hello-sandbox")
+
+    try:
+        result = sandboxed_run(cmd, rw_paths=[test_dir], timeout=5)
+
+        # If we got here, bwrap didn't crash or return error due to mount failures
+        assert result.returncode == 0
+
+    except (subprocess.CalledProcessError, RuntimeError, subprocess.SubprocessError) as exc:
+        # If it's a TimeoutExpired we could skip, but if it's a PermissionError or
+        # bwrap returning 1 with a stderr message, we want to see it clearly.
+        pytest.fail(f"Sandbox smoke test failed! This usually indicates environment restrictions "
+                    f"(like Docker or Kernel settings blocking proc mounts). Error: {exc}")
+
+@pytest.mark.skipif(shutil.which("bwrap") is None, reason="bwrap not installed on this host")
+def test_sandboxed_run_isolation_check():
+    """Verify that the sandbox actually blocks something (e.g. network/IPC)."""
+    # Trying to touch a file outside our allowed rw_paths should fail or be blocked
+    # In bwrap's --unshare-all, the root filesystem is empty/minimal by default.
+    # We'll just verify that 'ls /' returns a restricted view.
+
+    result = sandboxed_run(["/bin/ls", "/"])
+    output = result.stdout.decode()
+
+    # In our sandbox.py, we only --ro-bind /usr, /lib, /bin, etc.
+    # We do NOT bind the root '/' itself.
+    # So 'ls /' in the sandbox should NOT see the host's root (like /home or /root).
+    assert "home" not in output.split()
+    assert "tmp" in output.split()  # We have --tmpfs /tmp

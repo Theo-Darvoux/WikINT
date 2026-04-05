@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.directory import Directory
 from app.models.material import Material
+from app.models.upload import Upload
 from app.models.user import User, UserRole
 from app.services.pr import topo_sort_operations
 
@@ -388,19 +389,35 @@ class TestApproveReject:
         res = await db_session.execute(select(Material).where(Material.title == "NewMat"))
         assert res.scalar_one().directory_id == d.id
 
+    @patch("app.routers.pull_requests.object_exists", new_callable=AsyncMock)
     @patch("app.core.storage.delete_object", new_callable=AsyncMock)
     async def test_reject_cleans_up_files(
         self,
         mock_delete: AsyncMock,
+        mock_exists: AsyncMock,
         client: AsyncClient,
         db_session: AsyncSession,
     ) -> None:
+        mock_exists.return_value = True
         student = await _create_user(db_session, UserRole.STUDENT)
         mod = await _create_user(db_session, UserRole.BUREAU)
         d = await _create_directory(db_session, "Dir", user_id=student.id)
         await db_session.commit()
 
         file_key = f"uploads/{student.id}/{uuid.uuid4()}/test.pdf"
+
+        # The PR endpoint verifies that file_key exists in Upload table with status 'clean'
+        upload_id_str = file_key.split("/")[2]
+        upload_row = Upload(
+            upload_id=upload_id_str,
+            user_id=student.id,
+            quarantine_key=f"quarantine/{student.id}/{upload_id_str}/test.pdf",
+            final_key=file_key,
+            status="clean",
+            filename="test.pdf",
+        )
+        db_session.add(upload_row)
+        await db_session.commit()
 
         resp = await client.post(
             "/api/pull-requests",

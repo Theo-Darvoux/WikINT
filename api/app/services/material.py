@@ -163,9 +163,7 @@ async def get_material_version(
     return version
 
 
-async def get_material_attachments(
-    db: AsyncSession, material_id: str | uuid.UUID
-) -> list[Material]:
+async def get_material_attachments(db: AsyncSession, material_id: str | uuid.UUID) -> list[dict]:
 
     if isinstance(material_id, str):
         import uuid
@@ -173,9 +171,23 @@ async def get_material_attachments(
         material_id = uuid.UUID(material_id)
     await get_material_by_id(db, material_id)
     result = await db.execute(
-        select(Material).where(Material.parent_material_id == material_id).order_by(Material.title)
+        select(Material, MaterialVersion)
+        .outerjoin(
+            MaterialVersion,
+            (Material.id == MaterialVersion.material_id)
+            & (Material.current_version == MaterialVersion.version_number),
+        )
+        .where(Material.parent_material_id == material_id)
+        .order_by(Material.title)
     )
-    return list(result.scalars().all())
+
+    attachments_out = []
+    for material, version in result.all():
+        mat_dict = material_orm_to_dict(material)
+        if version:
+            mat_dict["current_version_info"] = version
+        attachments_out.append(mat_dict)
+    return attachments_out
 
 
 async def increment_download_count(db: AsyncSession, material_id: str | uuid.UUID) -> Material:

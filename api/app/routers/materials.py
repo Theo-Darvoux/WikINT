@@ -1,8 +1,9 @@
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +21,6 @@ from app.services.material import (
     get_material_versions,
     get_material_with_version,
     increment_download_count,
-    material_orm_to_dict,
     record_view,
 )
 
@@ -81,7 +81,11 @@ async def inline_material(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    from app.services.material import check_material_access, get_material_with_version
+
     data = await get_material_with_version(db, material_id)
+    check_material_access(user.id, data)
+
     version = data.get("current_version_info")
     if not version or not version.file_key:
         from app.core.exceptions import NotFoundError
@@ -90,7 +94,11 @@ async def inline_material(
 
     from app.core.storage import generate_presigned_get_url
 
-    url = await generate_presigned_get_url(version.file_key)
+    # Images and PDFs are safe to render inline; all other types are forced
+    # to download so the browser never executes or parses unknown content.
+    file_mime = getattr(version, "file_mime_type", "") or ""
+    inline_safe = file_mime.startswith("image/") or file_mime == "application/pdf"
+    url = await generate_presigned_get_url(version.file_key, force_download=not inline_safe)
     return {"url": url}
 
 
@@ -99,26 +107,31 @@ async def stream_material_file(
     material_id: str,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User | None, Depends(security)] = None,
+    user: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
     token: Annotated[str | None, Query()] = None,
     redis: Annotated[Redis | None, Depends(get_redis)] = None,
-) -> StreamingResponse:
+) -> Any:
     from app.core.exceptions import NotFoundError, UnauthorizedError
+    from app.services.material import check_material_access, get_material_with_version
 
     # Manual auth check because we want to allow either header OR query token
     effective_user: User | None = None
+
+    # (S7/S12) Ensure redis is available for auth checks
+    if redis is None:
+        from app.core.redis import redis_client
+        redis = redis_client
+
     if user:  # security dependency gives HTTPAuthorizationCredentials or None
         try:
-            from app.dependencies.auth import get_current_user
-
-            effective_user = await get_current_user(user, db, redis)
+            from app.dependencies.auth import get_user_from_token
+            effective_user = await get_user_from_token(db, redis, user.credentials)
         except Exception:
             pass
 
     if not effective_user and token:
         try:
             from app.dependencies.auth import get_user_from_token
-
             effective_user = await get_user_from_token(db, redis, token)
         except Exception:
             pass
@@ -127,6 +140,8 @@ async def stream_material_file(
         raise UnauthorizedError()
 
     data = await get_material_with_version(db, material_id)
+    check_material_access(effective_user.id, data)
+
     version = data.get("current_version_info")
     if not version or not version.file_key:
         raise NotFoundError("No file available")
@@ -201,14 +216,14 @@ async def get_version_download_url(
     return {"url": url}
 
 
-@router.get("/{material_id}/attachments", response_model=list[MaterialOut])
+@router.get("/{material_id}/attachments", response_model=list[MaterialDetail])
 async def list_attachments(
     material_id: str,
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> list[MaterialOut]:
+) -> list[MaterialDetail]:
     attachments = await get_material_attachments(db, material_id)
-    return [MaterialOut.model_validate(material_orm_to_dict(a)) for a in attachments]
+    return [MaterialDetail.model_validate(a) for a in attachments]
 
 
 @router.post("/{material_id}/view")

@@ -10,7 +10,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const pathname = usePathname();
 
     if (!isAuthenticated) return null;
-    if (user?.role !== "member" && user?.role !== "bureau" && user?.role !== "vieux") {
+    if (user?.role !== "moderator" && user?.role !== "bureau" && user?.role !== "vieux") {
         return (
             <div className="flex items-center justify-center p-12 text-muted-foreground">
                 You do not have permission to access the admin area.

@@ -3,6 +3,9 @@ services:
   minio:
     restart: unless-stopped
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+    networks:
+      - default
+      - backend
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
@@ -22,6 +25,9 @@ services:
 
   minio-setup:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+    networks:
+      - default
+      - backend
     depends_on:
       minio:
         condition: service_healthy
@@ -38,6 +44,7 @@ services:
     networks:
       - default
       - frontend
+      - backend
     build:
       context: ./api
       dockerfile: Dockerfile
@@ -52,13 +59,15 @@ services:
         condition: service_healthy
     volumes:
       - ./api:/app
-      - /app/.venv
     ports:
       - "8000:8000"
     command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   worker:
     restart: unless-stopped
+    networks:
+      - default
+      - backend
     build:
       context: ./api
       dockerfile: Dockerfile
@@ -70,11 +79,52 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: >
-      sh -c "uv run arq app.workers.settings.WorkerSettings"
+    command: ["uv", "run", "--no-dev", "arq", "app.workers.settings.WorkerSettings"]
+    stop_grace_period: 30s
     volumes:
       - ./api:/app
-      - /app/.venv
+
+  worker-fast:
+    restart: unless-stopped
+    networks:
+      - default
+      - backend
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    entrypoint: ["./worker-start.sh"]
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["uv", "run", "--no-dev", "arq", "app.workers.settings.UploadFastWorkerSettings"]
+    stop_grace_period: 30s
+    volumes:
+      - ./api:/app
+
+  worker-slow:
+    restart: unless-stopped
+    networks:
+      - default
+      - backend
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    entrypoint: ["./worker-start.sh"]
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["uv", "run", "--no-dev", "arq", "app.workers.settings.UploadSlowWorkerSettings"]
+    stop_grace_period: 1m
+    volumes:
+      - ./api:/app
 
   web:
     build:

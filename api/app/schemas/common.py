@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -9,7 +9,7 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
-class PaginatedResponse(BaseModel, Generic[T]):  # noqa: UP046
+class PaginatedResponse[T](BaseModel):
     items: list[T]
     total: int
     page: int
@@ -18,3 +18,4 @@ class PaginatedResponse(BaseModel, Generic[T]):  # noqa: UP046
 
 class HealthResponse(BaseModel):
     status: str
+    details: dict[str, str] | None = None

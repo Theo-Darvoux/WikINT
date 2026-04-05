@@ -1,73 +1,109 @@
-# WikINT Documentation
+# WikINT Deep Technical Documentation
 
-Technical documentation for WikINT, a collaborative academic materials platform for Telecom SudParis / IMT-BS students.
+## Project Purpose
 
-**Stack**: FastAPI + SQLAlchemy (Python) | Next.js + React (TypeScript) | PostgreSQL | Redis | MinIO | Meilisearch | Docker Compose
+WikINT is a **course materials platform** built for Telecom SudParis / IMT-BS. It functions as a collaborative knowledge base where students upload, organize, review, and consume academic materials (PDFs, Office documents, images, audio, video, code files). Think of it as a student-run wiki where every content change goes through a **pull request review process** before being published to the browsable tree.
 
----
+The platform serves a dual purpose:
+1. **Knowledge preservation** across academic years (materials persist and version)
+2. **Collaborative curation** where students collectively build and maintain a shared study resource library
 
-## Architecture
+## Architectural Overview
 
-System-level design, data model, and technology choices.
+WikINT follows a **three-tier architecture** with a clear separation of concerns:
 
-- [System Overview](./architecture/overview.md) -- Service topology, request lifecycle, auth flow, file upload flow, PR approval pipeline, SSE architecture
-- [Data Model](./architecture/data-model.md) -- ER diagram, all 17 tables, design patterns (soft deletes, polymorphic associations, self-referential trees, JSONB)
-- [Tech Stack](./architecture/tech-stack.md) -- Complete dependency inventory with versions and rationale
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        NGINX Reverse Proxy                       │
+│            (TLS termination, path routing, rate limiting)         │
+└──────┬──────────────────────┬───────────────────┬───────────────┘
+       │                      │                   │
+       ▼                      ▼                   ▼
+┌──────────────┐    ┌──────────────────┐   ┌──────────────┐
+│   Next.js    │    │   FastAPI (API)   │   │  OnlyOffice  │
+│  Frontend    │    │   + ARQ Workers   │   │  Document    │
+│  (SSR/CSR)   │    │                  │   │  Server      │
+└──────────────┘    └───────┬──────────┘   └──────────────┘
+                            │
+              ┌─────────────┼─────────────────┐
+              │             │                 │
+              ▼             ▼                 ▼
+        ┌──────────┐  ┌──────────┐     ┌──────────────┐
+        │PostgreSQL│  │  Redis   │     │ MinIO / S3   │
+        │  (data)  │  │(cache/   │     │ (file store) │
+        │          │  │ queues)  │     │              │
+        └──────────┘  └──────────┘     └──────────────┘
+              │
+              ▼
+        ┌──────────────┐
+        │ MeiliSearch  │
+        │ (full-text)  │
+        └──────────────┘
+```
 
-## API (Backend)
+**Pattern:** Service-Oriented Monolith. The API is a single FastAPI application, but internally it is organized into distinct domains (routers, services, models) that could be extracted into separate services if needed. Background processing is handled by ARQ workers running the same codebase.
 
-FastAPI routers, services, and business logic.
+## Tech Stack
 
-- [API Overview](./api/overview.md) -- 3-layer architecture, dependency injection, error handling, pagination, post-commit job pattern
-- [Authentication](./api/authentication.md) -- Passwordless email login, JWT tokens, refresh flow, role hierarchy
-- [Browse & Directories](./api/browse-and-directories.md) -- Path resolution algorithm, directory tree, recursive CTEs
-- [Materials](./api/materials.md) -- Material lifecycle, versioning, attachments, file types
-- [Pull Requests](./api/pull-requests.md) -- Batch operations, temp ID system, topological sort, voting, execution pipeline
-- [Annotations](./api/annotations.md) -- Threading model, SSE real-time updates, material-scoped events
-- [Comments](./api/comments.md) -- Polymorphic comment system, target types
-- [Search](./api/search.md) -- Meilisearch indexing pipeline, split identifiers, multi-index search
-- [Upload](./api/upload.md) -- Multipart upload flow, MIME magic byte detection, YARA + MalwareBazaar scanning
-- [Notifications](./api/notifications.md) -- Notification types, SSE delivery, Redis queue system
-- [Flags & Moderation](./api/flags-and-moderation.md) -- Flag lifecycle, moderation actions, moderator powers
-- [Users](./api/users.md) -- Profiles, reputation, GDPR compliance, data export
-- [Admin](./api/admin.md) -- Admin endpoints, access control, SQLAdmin dev interface
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| Frontend | Next.js (App Router), React, TypeScript, Tailwind CSS | Next.js 15 |
+| API | FastAPI, SQLAlchemy 2 (async), Pydantic v2 | Python 3.13 |
+| Database | PostgreSQL (via asyncpg) | 15+ |
+| Migrations | Alembic | |
+| Cache / Queues | Redis (via redis-py async + ARQ) | |
+| Object Storage | S3-compatible (MinIO dev, Cloudflare R2 prod) | |
+| Search | MeiliSearch | |
+| Malware Scanning | YARA rules + MalwareBazaar API | |
+| Document Editing | OnlyOffice Document Server | |
+| Observability | OpenTelemetry + Prometheus | |
+| Reverse Proxy | Nginx | |
 
-## Web (Frontend)
+## Documentation Map
 
-Next.js pages, React components, and state management.
+### Architecture
+- [`architecture/system-overview.md`](architecture/system-overview.md) - System topology, service interactions, and deployment model
+- [`architecture/data-model.md`](architecture/data-model.md) - Complete database schema, entity relationships, and migration history
 
-- [Frontend Overview](./web/overview.md) -- Page routing, Zustand stores, API client, layout, theming
-- [Authentication](./web/authentication.md) -- Login flow, useAuth hook, AuthGuard, token management
-- [Browse](./web/browse.md) -- Directory listing, caching, material viewer integration
-- [Viewers](./web/viewers.md) -- 9 file viewers (PDF, code, image, video, audio, markdown, etc.)
-- [Pull Requests](./web/pull-requests.md) -- Staging system, review drawer, upload drawer, drag-and-drop
-- [Annotations](./web/annotations.md) -- Text selection tooltip, annotation threads, real-time updates
-- [Sidebar](./web/sidebar.md) -- 5-tab sidebar (details, chat, annotations, edits, actions), responsive behavior
-- [Profiles](./web/profiles.md) -- Profile pages, contributions, reputation, settings
-- [Admin Pages](./web/admin.md) -- Dashboard, user management, flag review, PR queue
-- [Notifications](./web/notifications.md) -- Multi-tab SSE coordination, navbar bell, notification page
+### Modules
 
-## Infrastructure
+#### Core Infrastructure
+- [`modules/core-infrastructure/storage.md`](modules/core-infrastructure/storage.md) - S3/MinIO object storage abstraction layer
+- [`modules/core-infrastructure/database.md`](modules/core-infrastructure/database.md) - Async SQLAlchemy engine, session management, post-commit job pattern
+- [`modules/core-infrastructure/redis.md`](modules/core-infrastructure/redis.md) - Redis clients, ARQ pool, pub/sub for SSE
+- [`modules/core-infrastructure/configuration.md`](modules/core-infrastructure/configuration.md) - Environment-based settings, secret validation, per-type size limits
+- [`modules/core-infrastructure/telemetry.md`](modules/core-infrastructure/telemetry.md) - OpenTelemetry traces, Prometheus metrics
 
-Docker services, configuration, and operational details.
+#### Data Layer
+- [`modules/data-layer/models.md`](modules/data-layer/models.md) - All SQLAlchemy ORM models, mixins, relationships
+- [`modules/data-layer/schemas.md`](modules/data-layer/schemas.md) - Pydantic request/response schemas
 
-- [Infrastructure Overview](./infrastructure/overview.md) -- Service topology, startup order, health checks, prod vs dev
-- [Database (PostgreSQL)](./infrastructure/database.md) -- Connection pool, session management, schema, SQL views
-- [File Storage (MinIO)](./infrastructure/storage.md) -- S3 client, presigned URLs, file organization, malware scanner integration
-- [Search Engine (Meilisearch)](./infrastructure/search-engine.md) -- Index setup, document structure, typo tolerance, reindexing
-- [Caching & Queues (Redis)](./infrastructure/caching-and-queues.md) -- ARQ queue, rate limiting, token blacklist, SSE queues
-- [Reverse Proxy (Nginx)](./infrastructure/reverse-proxy.md) -- Routing, TLS, security headers, certbot
-- [Background Workers (ARQ)](./infrastructure/background-workers.md) -- On-demand jobs, cron schedule, job dispatch pattern
+#### API Endpoints
+- [`modules/api-endpoints/authentication.md`](modules/api-endpoints/authentication.md) - Email OTP + magic link auth, JWT lifecycle
+- [`modules/api-endpoints/upload.md`](modules/api-endpoints/upload.md) - Direct upload, presigned upload, TUS resumable protocol
+- [`modules/api-endpoints/pull-requests.md`](modules/api-endpoints/pull-requests.md) - Batch PR creation, approval, voting
+- [`modules/api-endpoints/browse.md`](modules/api-endpoints/browse.md) - Directory tree traversal, material retrieval
+- [`modules/api-endpoints/remaining-routes.md`](modules/api-endpoints/remaining-routes.md) - Search, comments, annotations, flags, notifications, admin, OnlyOffice
 
-## Guides
+#### Business Services
+- [`modules/business-services/pr-engine.md`](modules/business-services/pr-engine.md) - Topological sort, operation dispatch, temp_id resolution
+- [`modules/business-services/material-service.md`](modules/business-services/material-service.md) - Material CRUD, versioning, search indexing
+- [`modules/business-services/user-service.md`](modules/business-services/user-service.md) - User lifecycle, roles, onboarding
 
-Step-by-step instructions for common operations.
+#### Background Workers
+- [`modules/background-workers/upload-pipeline.md`](modules/background-workers/upload-pipeline.md) - The 4-stage upload processing pipeline
+- [`modules/background-workers/cleanup.md`](modules/background-workers/cleanup.md) - Orphan cleanup, stale upload cleanup, multipart reconciliation
 
-- [Local Development Setup](./guides/local-setup.md) -- Prerequisites, quick start, hot reloading, useful commands
-- [Deployment](./guides/deployment.md) -- Production setup, TLS certificates, backups, monitoring
-- [CLI Reference](./guides/cli-reference.md) -- seed, reindex, gdpr-cleanup, year-rollover commands
-- [Troubleshooting](./guides/troubleshooting.md) -- Common issues with startup, runtime, and data
+#### Security
+- [`security/file-security.md`](security/file-security.md) - Metadata stripping, malware scanning, sandbox, MIME validation
+- [`security/authentication.md`](security/authentication.md) - JWT architecture, token blacklisting, RBAC
+- [`security/upload-hardening.md`](security/upload-hardening.md) - Quarantine pattern, CAS dedup, quota enforcement
 
-## Configuration
+#### Frontend
+- [`modules/frontend/overview.md`](modules/frontend/overview.md) - Next.js app structure, routing, state management
+- [`modules/frontend/upload-system.md`](modules/frontend/upload-system.md) - Client-side upload orchestration, staging store, crypto utils
 
-- [Environment Variables](./configuration/environment-variables.md) -- Complete reference for all `.env` settings
+### Flows
+- [`flows/upload-lifecycle.md`](flows/upload-lifecycle.md) - Complete file upload from browser to stored material
+- [`flows/pull-request-lifecycle.md`](flows/pull-request-lifecycle.md) - PR creation, review, approval, and content materialization
+- [`flows/authentication-flow.md`](flows/authentication-flow.md) - Login, token refresh, and session management

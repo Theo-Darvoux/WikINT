@@ -11,7 +11,7 @@ class DirectoryOut(BaseModel):
     slug: str
     type: str
     description: str | None
-    metadata: dict = Field(validation_alias=AliasChoices("metadata_", "metadata"))
+    metadata: dict[str, object] = Field(validation_alias=AliasChoices("metadata_", "metadata"))
     sort_order: int
     is_system: bool
     tags: list[str] = []
@@ -19,7 +19,7 @@ class DirectoryOut(BaseModel):
 
     @field_validator("tags", mode="before")
     @classmethod
-    def extract_tag_names(cls, v: list | None) -> list[str]:
+    def extract_tag_names(cls, v: list[object] | None) -> list[str]:
         if not v:
             return []
         return [tag.name if hasattr(tag, "name") else str(tag) for tag in v]

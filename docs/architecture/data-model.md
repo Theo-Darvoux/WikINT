@@ -1,365 +1,239 @@
-# Data Model
+# Data Model & Schema
 
-WikINT uses PostgreSQL 16 with SQLAlchemy 2.0+ async ORM. The schema comprises 15 tables, 2 junction tables, and 2 SQL views. All primary keys are UUIDs generated server-side via `gen_random_uuid()`.
+## Entity Relationship Overview
 
-This document covers every model, column, relationship, and design pattern in the database layer.
-
----
-
-## Entity-Relationship Diagram
-
-```mermaid
-erDiagram
-    users ||--o{ pull_requests : "authors"
-    users ||--o{ annotations : "authors"
-    users ||--o{ comments : "authors"
-    users ||--o{ notifications : "receives"
-    users ||--o{ view_history : "views"
-    users ||--o{ pr_votes : "votes"
-    users ||--o{ pr_comments : "authors"
-    users ||--o{ flags : "reports"
-
-    directories ||--o{ directories : "parent-child"
-    directories ||--o{ materials : "contains"
-    directories }o--o{ tags : "tagged via directory_tags"
-
-    materials ||--o{ material_versions : "versions"
-    materials ||--o{ materials : "attachments"
-    materials ||--o{ annotations : "annotated"
-    materials }o--o{ tags : "tagged via material_tags"
-    materials ||--o{ view_history : "viewed"
-
-    pull_requests ||--o{ pr_votes : "voted on"
-    pull_requests ||--o{ pr_comments : "discussed"
-    pull_requests ||--o{ material_versions : "creates"
-
-    annotations ||--o{ annotations : "thread/reply"
-
-    pr_comments ||--o{ pr_comments : "threaded"
+```
+                    ┌─────────────┐
+                    │    User     │
+                    │─────────────│
+                    │ id (UUID PK)│
+                    │ email       │
+                    │ display_name│
+                    │ role (enum) │
+                    │ onboarded   │
+                    │ is_flagged  │
+                    │ deleted_at  │
+                    └──────┬──────┘
+                           │
+          ┌────────────────┼────────────────┬──────────────────┐
+          │ author_id      │ author_id      │ author_id        │
+          ▼                ▼                ▼                  ▼
+   ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  ┌────────────┐
+   │ PullRequest  │ │  Material    │ │  Annotation  │  │  Comment   │
+   │──────────────│ │──────────────│ │──────────────│  │────────────│
+   │ type (batch) │ │ directory_id │ │ material_id  │  │ target_type│
+   │ status (enum)│ │ title, slug  │ │ body         │  │ target_id  │
+   │ payload JSONB│ │ type         │ │ page_number  │  │ body       │
+   │ summary_types│ │ current_ver  │ │ coordinates  │  │ parent_id  │
+   │ virus_scan   │ │ author_id    │ └──────────────┘  └────────────┘
+   └──────┬───────┘ │ metadata JSONB│
+          │         │ download_cnt │
+          │         └──────┬───────┘
+    ┌─────┴─────┐          │
+    │           │          │ material_id
+    ▼           ▼          ▼
+┌─────────┐ ┌────────┐ ┌────────────────┐
+│ PRVote  │ │PRComment│ │MaterialVersion │
+│─────────│ │────────│ │────────────────│
+│ pr_id   │ │ pr_id  │ │ material_id    │
+│ user_id │ │body    │ │ version_number │
+│ value   │ │parent_id│ │ file_key       │
+│ (unique │ └────────┘ │ file_name      │
+│  per PR)│            │ file_size      │
+└─────────┘            │ file_mime_type │
+                       │ virus_scan     │
+                       │ pr_id          │
+                       └────────────────┘
 ```
 
----
+## Core Entities
 
-## Base Classes
+### User
+**Table:** `users`
 
-Defined in `api/app/models/base.py`:
+| Column | Type | Constraints | Purpose |
+|--------|------|-------------|---------|
+| `id` | UUID | PK, default uuid4 | |
+| `email` | VARCHAR(255) | UNIQUE, NOT NULL | Login identifier |
+| `display_name` | VARCHAR(100) | nullable | Shown in UI |
+| `avatar_url` | VARCHAR(500) | nullable | Profile picture URL |
+| `role` | ENUM(student, member, bureau, vieux) | default 'student' | Authorization level |
+| `bio` | TEXT | nullable | User profile text |
+| `academic_year` | VARCHAR(10) | nullable | e.g. "2024" |
+| `gdpr_consent` | BOOLEAN | default false | GDPR tracking |
+| `gdpr_consent_at` | TIMESTAMP(tz) | nullable | When consent was given |
+| `onboarded` | BOOLEAN | default false | Whether user completed onboarding |
+| `is_flagged` | BOOLEAN | default false | Moderator-flagged account |
+| `created_at` | TIMESTAMP(tz) | server_default now() | |
+| `last_login_at` | TIMESTAMP(tz) | nullable | |
+| `deleted_at` | TIMESTAMP(tz) | nullable | Soft-delete timestamp |
 
-### UUIDMixin
-```python
-class UUIDMixin:
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID, primary_key=True, default=uuid.uuid4,
-        server_default=func.gen_random_uuid()
-    )
-```
+**Roles hierarchy:**
+- `student` - Base role. Can upload, create PRs, comment
+- `moderator` - Can approve/reject PRs (moderator)
+- `bureau` - Association leadership (all member perms + admin)
+- `vieux` - Alumni with elevated permissions
 
-### TimestampMixin
-```python
-class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-```
+### Directory
+**Table:** `directories`
 
----
-
-## Models
-
-### User (`api/app/models/user.py`)
-
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
-| `id` | UUID | PK | From UUIDMixin |
-| `email` | VARCHAR(255) | UNIQUE, NOT NULL | School email |
-| `display_name` | VARCHAR(100) | Nullable | Set during onboarding |
-| `avatar_url` | VARCHAR(500) | Nullable | S3 file_key |
-| `role` | Enum(UserRole) | DEFAULT 'student' | student/member/bureau/vieux |
-| `bio` | TEXT | Nullable | |
-| `academic_year` | VARCHAR(10) | Nullable | "1A", "2A", "3A+" |
-| `gdpr_consent` | BOOLEAN | DEFAULT false | |
-| `gdpr_consent_at` | DATETIME(tz) | Nullable | When consent given |
-| `onboarded` | BOOLEAN | DEFAULT false | |
-| `created_at` | DATETIME(tz) | server_default=now() | |
-| `last_login_at` | DATETIME(tz) | Nullable | Updated on each login |
-| `deleted_at` | DATETIME(tz) | Nullable | Soft delete marker |
-
-**Enum: UserRole** — `student`, `member`, `bureau`, `vieux`
-
-**Relationships**: `pull_requests`, `annotations`, `comments`, `notifications` (cascade delete-orphan)
-
-**Index**: `idx_users_deleted_at`
-
----
-
-### Directory (`api/app/models/directory.py`)
-
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
+| Column | Type | Constraints | Purpose |
+|--------|------|-------------|---------|
 | `id` | UUID | PK | |
-| `parent_id` | UUID | FK(directories), ON DELETE CASCADE, Nullable | Self-referential tree |
+| `parent_id` | UUID | FK(directories.id) CASCADE, nullable | Self-referential tree |
 | `name` | VARCHAR(200) | NOT NULL | Display name |
-| `slug` | VARCHAR(200) | NOT NULL | URL segment |
-| `type` | Enum(DirectoryType) | NOT NULL | module/folder |
-| `description` | TEXT | Nullable | |
-| `metadata_` | JSONB | DEFAULT {} | Flexible key-value (e.g., course code) |
-| `sort_order` | INTEGER | DEFAULT 0 | Display ordering |
-| `is_system` | BOOLEAN | DEFAULT false | System-created (e.g., attachments dirs) |
-| `created_by` | UUID | FK(users), ON DELETE SET NULL | |
-| `created_at` | DATETIME(tz) | From TimestampMixin | |
-| `updated_at` | DATETIME(tz) | From TimestampMixin | |
+| `slug` | VARCHAR(200) | NOT NULL | URL-safe identifier |
+| `type` | ENUM(module, folder) | NOT NULL | Top-level vs nested |
+| `description` | TEXT | nullable | |
+| `metadata` | JSONB | default {} | Extensible key-value store |
+| `sort_order` | INTEGER | default 0 | Manual ordering |
+| `is_system` | BOOLEAN | default false | System-managed (e.g. attachment dirs) |
+| `created_by` | UUID | FK(users.id) SET NULL | |
+| `created_at` | TIMESTAMP(tz) | | |
+| `updated_at` | TIMESTAMP(tz) | | |
 
-**Enum: DirectoryType** — `module`, `folder`
+**Unique constraint:** `(parent_id, slug)` - Slugs must be unique among siblings.
 
-**Unique constraint**: `(parent_id, slug)` — slugs unique within parent
+**System directories:** When a material has attachments, a system directory named `attachments:{material_id}` is automatically created with `is_system=true`. These are invisible in the browse UI but hold child materials.
 
-**Relationships**: `parent`, `children` (cascade delete-orphan), `materials` (cascade delete-orphan), `tags` (M2M via `directory_tags`)
+### Material
+**Table:** `materials`
 
----
-
-### Material (`api/app/models/material.py`)
-
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
+| Column | Type | Constraints | Purpose |
+|--------|------|-------------|---------|
 | `id` | UUID | PK | |
-| `directory_id` | UUID | FK(directories), ON DELETE CASCADE | Parent folder |
+| `directory_id` | UUID | FK(directories.id) CASCADE, nullable | Parent directory (nullable for root-level) |
 | `title` | VARCHAR(300) | NOT NULL | |
 | `slug` | VARCHAR(300) | NOT NULL | URL segment |
-| `description` | TEXT | Nullable | |
-| `type` | VARCHAR(50) | NOT NULL | polycopie, annal, cheatsheet, etc. |
-| `current_version` | INTEGER | DEFAULT 1 | Latest version number |
-| `parent_material_id` | UUID | FK(materials), ON DELETE CASCADE, Nullable | For attachments |
-| `author_id` | UUID | FK(users), ON DELETE SET NULL | |
-| `metadata_` | JSONB | DEFAULT {} | e.g., video_url |
-| `download_count` | INTEGER | DEFAULT 0 | |
-| `created_at` | DATETIME(tz) | From TimestampMixin | |
-| `updated_at` | DATETIME(tz) | From TimestampMixin | |
+| `description` | TEXT | nullable | |
+| `type` | VARCHAR(50) | NOT NULL | Content category (pdf, image, video, etc.) |
+| `current_version` | INTEGER | default 1 | Denormalized latest version number |
+| `parent_material_id` | UUID | FK(materials.id) CASCADE | For attachment hierarchies |
+| `author_id` | UUID | FK(users.id) SET NULL | |
+| `metadata` | JSONB | default {} | Extensible properties |
+| `download_count` | INTEGER | default 0 | |
+| `created_at` | TIMESTAMP(tz) | | |
+| `updated_at` | TIMESTAMP(tz) | | |
 
-**Unique constraint**: `(directory_id, slug)`
+**Unique constraints:**
+- `(directory_id, slug)` for materials within a directory
+- Partial unique index on `slug` WHERE `directory_id IS NULL` (root-level uniqueness)
 
-**Relationships**: `directory`, `author`, `versions` (ordered by version_number, cascade delete-orphan), `parent_material`, `tags` (M2M via `material_tags`), `annotations` (cascade delete-orphan)
+### MaterialVersion
+**Table:** `material_versions`
 
----
-
-### MaterialVersion (`api/app/models/material.py`)
-
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
+| Column | Type | Constraints | Purpose |
+|--------|------|-------------|---------|
 | `id` | UUID | PK | |
-| `material_id` | UUID | FK(materials), ON DELETE CASCADE | |
-| `version_number` | INTEGER | NOT NULL | |
-| `file_key` | VARCHAR(500) | Nullable | S3 object path |
-| `file_name` | VARCHAR(300) | Nullable | Original filename |
-| `file_size` | BIGINT | Nullable | Bytes |
-| `file_mime_type` | VARCHAR(100) | Nullable | |
-| `diff_summary` | TEXT | Nullable | Description of changes |
-| `author_id` | UUID | FK(users), ON DELETE SET NULL | |
-| `pr_id` | UUID | FK(pull_requests), ON DELETE SET NULL | PR that created this version |
-| `created_at` | DATETIME(tz) | server_default=now() | |
+| `material_id` | UUID | FK(materials.id) CASCADE, NOT NULL | |
+| `version_number` | INTEGER | NOT NULL | Monotonically increasing per material |
+| `file_key` | VARCHAR(500) | nullable | S3 object key |
+| `file_name` | VARCHAR(300) | nullable | Original filename |
+| `file_size` | BIGINT | nullable | Bytes |
+| `file_mime_type` | VARCHAR(100) | nullable | |
+| `diff_summary` | TEXT | nullable | Human-readable change description |
+| `author_id` | UUID | FK(users.id) SET NULL | Who uploaded this version |
+| `pr_id` | UUID | FK(pull_requests.id) SET NULL | Which PR introduced this version |
+| `virus_scan_result` | VARCHAR(20) | default 'pending' | One of: pending, clean, malicious |
+| `version_lock` | INTEGER | default 0 | Optimistic concurrency counter — incremented on each file edit |
+| `created_at` | TIMESTAMP(tz) | | |
 
-**Unique constraint**: `(material_id, version_number)`
+**Unique constraint:** `(material_id, version_number)` - No duplicate version numbers.
 
----
+**Optimistic locking:** PR operations that edit a material's file may include `version_lock` in the operation payload. At apply time, the server verifies the current `version_lock` on the latest `MaterialVersion` matches. A mismatch (concurrent edit since PR submission) raises a `ConflictError` and the PR is not applied.
 
-### Tag (`api/app/models/tag.py`)
+### PullRequest
+**Table:** `pull_requests`
 
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
+| Column | Type | Constraints | Purpose |
+|--------|------|-------------|---------|
 | `id` | UUID | PK | |
-| `name` | VARCHAR(100) | UNIQUE, NOT NULL | Normalized lowercase |
-| `category` | VARCHAR(50) | Nullable | Grouping (subject, difficulty, etc.) |
-
-**Junction Tables**:
-- `material_tags` — composite PK `(material_id, tag_id)`, both cascade delete
-- `directory_tags` — composite PK `(directory_id, tag_id)`, both cascade delete
-
----
-
-### Annotation (`api/app/models/annotation.py`)
-
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
-| `id` | UUID | PK | |
-| `material_id` | UUID | FK(materials), ON DELETE CASCADE | |
-| `version_id` | UUID | FK(material_versions), ON DELETE SET NULL | Pinned to version |
-| `author_id` | UUID | FK(users), ON DELETE SET NULL | |
-| `body` | TEXT | NOT NULL | 1-1000 chars |
-| `page` | INTEGER | Nullable | Document page number |
-| `selection_text` | TEXT | Nullable | Quoted text |
-| `position_data` | JSONB | Nullable | Coordinates for positioning |
-| `thread_id` | UUID | FK(annotations), ON DELETE CASCADE | Root of thread (self-ref) |
-| `reply_to_id` | UUID | FK(annotations), ON DELETE SET NULL | Direct parent reply |
-| `created_at` | DATETIME(tz) | From TimestampMixin | |
-| `updated_at` | DATETIME(tz) | From TimestampMixin | |
-
-**Threading**: Root annotations have `thread_id = own id`. Replies set `thread_id` to the root and `reply_to_id` to the direct parent.
-
----
-
-### Comment (`api/app/models/comment.py`)
-
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
-| `id` | UUID | PK | |
-| `target_type` | VARCHAR(20) | NOT NULL | "material" or "directory" |
-| `target_id` | UUID | NOT NULL | ID of target entity |
-| `author_id` | UUID | FK(users), ON DELETE SET NULL | |
-| `body` | TEXT | NOT NULL | 1-10000 chars |
-| `created_at` | DATETIME(tz) | From TimestampMixin | |
-| `updated_at` | DATETIME(tz) | From TimestampMixin | |
-
-**Index**: `(target_type, target_id, created_at)`
-
-**Design**: Polymorphic association — `(target_type, target_id)` can point to any entity without FK constraints.
-
----
-
-### Flag (`api/app/models/flag.py`)
-
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
-| `id` | UUID | PK | |
-| `reporter_id` | UUID | FK(users), ON DELETE SET NULL | |
-| `target_type` | VARCHAR(20) | NOT NULL | material/annotation/pull_request/comment/pr_comment |
-| `target_id` | UUID | NOT NULL | |
-| `reason` | VARCHAR(50) | NOT NULL | inappropriate/copyright/spam/incorrect/other |
-| `description` | TEXT | Nullable | |
-| `status` | Enum(FlagStatus) | DEFAULT 'open' | |
-| `resolved_by` | UUID | FK(users), ON DELETE SET NULL | |
-| `resolved_at` | DATETIME(tz) | Nullable | |
-| `created_at` | DATETIME(tz) | server_default=now() | |
-
-**Enum: FlagStatus** — `open`, `reviewing`, `resolved`, `dismissed`
-
-**Unique constraint**: `(reporter_id, target_type, target_id)` — one flag per user per target
-
----
-
-### Notification (`api/app/models/notification.py`)
-
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
-| `id` | UUID | PK | |
-| `user_id` | UUID | FK(users), ON DELETE CASCADE | |
-| `type` | VARCHAR(50) | NOT NULL | pr_approved, annotation_reply, etc. |
+| `type` | VARCHAR(50) | default 'batch' | Always 'batch' in current schema |
+| `status` | ENUM(open, approved, rejected) | default 'open' | |
 | `title` | VARCHAR(300) | NOT NULL | |
-| `body` | TEXT | Nullable | |
-| `link` | VARCHAR(500) | Nullable | UI navigation target |
-| `read` | BOOLEAN | DEFAULT false | |
-| `created_at` | DATETIME(tz) | server_default=now() | |
-
-**Index**: `(user_id, read, created_at)` — optimizes "unread notifications" queries
-
----
-
-### PullRequest (`api/app/models/pull_request.py`)
-
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
-| `id` | UUID | PK | |
-| `type` | VARCHAR(50) | DEFAULT 'batch' | Always "batch" since migration 002 |
-| `status` | Enum(PRStatus) | DEFAULT 'open' | |
-| `title` | VARCHAR(300) | NOT NULL | |
-| `description` | TEXT | Nullable | |
+| `description` | TEXT | nullable | |
 | `payload` | JSONB | NOT NULL | Array of operation objects |
-| `summary_types` | JSONB | DEFAULT [] | Extracted operation type strings |
-| `author_id` | UUID | FK(users), ON DELETE SET NULL | |
-| `reviewed_by` | UUID | FK(users), ON DELETE SET NULL | |
-| `created_at` | DATETIME(tz) | From TimestampMixin | |
-| `updated_at` | DATETIME(tz) | From TimestampMixin | |
+| `summary_types` | JSONB | default [] | List of operation types for quick filtering |
+| `author_id` | UUID | FK(users.id) SET NULL | |
+| `reviewed_by` | UUID | FK(users.id) SET NULL | Who approved/rejected |
+| `virus_scan_result` | VARCHAR(20) | default 'pending' | Aggregated scan status |
+| `created_at` | TIMESTAMP(tz) | | |
+| `updated_at` | TIMESTAMP(tz) | | |
 
-**Enum: PRStatus** — `open`, `approved`, `rejected`
+The `payload` column is the most complex field in the schema. It stores an ordered array of operation objects, each describing a mutation to the content tree:
 
-**Relationships**: `author`, `reviewer`, `votes` (cascade delete-orphan), `comments` (cascade delete-orphan)
+```json
+[
+  {
+    "op": "create_directory",
+    "temp_id": "$dir1",
+    "name": "Linear Algebra",
+    "parent_id": "uuid-of-parent",
+    "type": "folder"
+  },
+  {
+    "op": "create_material",
+    "temp_id": "$mat1",
+    "title": "Lecture Notes",
+    "directory_id": "$dir1",
+    "type": "pdf",
+    "file_key": "uploads/user-id/upload-id/notes.pdf",
+    "file_name": "notes.pdf"
+  }
+]
+```
 
----
+Operations can reference each other via `$`-prefixed temp_ids. The PR engine topologically sorts them before execution.
 
-### PRVote (`api/app/models/pull_request.py`)
+### Supporting Entities
 
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
-| `id` | UUID | PK | |
-| `pr_id` | UUID | FK(pull_requests), ON DELETE CASCADE | |
-| `user_id` | UUID | FK(users), ON DELETE CASCADE | |
-| `value` | SMALLINT | CHECK(value IN (-1, 1)) | Upvote or downvote |
-| `created_at` | DATETIME(tz) | server_default=now() | |
+**PRVote** (`pr_votes`): One vote per user per PR. `value` is a SmallInteger (typically +1 / -1).
 
-**Unique constraint**: `(pr_id, user_id)` — one vote per user per PR
+**PRComment** (`pr_comments`): Threaded comments on PRs. Self-referential `parent_id` for nested replies.
 
----
+**Comment** (`comments`): Generic polymorphic comments via `target_type` + `target_id` fields.
 
-### PRComment (`api/app/models/pull_request.py`)
+**Annotation** (`annotations`): Document annotations with `page_number`, `coordinates` (JSONB), and a text `body`.
 
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
-| `id` | UUID | PK | |
-| `pr_id` | UUID | FK(pull_requests), ON DELETE CASCADE | |
-| `author_id` | UUID | FK(users), ON DELETE SET NULL | |
-| `body` | TEXT | NOT NULL | |
-| `parent_id` | UUID | FK(pr_comments), ON DELETE CASCADE, Nullable | Threaded replies |
-| `created_at` | DATETIME(tz) | From TimestampMixin | |
-| `updated_at` | DATETIME(tz) | From TimestampMixin | |
+**Tag** (`tags`): Tags with `name` and optional `category`. Many-to-many with both materials and directories via `material_tags` and `directory_tags` junction tables.
 
----
+**Flag** (`flags`): Content moderation flags with `target_type`, `target_id`, `reason`, and `status`.
 
-### ViewHistory (`api/app/models/view_history.py`)
+**Notification** (`notifications`): User notifications with `type`, `title`, `message`, and `data` (JSONB). Linked to user via `user_id`.
 
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
-| `id` | UUID | PK | |
-| `user_id` | UUID | FK(users), ON DELETE CASCADE | |
-| `material_id` | UUID | FK(materials), ON DELETE CASCADE | |
-| `viewed_at` | DATETIME(tz) | server_default=now() | Upserted on repeat views |
+**ViewHistory** (`view_history`): Tracks which users viewed which materials.
 
-**Unique constraint**: `(user_id, material_id)` — one record per user-material pair (updates `viewed_at`)
+**DownloadAudit** (`download_audits`): Audit log of file downloads.
 
-**Index**: `(user_id, viewed_at)` — optimizes "recently viewed" queries
+**Upload** (`uploads`): Lifecycle tracking for the upload pipeline. Stores `upload_id`, `quarantine_key`, `status`, `sha256`, `content_sha256`, `final_key`, `pipeline_stage`, `cas_key`, `cas_ref_count`, and `error_detail`. The `cas_key` and `cas_ref_count` columns are dual-written alongside the Redis CAS entry when a file is first promoted to `cas/` (Phase 5, item 3.5). DB row creation is mandatory — the upload request fails if the row cannot be persisted.
 
----
+## VirusScanResult Enum
 
-## SQL Views
+Used on both `MaterialVersion` and `PullRequest`:
 
-Defined in `api/app/migrations/versions/001_initial.py`:
+```python
+class VirusScanResult(str, Enum):
+    PENDING = "pending"
+    CLEAN = "clean"
+    MALICIOUS = "malicious"
+```
 
-### `pull_requests_with_score`
-Extends `pull_requests` with vote aggregates:
-- `vote_score`: `SUM(pr_votes.value)`
-- `upvotes`: `COUNT WHERE value = 1`
-- `downvotes`: `COUNT WHERE value = -1`
+## Base Mixins
 
-### `user_stats`
-Denormalized per-user statistics:
-- `prs_approved`, `prs_total`, `annotations_count`, `comments_count`, `open_pr_count`
+All models inherit from `Base` (SQLAlchemy declarative base). Two mixins provide common columns:
 
----
-
-## Design Patterns
-
-### Soft Deletes
-The `User` model uses `deleted_at` for soft deletion. Queries filter `WHERE deleted_at IS NULL`. After 30 days, the `gdpr_cleanup` worker hard-deletes the record.
-
-### Polymorphic Associations
-`Comment` and `Flag` use a `(target_type, target_id)` tuple instead of multiple FK columns. This allows attaching comments/flags to any entity without schema changes. The trade-off is no FK constraint enforcement — validation happens in the service layer.
-
-### Self-Referential Trees
-- **Directory**: `parent_id` → hierarchical folder tree
-- **Annotation**: `thread_id` → root of discussion, `reply_to_id` → direct parent
-- **PRComment**: `parent_id` → threaded discussion
-
-### JSONB Columns
-- `Material.metadata_` / `Directory.metadata_` — extensible key-value (course codes, video URLs, etc.)
-- `PullRequest.payload` — stores the full array of batch operations as structured JSON
-- `Annotation.position_data` — PDF coordinates for annotation positioning
-
-### Versioning
-Materials track versions via `MaterialVersion`. Each version records the file, author, and optionally the PR that created it. `Material.current_version` points to the latest version number.
-
----
+- **`UUIDMixin`**: Adds `id: UUID` primary key with `uuid4` default
+- **`TimestampMixin`**: Adds `created_at` and `updated_at` with auto-population
 
 ## Migration History
 
-| Revision | Date | Description |
-|----------|------|-------------|
-| `001_initial` | Initial | Creates all 15 tables, 2 junction tables, 2 views, 5 enum types |
-| `002_batch_pr_upgrade` | 2026-03-11 | Converts PRs from single-operation to batch. Wraps payload in arrays, changes type column from enum to varchar "batch", adds summary_types JSONB |
-| `016ff5f329ae` | 2026-03-13 | Fixes summary_types containing null values from migration 002 |
+Migrations use Alembic with the async SQLAlchemy engine. Key migrations in order:
 
-Migrations use Alembic with async engine support (`api/app/migrations/env.py`). Configuration in `api/alembic.ini`.
+1. `001_initial` - Full initial schema (users, directories, materials, versions, PRs, votes, comments, tags, etc.)
+2. `002_batch_pr_upgrade` - Upgraded PR payload from single-op to batch array format
+3. `b4c8deec8f6b_add_virus_scan_result` - Added virus_scan_result columns to materials and PRs
+4. `30def97c09a1_migrate_pending_scans_to_clean` - Data migration: set existing PENDING scans to CLEAN
+5. `016ff5f329ae_fix_summary_types_containing_null` - Clean up null values in JSONB arrays
+6. `138afbd354d9_add_download_audit_and_user_flagging` - Added download audit table and is_flagged to users
+7. `2447499a3966_make_material_directory_id_nullable` - Allow root-level materials (no directory)
+8. `a1b2c3d4e5f6_add_uploads_table` - Added the uploads lifecycle tracking table

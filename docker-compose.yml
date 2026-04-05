@@ -65,7 +65,7 @@ services:
   api:
     image: ghcr.io/theo-darvoux/wikint/api:latest
     restart: unless-stopped
-    command: uv run gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+    command: uv run --no-sync --no-dev gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
@@ -103,6 +103,11 @@ services:
     networks:
       - frontend
       - backend
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    cap_add:
+      - SYS_ADMIN
     deploy:
       resources:
         reservations:
@@ -113,7 +118,8 @@ services:
     image: ghcr.io/theo-darvoux/wikint/api:latest
     restart: unless-stopped
     entrypoint: ["./worker-start.sh"]
-    command: uv run arq app.workers.settings.WorkerSettings
+    command: uv run --no-sync --no-dev arq app.workers.settings.WorkerSettings
+    stop_grace_period: 30s
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
@@ -138,6 +144,93 @@ services:
         condition: service_healthy
     networks:
       - backend
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    cap_add:
+      - SYS_ADMIN
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  worker-fast:
+    image: ghcr.io/theo-darvoux/wikint/api:latest
+    restart: unless-stopped
+    entrypoint: ["./worker-start.sh"]
+    command: uv run --no-sync --no-dev arq app.workers.settings.UploadFastWorkerSettings
+    stop_grace_period: 30s
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_PUBLIC_ENDPOINT=${S3_PUBLIC_ENDPOINT}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+      - S3_REGION=${S3_REGION}
+      - S3_USE_SSL=${S3_USE_SSL}
+      - MEILI_URL=${MEILI_URL}
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - MALWAREBAZAAR_API_KEY=${MALWAREBAZAAR_API_KEY}
+      - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
+      - ONLYOFFICE_FILE_TOKEN_SECRET=${ONLYOFFICE_FILE_TOKEN_SECRET}
+      - ENVIRONMENT=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    cap_add:
+      - SYS_ADMIN
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  worker-slow:
+    image: ghcr.io/theo-darvoux/wikint/api:latest
+    restart: unless-stopped
+    entrypoint: ["./worker-start.sh"]
+    command: uv run --no-sync --no-dev arq app.workers.settings.UploadSlowWorkerSettings
+    stop_grace_period: 1m
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_PUBLIC_ENDPOINT=${S3_PUBLIC_ENDPOINT}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+      - S3_REGION=${S3_REGION}
+      - S3_USE_SSL=${S3_USE_SSL}
+      - MEILI_URL=${MEILI_URL}
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - MALWAREBAZAAR_API_KEY=${MALWAREBAZAAR_API_KEY}
+      - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
+      - ONLYOFFICE_FILE_TOKEN_SECRET=${ONLYOFFICE_FILE_TOKEN_SECRET}
+      - ENVIRONMENT=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    cap_add:
+      - SYS_ADMIN
     deploy:
       resources:
         reservations:
@@ -164,6 +257,7 @@ services:
     image: onlyoffice/documentserver:8.3.0
     profiles: ["onlyoffice"]
     restart: unless-stopped
+    stop_grace_period: 1m
     environment:
       - JWT_ENABLED=true
       - JWT_SECRET=${ONLYOFFICE_JWT_SECRET}

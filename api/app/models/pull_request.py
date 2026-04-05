@@ -47,8 +47,8 @@ class PullRequest(UUIDMixin, TimestampMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    payload: Mapped[list] = mapped_column(JSONB, nullable=False)
-    summary_types: Mapped[list] = mapped_column(
+    payload: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
+    summary_types: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
     author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
@@ -61,16 +61,24 @@ class PullRequest(UUIDMixin, TimestampMixin, Base):
         server_default="pending",
     )
 
-    author: Mapped[User | None] = relationship(  # noqa: F821
+    author: Mapped[User | None] = relationship(
         back_populates="pull_requests", foreign_keys=[author_id]
     )
-    reviewer: Mapped[User | None] = relationship(foreign_keys=[reviewed_by])  # noqa: F821
+    reviewer: Mapped[User | None] = relationship(foreign_keys=[reviewed_by])
     votes: Mapped[list[PRVote]] = relationship(
         back_populates="pull_request", cascade="all, delete-orphan"
     )
     comments: Mapped[list[PRComment]] = relationship(
         back_populates="pull_request", cascade="all, delete-orphan"
     )
+
+    @property
+    def expires_at(self) -> datetime | None:
+        """PRs expire 7 days after the last update if they are still open."""
+        if self.status != PRStatus.OPEN:
+            return None
+        from datetime import timedelta
+        return self.updated_at + timedelta(days=7)
 
 
 class PRVote(UUIDMixin, Base):
@@ -102,5 +110,5 @@ class PRComment(UUIDMixin, TimestampMixin, Base):
     )
 
     pull_request: Mapped[PullRequest] = relationship(back_populates="comments")
-    author: Mapped[User | None] = relationship()  # noqa: F821
+    author: Mapped[User | None] = relationship()
     parent: Mapped[PRComment | None] = relationship(remote_side="PRComment.id")

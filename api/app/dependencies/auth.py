@@ -73,7 +73,7 @@ def require_onboarded():
 
 
 def require_moderator():
-    return require_role(UserRole.MEMBER, UserRole.BUREAU, UserRole.VIEUX)
+    return require_role(UserRole.MODERATOR, UserRole.BUREAU, UserRole.VIEUX)
 
 
 OnboardedUser = Annotated[User, Depends(require_onboarded())]

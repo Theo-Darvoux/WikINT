@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { safeLocalStorage } from "./safe-storage";
 
 // ---------------------------------------------------------------------------
 // Upload expiry — files in MinIO are cleaned up after 24h
@@ -27,7 +28,7 @@ export type OpType =
 export interface CreateMaterialOp {
     op: "create_material";
     temp_id?: string;
-    directory_id: string; // real UUID or $temp-id
+    directory_id: string | null; // real UUID or $temp-id, or null for root
     title: string;
     type: string;
     description?: string | null;
@@ -282,7 +283,7 @@ export const useStagingStore = create<StagingState>()(
                             const op = unwrapOp(s.operations[i]);
                             if (
                                 op.op === "create_material" &&
-                                tempIds.has(op.directory_id)
+                                op.directory_id !== null && tempIds.has(op.directory_id)
                             ) {
                                 toRemove.add(i);
                             } else if (
@@ -374,7 +375,7 @@ export const useStagingStore = create<StagingState>()(
         }),
         {
             name: "wikint-staging",
-            storage: createJSONStorage(() => localStorage),
+            storage: createJSONStorage(() => safeLocalStorage),
             // Don't persist uploads (they contain File objects which can't be serialized)
             // or the review drawer state
             partialize: (state) => ({
@@ -384,6 +385,16 @@ export const useStagingStore = create<StagingState>()(
         },
     ),
 );
+
+// ── Cross-tab sync (O11) ─────────────────────────────────────────────────────
+
+if (typeof window !== "undefined") {
+    window.addEventListener("storage", (e) => {
+        if (e.key === "wikint-staging") {
+            useStagingStore.persist.rehydrate();
+        }
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Post-hydration: migrate legacy operations and purge expired

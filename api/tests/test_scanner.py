@@ -3,48 +3,49 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from app.config import settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError
-from app.core.scanner import (
-    _check_malwarebazaar,
-    _scan_yara,
-    init_scanner,
-    scan_file,
-)
+from app.core.scanner import MalwareScanner, scan_file
 
 # ── YARA tests ──
 
 
-@patch("app.core.scanner._rules")
-async def test_yara_scan_clean(mock_rules: MagicMock) -> None:
-    mock_rules.match.return_value = []
-    result = await _scan_yara(b"clean file content", "test.pdf")
+async def test_yara_scan_clean() -> None:
+    scanner = MalwareScanner()
+    scanner.rules = MagicMock()
+    scanner.rules.match.return_value = []
+    # Internal method test
+    result = await scanner._scan_yara(b"clean file content", "test.pdf")
     assert result is None
 
 
-@patch("app.core.scanner._rules")
-async def test_yara_scan_match(mock_rules: MagicMock) -> None:
+async def test_yara_scan_match() -> None:
+    scanner = MalwareScanner()
+    scanner.rules = MagicMock()
     match = MagicMock()
     match.rule = "EICAR_test_file"
-    mock_rules.match.return_value = [match]
-    result = await _scan_yara(b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR", "test.txt")
+    scanner.rules.match.return_value = [match]
+    result = await scanner._scan_yara(b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR", "test.txt")
     assert result == "EICAR_test_file"
 
 
-@patch("app.core.scanner._rules")
-async def test_yara_scan_multiple_matches_returns_first(mock_rules: MagicMock) -> None:
+async def test_yara_scan_multiple_matches_returns_first() -> None:
+    scanner = MalwareScanner()
+    scanner.rules = MagicMock()
     match1 = MagicMock()
     match1.rule = "PE_in_non_executable"
     match2 = MagicMock()
     match2.rule = "Embedded_Shellcode_Patterns"
-    mock_rules.match.return_value = [match1, match2]
-    result = await _scan_yara(b"MZ\x90\x00PE\x00\x00", "test.pdf")
+    scanner.rules.match.return_value = [match1, match2]
+    result = await scanner._scan_yara(b"MZ\x90\x00PE\x00\x00", "test.pdf")
     assert result == "PE_in_non_executable"
 
 
 async def test_yara_scan_not_initialized() -> None:
-    with patch("app.core.scanner._rules", None):
-        with pytest.raises(RuntimeError, match="not initialized"):
-            await _scan_yara(b"data", "test.pdf")
+    scanner = MalwareScanner()
+    # scanner.rules is None by default
+    with pytest.raises(RuntimeError, match="not initialized"):
+        await scanner._scan_yara(b"data", "test.pdf")
 
 
 # ── init_scanner tests ──
@@ -53,169 +54,228 @@ async def test_yara_scan_not_initialized() -> None:
 def test_init_scanner_missing_dir(tmp_path: object) -> None:
     with patch("app.core.scanner.settings") as mock_settings:
         mock_settings.yara_rules_dir = "/nonexistent/path"
+        scanner = MalwareScanner()
         with pytest.raises(RuntimeError, match="not found"):
-            init_scanner()
+            scanner.initialize()
 
 
 def test_init_scanner_empty_dir(tmp_path) -> None:
     with patch("app.core.scanner.settings") as mock_settings:
         mock_settings.yara_rules_dir = str(tmp_path)
+        scanner = MalwareScanner()
         with pytest.raises(RuntimeError, match="No YARA rule files"):
-            init_scanner()
+            scanner.initialize()
 
 
 # ── MalwareBazaar tests ──
 
 
-@patch("app.core.scanner._http_client")
-async def test_hash_lookup_clean(mock_client: MagicMock) -> None:
+async def test_hash_lookup_clean() -> None:
+    scanner = MalwareScanner()
+    scanner.client = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"query_status": "hash_not_found"}
-    mock_client.post = AsyncMock(return_value=mock_response)
+    scanner.client.post = AsyncMock(return_value=mock_response)
 
-    result = await _check_malwarebazaar("abc123", "test.pdf")
+    result = await scanner._check_malwarebazaar("abc123", "test.pdf")
     assert result is None
 
 
-@patch("app.core.scanner._http_client")
-async def test_hash_lookup_no_results(mock_client: MagicMock) -> None:
+async def test_hash_lookup_no_results() -> None:
+    scanner = MalwareScanner()
+    scanner.client = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"query_status": "no_results"}
-    mock_client.post = AsyncMock(return_value=mock_response)
+    scanner.client.post = AsyncMock(return_value=mock_response)
 
-    result = await _check_malwarebazaar("abc123", "test.pdf")
+    result = await scanner._check_malwarebazaar("abc123", "test.pdf")
     assert result is None
 
 
-@patch("app.core.scanner._http_client")
-async def test_hash_lookup_found(mock_client: MagicMock) -> None:
+async def test_hash_lookup_found() -> None:
+    scanner = MalwareScanner()
+    scanner.client = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
         "query_status": "ok",
         "data": [{"signature": "Emotet", "file_name": "malware.exe"}],
     }
-    mock_client.post = AsyncMock(return_value=mock_response)
+    scanner.client.post = AsyncMock(return_value=mock_response)
 
-    result = await _check_malwarebazaar("abc123", "test.pdf")
+    result = await scanner._check_malwarebazaar("abc123", "test.pdf")
     assert result == "Emotet"
 
 
-@patch("app.core.scanner._http_client")
-async def test_hash_lookup_timeout(mock_client: MagicMock) -> None:
-    mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
+async def test_hash_lookup_timeout() -> None:
+    scanner = MalwareScanner()
+    scanner.client = MagicMock()
+    scanner.client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
 
-    with pytest.raises(ServiceUnavailableError, match="timed out"):
-        await _check_malwarebazaar("abc123", "test.pdf")
+    # Default is fail-closed: timeout should propagate as an exception
+    with pytest.raises(httpx.TimeoutException):
+        await scanner._check_malwarebazaar("abc123", "test.pdf")
 
 
-@patch("app.core.scanner._http_client")
-async def test_hash_lookup_http_error(mock_client: MagicMock) -> None:
+async def test_hash_lookup_timeout_fail_soft() -> None:
+    scanner = MalwareScanner()
+    scanner.client = MagicMock()
+    scanner.client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
+
+    # Explicit fail-soft mode returns None on timeout
+    with patch.object(settings, "malwarebazaar_fail_closed", False):
+        result = await scanner._check_malwarebazaar("abc123", "test.pdf")
+        assert result is None
+
+
+async def test_hash_lookup_http_error() -> None:
+    scanner = MalwareScanner()
+    scanner.client = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 500
-    mock_client.post = AsyncMock(return_value=mock_response)
+    scanner.client.post = AsyncMock(return_value=mock_response)
 
-    with pytest.raises(ServiceUnavailableError, match="HTTP 500"):
-        await _check_malwarebazaar("abc123", "test.pdf")
+    # Fail-soft: returns None on HTTP error
+    result = await scanner._check_malwarebazaar("abc123", "test.pdf")
+    assert result is None
 
 
-@patch("app.core.scanner._http_client")
-async def test_hash_lookup_unexpected_status(mock_client: MagicMock) -> None:
+async def test_hash_lookup_unexpected_status() -> None:
+    scanner = MalwareScanner()
+    scanner.client = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"query_status": "illegal_hash"}
-    mock_client.post = AsyncMock(return_value=mock_response)
+    scanner.client.post = AsyncMock(return_value=mock_response)
 
-    with pytest.raises(ServiceUnavailableError, match="unexpected status"):
-        await _check_malwarebazaar("abc123", "test.pdf")
+    # Fail-soft: returns None on unexpected status
+    result = await scanner._check_malwarebazaar("abc123", "test.pdf")
+    assert result is None
 
 
-@patch("app.core.scanner._http_client")
-async def test_hash_lookup_invalid_json(mock_client: MagicMock) -> None:
+async def test_hash_lookup_invalid_json() -> None:
+    scanner = MalwareScanner()
+    scanner.client = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.side_effect = ValueError("Invalid JSON")
-    mock_client.post = AsyncMock(return_value=mock_response)
+    scanner.client.post = AsyncMock(return_value=mock_response)
 
-    with pytest.raises(ServiceUnavailableError, match="invalid JSON"):
-        await _check_malwarebazaar("abc123", "test.pdf")
+    # Fail-soft: returns None on invalid JSON
+    result = await scanner._check_malwarebazaar("abc123", "test.pdf")
+    assert result is None
 
 
 async def test_hash_lookup_not_initialized() -> None:
-    with patch("app.core.scanner._http_client", None):
-        with pytest.raises(RuntimeError, match="not initialized"):
-            await _check_malwarebazaar("abc123", "test.pdf")
+    scanner = MalwareScanner()
+    # scanner.client is None by default
+    # Fail-soft: returns None if not initialized
+    result = await scanner._check_malwarebazaar("abc123", "test.pdf")
+    assert result is None
 
 
 # ── Combined scan tests ──
 
 
-@patch("app.core.scanner._check_malwarebazaar", new_callable=AsyncMock)
-@patch("app.core.scanner._scan_yara", new_callable=AsyncMock)
-async def test_combined_scan_both_clean(mock_yara: AsyncMock, mock_bazaar: AsyncMock) -> None:
-    mock_yara.return_value = None
-    mock_bazaar.return_value = None
+async def test_combined_scan_both_clean() -> None:
+    scanner = MalwareScanner()
+    scanner._check_malwarebazaar = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    scanner._scan_yara = AsyncMock(return_value=None)  # type: ignore[method-assign]
     # Should not raise
-    await scan_file(b"clean content", "test.pdf")
+    await scanner.scan_file(b"clean content", "test.pdf")
 
 
-@patch("app.core.scanner._check_malwarebazaar", new_callable=AsyncMock)
-@patch("app.core.scanner._scan_yara", new_callable=AsyncMock)
-async def test_combined_scan_yara_positive(mock_yara: AsyncMock, mock_bazaar: AsyncMock) -> None:
-    mock_yara.return_value = "EICAR_test_file"
-    mock_bazaar.return_value = None
-    with pytest.raises(BadRequestError, match="malware scan"):
-        await scan_file(b"content", "test.pdf")
+async def test_combined_scan_yara_positive() -> None:
+    scanner = MalwareScanner()
+    scanner._check_malwarebazaar = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    scanner._scan_yara = AsyncMock(return_value="EICAR_test_file")  # type: ignore[method-assign]
+    with pytest.raises(BadRequestError, match="ERR_MALWARE_DETECTED"):
+        await scanner.scan_file(b"content", "test.pdf")
 
 
-@patch("app.core.scanner._check_malwarebazaar", new_callable=AsyncMock)
-@patch("app.core.scanner._scan_yara", new_callable=AsyncMock)
-async def test_combined_scan_bazaar_positive(mock_yara: AsyncMock, mock_bazaar: AsyncMock) -> None:
-    mock_yara.return_value = None
-    mock_bazaar.return_value = "Emotet"
-    with pytest.raises(BadRequestError, match="malware scan"):
-        await scan_file(b"content", "test.pdf")
+async def test_combined_scan_bazaar_positive() -> None:
+    scanner = MalwareScanner()
+    scanner._check_malwarebazaar = AsyncMock(return_value="Emotet")  # type: ignore[method-assign]
+    scanner._scan_yara = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(BadRequestError, match="ERR_MALWARE_DETECTED"):
+        await scanner.scan_file(b"content", "test.pdf")
 
 
-@patch("app.core.scanner._check_malwarebazaar", new_callable=AsyncMock)
-@patch("app.core.scanner._scan_yara", new_callable=AsyncMock)
-async def test_combined_scan_both_positive(mock_yara: AsyncMock, mock_bazaar: AsyncMock) -> None:
-    mock_yara.return_value = "PE_in_non_executable"
-    mock_bazaar.return_value = "Emotet"
-    with pytest.raises(BadRequestError, match="malware scan"):
-        await scan_file(b"content", "test.pdf")
+async def test_combined_scan_both_positive() -> None:
+    scanner = MalwareScanner()
+    scanner._check_malwarebazaar = AsyncMock(return_value="Emotet")  # type: ignore[method-assign]
+    scanner._scan_yara = AsyncMock(return_value="PE_in_non_executable")  # type: ignore[method-assign]
+    with pytest.raises(BadRequestError, match="ERR_MALWARE_DETECTED"):
+        await scanner.scan_file(b"content", "test.pdf")
 
 
-@patch("app.core.scanner._check_malwarebazaar", new_callable=AsyncMock)
-@patch("app.core.scanner._scan_yara", new_callable=AsyncMock)
-async def test_combined_scan_yara_error_fails_closed(
-    mock_yara: AsyncMock, mock_bazaar: AsyncMock
-) -> None:
-    mock_yara.side_effect = RuntimeError("YARA crashed")
-    mock_bazaar.return_value = None
+async def test_combined_scan_yara_error_fails_closed() -> None:
+    scanner = MalwareScanner()
+    scanner._check_malwarebazaar = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    scanner._scan_yara = AsyncMock(side_effect=RuntimeError("YARA crashed"))  # type: ignore[method-assign]
     with pytest.raises(ServiceUnavailableError, match="fail-closed"):
-        await scan_file(b"content", "test.pdf")
+        await scanner.scan_file(b"content", "test.pdf")
 
 
-@patch("app.core.scanner._check_malwarebazaar", new_callable=AsyncMock)
-@patch("app.core.scanner._scan_yara", new_callable=AsyncMock)
-async def test_combined_scan_bazaar_error_fails_closed(
-    mock_yara: AsyncMock, mock_bazaar: AsyncMock
-) -> None:
-    mock_yara.return_value = None
-    mock_bazaar.side_effect = ServiceUnavailableError("MalwareBazaar down")
+async def test_combined_scan_bazaar_error_fails_closed() -> None:
+    scanner = MalwareScanner()
+    scanner._check_malwarebazaar = AsyncMock(  # type: ignore[method-assign]
+        side_effect=ServiceUnavailableError("MalwareBazaar down")
+    )
+    scanner._scan_yara = AsyncMock(return_value=None)  # type: ignore[method-assign]
     with pytest.raises(ServiceUnavailableError, match="fail-closed"):
-        await scan_file(b"content", "test.pdf")
+        await scanner.scan_file(b"content", "test.pdf")
 
 
-@patch("app.core.scanner._check_malwarebazaar", new_callable=AsyncMock)
-@patch("app.core.scanner._scan_yara", new_callable=AsyncMock)
-async def test_combined_scan_both_error_fails_closed(
-    mock_yara: AsyncMock, mock_bazaar: AsyncMock
-) -> None:
-    mock_yara.side_effect = RuntimeError("YARA crashed")
-    mock_bazaar.side_effect = ServiceUnavailableError("MalwareBazaar down")
+async def test_combined_scan_both_error_fails_closed() -> None:
+    scanner = MalwareScanner()
+    scanner._check_malwarebazaar = AsyncMock(  # type: ignore[method-assign]
+        side_effect=ServiceUnavailableError("MalwareBazaar down")
+    )
+    scanner._scan_yara = AsyncMock(side_effect=RuntimeError("YARA crashed"))  # type: ignore[method-assign]
     with pytest.raises(ServiceUnavailableError, match="fail-closed"):
-        await scan_file(b"content", "test.pdf")
+        await scanner.scan_file(b"content", "test.pdf")
+
+
+# ── Path-based scan tests ──
+
+
+async def test_yara_scan_path_match(tmp_path) -> None:
+    scanner = MalwareScanner()
+    scanner.rules = MagicMock()
+    match = MagicMock()
+    match.rule = "EICAR_test_file"
+    scanner.rules.match.return_value = [match]
+
+    test_file = tmp_path / "test.txt"
+    test_file.write_bytes(b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR")
+
+    result = await scanner._scan_yara_path(test_file, "test.txt")
+    assert result == "EICAR_test_file"
+    # verify filepath argument was used
+    scanner.rules.match.assert_called_once()
+    assert scanner.rules.match.call_args[1]["filepath"] == str(test_file)
+
+
+async def test_combined_scan_path_both_clean(tmp_path) -> None:
+    scanner = MalwareScanner()
+    scanner._check_malwarebazaar = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    scanner._scan_yara_path = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    test_file = tmp_path / "test.pdf"
+    test_file.write_bytes(b"clean content")
+
+    # Should not raise
+    await scanner.scan_file_path(test_file, "test.pdf")
+
+
+# ── Backward compatibility wrapper tests ──
+
+
+@patch("app.core.scanner._global_scanner")
+async def test_scan_file_wrapper(mock_global: MagicMock) -> None:
+    mock_global.scan_file = AsyncMock()
+    await scan_file(b"data", "test.pdf")
+    mock_global.scan_file.assert_called_once()

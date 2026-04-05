@@ -229,7 +229,7 @@ function getRoleBadgeClasses(role: string): string {
             return "border-amber-400/50 bg-gradient-to-r from-amber-100 to-yellow-50 text-amber-800 font-semibold dark:border-amber-600/50 dark:from-amber-950/60 dark:to-yellow-950/40 dark:text-amber-200";
         case "vieux":
             return "border-purple-400/50 bg-gradient-to-r from-purple-100 to-fuchsia-50 text-purple-800 font-semibold dark:border-purple-600/50 dark:from-purple-950/60 dark:to-fuchsia-950/40 dark:text-purple-200";
-        case "member":
+        case "moderator":
             return "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300";
         default:
             return "";

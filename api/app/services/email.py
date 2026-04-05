@@ -3,7 +3,7 @@ from app.core.email import send_email
 
 async def send_verification_email(email: str, code: str, magic_link: str) -> None:
     subject = "WikINT - Sign in to your account"
-    body = """
+    body = f"""
     <html>
     <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f9fafb;">
         <table width="100%" cellpadding="0" cellspacing="0" style="padding: 40px 20px;">
@@ -39,5 +39,5 @@ async def send_verification_email(email: str, code: str, magic_link: str) -> Non
         </table>
     </body>
     </html>
-    """.format(magic_link=magic_link, code=code)
+    """
     await send_email(email, subject, body)

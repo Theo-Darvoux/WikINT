@@ -1,4 +1,3 @@
-import mimetypes
 import uuid
 from collections import defaultdict
 
@@ -7,14 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.exceptions import BadRequestError, NotFoundError
-from app.core.storage import move_object, read_object_bytes
+from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models.directory import Directory
 from app.models.material import Material, MaterialVersion
 from app.models.pull_request import PullRequest
 from app.models.security import VirusScanResult
 from app.models.tag import Tag
-from app.routers.upload import guess_mime_from_bytes
 from app.services.directory import slugify
 from app.services.tag import get_or_create_tags
 
@@ -32,7 +29,9 @@ def _resolve(value: str | None, id_map: dict[str, uuid.UUID]) -> uuid.UUID | Non
     """Resolve a value that may be a temp ID, a real UUID string, or None."""
     if value is None:
         return None
-    s = str(value)
+    s = str(value).strip()
+    if not s:
+        return None
     if _is_temp_id(s):
         resolved = id_map.get(s)
         if resolved is None:
@@ -63,20 +62,31 @@ def _collect_temp_refs(op: dict) -> set[str]:
 
 async def _unique_material_slug(
     db: AsyncSession,
-    directory_id: uuid.UUID,
+    directory_id: uuid.UUID | None,
     title: str,
+    exclude_id: uuid.UUID | None = None,
 ) -> str:
     """Generate a slug unique within the directory, appending -2, -3, … on collision.
 
-    Uses SELECT ... FOR UPDATE SKIP LOCKED to prevent race conditions between
+    Uses SELECT ... FOR UPDATE to prevent race conditions between
     concurrent PR applications.
     """
     base = slugify(title) or "untitled"
-    result = await db.execute(
+    # Match exactly 'base' OR 'base-[0-9]+'
+    stmt = (
         select(Material.slug)
-        .where(Material.directory_id == directory_id, Material.slug.like(f"{base}%"))
-        .with_for_update(skip_locked=True)
+        .where((Material.slug == base) | Material.slug.like(f"{base}-%"))
+        .with_for_update()
     )
+    if directory_id is None:
+        stmt = stmt.where(Material.directory_id.is_(None))
+    else:
+        stmt = stmt.where(Material.directory_id == directory_id)
+
+    if exclude_id:
+        stmt = stmt.where(Material.id != exclude_id)
+
+    result = await db.execute(stmt)
     existing = set(result.scalars().all())
     if base not in existing:
         return base
@@ -91,17 +101,27 @@ async def _unique_directory_slug(
     db: AsyncSession,
     parent_id: uuid.UUID | None,
     name: str,
+    exclude_id: uuid.UUID | None = None,
 ) -> str:
     """Generate a slug unique among sibling directories.
 
-    Uses SELECT ... FOR UPDATE SKIP LOCKED to prevent race conditions.
+    Uses SELECT ... FOR UPDATE to prevent race conditions.
     """
     base = slugify(name) or "untitled"
-    result = await db.execute(
+    stmt = (
         select(Directory.slug)
-        .where(Directory.parent_id == parent_id, Directory.slug.like(f"{base}%"))
-        .with_for_update(skip_locked=True)
+        .where((Directory.slug == base) | Directory.slug.like(f"{base}-%"))
+        .with_for_update()
     )
+    if parent_id is None:
+        stmt = stmt.where(Directory.parent_id.is_(None))
+    else:
+        stmt = stmt.where(Directory.parent_id == parent_id)
+
+    if exclude_id:
+        stmt = stmt.where(Directory.id != exclude_id)
+
+    result = await db.execute(stmt)
     existing = set(result.scalars().all())
     if base not in existing:
         return base
@@ -160,38 +180,21 @@ def topo_sort_operations(operations: list[dict]) -> list[dict]:
     return [operations[i] for i in result]
 
 
-async def _resolve_mime_type(file_key: str, payload: dict) -> str:
-    """Determine MIME type from file content first, then filename, then payload hint."""
-    # 1. Detect from actual file bytes (most trustworthy)
-    try:
-        header = await read_object_bytes(file_key, 2048)
-        detected = guess_mime_from_bytes(header)
-        if detected != "application/octet-stream":
-            return detected
-    except Exception:
-        pass
+async def _resolve_mime_type(file_key: str, payload: dict, s3_mime: str | None = None) -> str:
+    """Determine MIME type. Trusts S3 metadata or payload hint over re-scanning."""
+    if s3_mime and s3_mime != "application/octet-stream":
+        return s3_mime
 
-    # 2. Guess from the filename (server-side, not client MIME claim)
-    file_name = payload.get("file_name") or ""
-    if file_name:
-        guessed, _ = mimetypes.guess_type(file_name)
-        if guessed and guessed != "application/octet-stream":
-            return guessed
-
-    guessed, _ = mimetypes.guess_type(file_key)
-    if guessed and guessed != "application/octet-stream":
-        return guessed
-
-    # 3. Fall back to client-provided hint
+    # Fall back to client-provided hint if S3 mime is generic
     return payload.get("file_mime_type") or "application/octet-stream"
 
 
-async def _get_real_file_size(file_key: str) -> int:
-    """Read the actual file size from object storage."""
+async def _get_file_info(file_key: str) -> dict:
+    """Read the actual file size and content type from object storage."""
     from app.core.storage import get_object_info
 
     info = await get_object_info(file_key)
-    return info["size"]
+    return info
 
 
 # ---------------------------------------------------------------------------
@@ -211,9 +214,7 @@ async def _exec_create_material(
         tag_objs = list(tag_result.scalars().all())
 
     mat_id = uuid.uuid4()
-    directory_id = _resolve(str(p["directory_id"]), id_map)
-    if directory_id is None:
-        raise BadRequestError("directory_id is required")
+    directory_id = _resolve(str(p.get("directory_id")) if p.get("directory_id") else None, id_map)
 
     slug = await _unique_material_slug(db, directory_id, p["title"])
     m = Material(
@@ -236,10 +237,16 @@ async def _exec_create_material(
 
     if p.get("file_key"):
         file_key = str(p["file_key"])
-        real_size = await _get_real_file_size(file_key)
-        mime_type = await _resolve_mime_type(file_key, p)
+        info = await _get_file_info(file_key)
+        real_size = info["size"]
+        mime_type = await _resolve_mime_type(file_key, p, s3_mime=info.get("content_type"))
         new_key = file_key.replace("uploads/", "materials/", 1)
-        await move_object(file_key, new_key)
+
+        # Phase 2.2: Copy before commit, delete after commit
+        from app.core.storage import copy_object
+
+        await copy_object(file_key, new_key)
+        db.info.setdefault("post_commit_jobs", []).append(("delete_storage_objects", [file_key]))
 
         mv = MaterialVersion(
             id=uuid.uuid4(),
@@ -289,10 +296,18 @@ async def _exec_create_material(
 
             if att.get("file_key"):
                 att_fk = str(att["file_key"])
-                att_real_size = await _get_real_file_size(att_fk)
-                att_mime = await _resolve_mime_type(att_fk, att)
+                att_info = await _get_file_info(att_fk)
+                att_real_size = att_info["size"]
+                att_mime = await _resolve_mime_type(
+                    att_fk, att, s3_mime=att_info.get("content_type")
+                )
                 new_att_fk = att_fk.replace("uploads/", "materials/", 1)
-                await move_object(att_fk, new_att_fk)
+
+                await copy_object(att_fk, new_att_fk)
+                db.info.setdefault("post_commit_jobs", []).append(
+                    ("delete_storage_objects", [att_fk])
+                )
+
                 v = MaterialVersion(
                     id=uuid.uuid4(),
                     material_id=att_m.id,
@@ -325,6 +340,7 @@ async def _exec_edit_material(
 
     if p.get("title") is not None:
         mat.title = p["title"]
+        mat.slug = await _unique_material_slug(db, mat.directory_id, p["title"], exclude_id=mat.id)
     if p.get("type") is not None:
         mat.type = p["type"]
     if p.get("description") is not None:
@@ -339,10 +355,36 @@ async def _exec_edit_material(
 
     if p.get("file_key"):
         file_key = str(p["file_key"])
-        real_size = await _get_real_file_size(file_key)
-        mime_type = await _resolve_mime_type(file_key, p)
+        info = await _get_file_info(file_key)
+        real_size = info["size"]
+        mime_type = await _resolve_mime_type(file_key, p, s3_mime=info.get("content_type"))
         new_key = file_key.replace("uploads/", "materials/", 1)
-        await move_object(file_key, new_key)
+
+        # Optimistic locking (3.11): fetch the latest MaterialVersion to check version_lock
+        # and to set the next value. Only enforced when the PR payload includes version_lock.
+        from sqlalchemy import select as _sel
+
+        _latest_mv = await db.scalar(
+            _sel(MaterialVersion)
+            .where(MaterialVersion.material_id == mat.id)
+            .order_by(MaterialVersion.version_number.desc())
+            .limit(1)
+        )
+        if "version_lock" in p and _latest_mv is not None:
+            if _latest_mv.version_lock != p["version_lock"]:
+                raise ConflictError(
+                    f"Optimistic lock conflict on material {mat.id}: "
+                    f"expected version_lock={p['version_lock']}, "
+                    f"found {_latest_mv.version_lock}. "
+                    "Another edit was applied after this PR was submitted."
+                )
+
+        _next_version_lock = (_latest_mv.version_lock + 1) if _latest_mv is not None else 0
+
+        from app.core.storage import copy_object
+
+        await copy_object(file_key, new_key)
+        db.info.setdefault("post_commit_jobs", []).append(("delete_storage_objects", [file_key]))
 
         mv = MaterialVersion(
             id=uuid.uuid4(),
@@ -356,6 +398,7 @@ async def _exec_edit_material(
             diff_summary=p.get("diff_summary"),
             pr_id=pr.id,
             virus_scan_result=VirusScanResult.CLEAN,
+            version_lock=_next_version_lock,
         )
         mat.current_version += 1
         db.add(mv)
@@ -459,6 +502,9 @@ async def _exec_edit_directory(
 
     if p.get("name") is not None:
         dir_obj.name = p["name"]
+        dir_obj.slug = await _unique_directory_slug(
+            db, dir_obj.parent_id, p["name"], exclude_id=dir_obj.id
+        )
     if p.get("type") is not None:
         dir_obj.type = p["type"]
     if p.get("description") is not None:
@@ -532,10 +578,10 @@ async def _exec_move_item(
         mat = await db.scalar(select(Material).where(Material.id == target_id))
         if not mat:
             raise NotFoundError("Material not found")
-        new_parent = _resolve(str(p["new_parent_id"]), id_map) if p.get("new_parent_id") else None
-        if new_parent is None:
-            raise BadRequestError("Materials must have a parent directory")
+        new_parent = _resolve(str(p["new_parent_id"]) if p.get("new_parent_id") else None, id_map)
         mat.directory_id = new_parent
+        # Re-slug to ensure uniqueness in new location
+        mat.slug = await _unique_material_slug(db, new_parent, mat.title, exclude_id=mat.id)
         await db.flush()
         db.info.setdefault("post_commit_jobs", []).append(("index_material", mat.id))
         return mat.id
@@ -570,7 +616,7 @@ async def _build_browse_path(db: AsyncSession, op_type: str, result_id: uuid.UUI
 
     if "material" in op_type:
         mat = await db.scalar(select(Material).where(Material.id == result_id))
-        if not mat:
+        if not mat or mat.directory_id is None:
             return None
         dir_parts = await get_directory_path(db, mat.directory_id)
         slugs = [p["slug"] for p in dir_parts]
@@ -616,6 +662,11 @@ async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) 
     id_map: dict[str, uuid.UUID] = {}
 
     for op in sorted_ops:
+        # Idempotency: If this op was already executed (e.g. partial PR application retry), skip it.
+        if op.get("result_id"):
+            id_map[op.get("temp_id") or ""] = uuid.UUID(op["result_id"])
+            continue
+
         op_type = op.get("op") or op.get("pr_type")  # pr_type for legacy rows
         if not op_type:
             raise BadRequestError(f"Operation missing 'op' field: {op}")

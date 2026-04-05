@@ -48,7 +48,7 @@ async def delete_pr_comment(
         raise NotFoundError("PR comment not found")
 
     if comment.author_id != current_user.id and current_user.role not in [
-        UserRole.MEMBER,
+        UserRole.MODERATOR,
         UserRole.BUREAU,
         UserRole.VIEUX,
     ]:

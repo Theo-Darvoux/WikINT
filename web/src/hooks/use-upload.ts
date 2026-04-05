@@ -1,20 +1,17 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { API_BASE, ApiError, getClientId } from "@/lib/api-client";
-import { getAccessToken } from "@/lib/auth-tokens";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { ApiError, apiRequest } from "@/lib/api-client";
+import { uploadFile, UploadResult } from "@/lib/upload-client";
+import { useUploadQueue } from "@/lib/upload-queue";
 
 interface UploadState {
     uploading: boolean;
     progress: number;
     error: string | null;
     fileKey: string | null;
-}
-
-interface UploadResult {
-    file_key: string;
-    size: number;
-    mime_type: string;
+    detail: string | null;
+    clientId: string | null;
 }
 
 export function useUpload() {
@@ -23,63 +20,96 @@ export function useUpload() {
         progress: 0,
         error: null,
         fileKey: null,
+        detail: null,
+        clientId: null,
     });
 
+    const { addItems, updateItem, removeItem, items } = useUploadQueue();
+    const abortControllerRef = useRef<AbortController | null>(null);
+
+    // Track the current item from the global queue if we have a clientId
+    useEffect(() => {
+        if (!state.clientId) return;
+        const item = items.find(i => i.clientId === state.clientId);
+        if (!item) return;
+
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setState(s => ({
+            ...s,
+            uploading: item.status === "uploading" || item.status === "pending",
+            progress: item.progress,
+            error: item.error || null,
+            fileKey: item.fileKey || null,
+            detail: item.processingStatus || null,
+        }));
+    }, [items, state.clientId]);
+
     const upload = useCallback(async (file: File): Promise<UploadResult | null> => {
-        setState({ uploading: true, progress: 0, error: null, fileKey: null });
+        abortControllerRef.current = new AbortController();
+        const clientId = crypto.randomUUID();
+        const uploadId = crypto.randomUUID();
+
+        addItems([{
+            clientId,
+            uploadId,
+            fileName: file.name,
+            fileSize: file.size,
+            fileMimeType: file.type,
+            title: file.name,
+            status: "pending",
+            progress: 0,
+            processingStatus: "Preparing...",
+            targetDirPath: "",
+        }]);
+
+        setState(s => ({ ...s, clientId, uploading: true, progress: 0, error: null }));
 
         try {
-            const formData = new FormData();
-            formData.append("file", file);
-
-            const result = await new Promise<UploadResult>((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-
-                xhr.upload.onprogress = (e) => {
-                    if (e.lengthComputable) {
-                        // 0-90% for upload, 90-100% reserved for server-side scanning
-                        const pct = Math.round((e.loaded / e.total) * 90);
-                        setState((s) => ({ ...s, progress: pct }));
-                    }
-                };
-
-                xhr.onload = () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        resolve(JSON.parse(xhr.responseText));
-                    } else {
-                        let message = "Upload failed";
-                        try {
-                            const body = JSON.parse(xhr.responseText);
-                            message = body.detail ?? message;
-                        } catch { /* ignore parse errors */ }
-                        reject(new ApiError(xhr.status, message));
-                    }
-                };
-
-                xhr.onerror = () => reject(new Error("Upload failed"));
-
-                xhr.open("POST", `${API_BASE}/upload`);
-
-                const token = getAccessToken();
-                if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-                xhr.setRequestHeader("X-Client-ID", getClientId());
-                // Do NOT set Content-Type — browser sets multipart boundary automatically
-
-                xhr.send(formData);
+            // We still use uploadFile directly here but it will update the queue
+            // via the component that usually drives the queue, or we can drive it here.
+            // For the hook to work standalone, we'll run it here.
+            const result = await uploadFile(file, {
+                onProgress: (pct) => updateItem(clientId, { progress: pct }),
+                onStatusUpdate: (msg) => updateItem(clientId, { processingStatus: msg }),
+                uploadId,
+                signal: abortControllerRef.current.signal,
             });
-
-            setState({ uploading: false, progress: 100, error: null, fileKey: result.file_key });
+            
+            updateItem(clientId, { status: "done", progress: 100, fileKey: result.file_key });
             return result;
         } catch (err) {
+            if (err instanceof Error && err.message === "Upload cancelled") return null;
             const message = err instanceof ApiError ? err.message : "Upload failed";
-            setState({ uploading: false, progress: 0, error: message, fileKey: null });
+            updateItem(clientId, { status: "error", error: message });
             return null;
         }
-    }, []);
+    }, [addItems, updateItem]);
+
+    /** Cancel an in-progress upload and (optionally) delete the quarantine object. */
+    const cancel = useCallback(
+        async (uploadId?: string) => {
+            abortControllerRef.current?.abort();
+            abortControllerRef.current = null;
+
+            if (state.clientId) {
+                removeItem(state.clientId);
+            }
+            setState({ uploading: false, progress: 0, error: null, fileKey: null, detail: null, clientId: null });
+
+            if (uploadId) {
+                // Best-effort server-side cleanup — fire and forget
+                apiRequest(`/upload/${encodeURIComponent(uploadId)}`, { method: "DELETE" }).catch(
+                    () => {},
+                );
+            }
+        },
+        [state.clientId, removeItem],
+    );
 
     const reset = useCallback(() => {
-        setState({ uploading: false, progress: 0, error: null, fileKey: null });
-    }, []);
+        if (state.clientId) removeItem(state.clientId);
+        setState({ uploading: false, progress: 0, error: null, fileKey: null, detail: null, clientId: null });
+    }, [state.clientId, removeItem]);
 
-    return { ...state, upload, reset };
+    return { ...state, upload, cancel, reset };
 }

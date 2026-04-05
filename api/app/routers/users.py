@@ -1,3 +1,4 @@
+import typing
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -11,11 +12,10 @@ from app.dependencies.auth import CurrentUser
 from app.dependencies.pagination import PaginationParams
 from app.schemas.annotation import AnnotationOut
 from app.schemas.common import PaginatedResponse
-from app.schemas.material import MaterialOut
+from app.schemas.material import MaterialDetail
 from app.schemas.pull_request import PullRequestOut
 from app.schemas.user import OnboardIn, UserOut, UserProfileOut, UserUpdateIn
 from app.services.directory import get_directory_paths
-from app.services.material import material_orm_to_dict
 from app.services.user import (
     export_user_data,
     get_recently_viewed,
@@ -67,20 +67,18 @@ async def patch_me(
     return UserOut.model_validate(updated)
 
 
-@router.get("/me/recently-viewed", response_model=list[MaterialOut])
+@router.get("/me/recently-viewed", response_model=list[MaterialDetail])
 async def recently_viewed(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> list[MaterialOut]:
+) -> list[MaterialDetail]:
     materials = await get_recently_viewed(db, str(user.id))
 
-    dir_ids = {m.directory_id for m in materials}
+    dir_ids = {m["directory_id"] for m in materials}
     paths = await get_directory_paths(db, dir_ids)
 
     return [
-        MaterialOut.model_validate(
-            material_orm_to_dict(m, directory_path=paths.get(m.directory_id))
-        )
+        MaterialDetail.model_validate({**m, "directory_path": paths.get(m["directory_id"])})
         for m in materials
     ]
 
@@ -149,27 +147,20 @@ async def get_contributions(
     if type == "materials":
         from typing import cast
 
-        from app.models.material import Material
-
-        materials_list = cast(list[Material], items)
-        dir_ids = {m.directory_id for m in materials_list}
+        materials_list = cast(list[dict[str, typing.Any]], items)
+        dir_ids = {m["directory_id"] for m in materials_list if m.get("directory_id") is not None}
         directory_paths = await get_directory_paths(db, dir_ids)
 
-    serialized_items: list[PullRequestOut | MaterialOut | AnnotationOut] = []
+    serialized_items: list[PullRequestOut | MaterialDetail | AnnotationOut] = []
     for item in items:
         if type == "prs":
             serialized_items.append(PullRequestOut.model_validate(item))
         elif type == "materials":
             from typing import cast
-
-            from app.models.material import Material
-
-            m_item = cast(Material, item)
+            m_item = cast(dict[str, typing.Any], item)
             serialized_items.append(
-                MaterialOut.model_validate(
-                    material_orm_to_dict(
-                        m_item, directory_path=directory_paths.get(m_item.directory_id)
-                    )
+                MaterialDetail.model_validate(
+                    {**m_item, "directory_path": directory_paths.get(m_item["directory_id"])}
                 )
             )
         elif type == "annotations":

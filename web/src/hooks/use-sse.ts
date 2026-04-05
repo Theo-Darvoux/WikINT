@@ -31,10 +31,14 @@ export function useSSE() {
 
         channel.postMessage({ type: "leader-check" });
 
+        const delay = 200 + Math.random() * 300;
         const leaderTimeout = setTimeout(() => {
-            isLeaderRef.current = true;
-            connectSSE();
-        }, 200);
+            if (!isLeaderRef.current) {
+                isLeaderRef.current = true;
+                channel.postMessage({ type: "leader-alive" });
+                connectSSE();
+            }
+        }, delay);
 
         let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
 

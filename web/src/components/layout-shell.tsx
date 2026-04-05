@@ -12,8 +12,11 @@ import { StagingFab } from "@/components/pr/staging-fab";
 import { ReviewDrawer } from "@/components/pr/review-drawer";
 import { GlobalDropZone } from "@/components/pr/global-drop-zone";
 import { useAuth } from "@/hooks/use-auth";
+import { useOffline } from "@/hooks/use-offline";
 import { getAccessToken, hasAuthHint } from "@/lib/auth-tokens";
 import { initAuthSync } from "@/lib/auth-sync";
+import { WifiOff } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export function LayoutShell({ children }: { children: ReactNode }) {
     const { isAuthenticated, isLoading, fetchMe } = useAuth();
@@ -44,9 +47,18 @@ export function LayoutShell({ children }: { children: ReactNode }) {
 
     const isLoginPage = pathname === "/login";
     const shouldHideContent = !isLoginPage && (isLoading || !isAuthenticated);
+    const isOffline = useOffline();
 
     return (
         <div className="flex flex-col min-h-screen">
+            {/* Offline banner (U4) */}
+            <div className={cn(
+                "bg-destructive text-destructive-foreground py-1.5 px-4 text-center text-xs font-medium transition-all overflow-hidden sticky top-0 z-[100] flex items-center justify-center gap-2",
+                isOffline ? "h-auto opacity-100" : "h-0 opacity-0 pointer-events-none"
+            )}>
+                <WifiOff className="h-3.5 w-3.5" />
+                You appear to be offline. Some features may not work.
+            </div>
             <Navbar />
             <main className="flex-1 w-full flex flex-col">
                 {shouldHideContent ? (

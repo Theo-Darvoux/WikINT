@@ -32,9 +32,9 @@ class Tag(UUIDMixin, Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     category: Mapped[str | None] = mapped_column(String(50))
 
-    materials: Mapped[list[Material]] = relationship(  # noqa: F821
+    materials: Mapped[list[Material]] = relationship(
         secondary=material_tags, back_populates="tags"
     )
-    directories: Mapped[list[Directory]] = relationship(  # noqa: F821
+    directories: Mapped[list[Directory]] = relationship(
         secondary=directory_tags, back_populates="tags"
     )
