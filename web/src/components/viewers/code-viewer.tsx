@@ -4,6 +4,9 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchMaterialFile } from "@/lib/api-client";
 import hljs from "highlight.js/lib/common";
+import { useFullscreen } from "@/hooks/use-fullscreen";
+import { FullscreenToggle } from "./fullscreen-toggle";
+import { ViewerToolbar } from "./viewer-toolbar";
 
 /* highlight.js/lib/common includes: bash, c, cpp, csharp, css, diff,
    go, ini, java, javascript, json, kotlin, lua, markdown,
@@ -96,6 +99,8 @@ function getLang(fileName: string): string {
 }
 
 export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
     const [content, setContent] = useState<string>("");
     const [truncated, setTruncated] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -151,21 +156,42 @@ export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
     }
 
     return (
-        <div className="overflow-x-auto text-sm">
-            {truncated && (
-                <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                    <span>⚠ File truncated — showing first 512 KiB of a larger file. Download to view the full content.</span>
-                </div>
-            )}
-            <pre className="!m-0 !rounded-none !bg-transparent p-0">
-                <code
-                    ref={codeRef}
-                    className={lang ? `language-${lang}` : ""}
-                    style={{ background: "transparent" }}
-                >
-                    {content}
-                </code>
-            </pre>
+        <div 
+            ref={containerRef} 
+            className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
+        >
+            <ViewerToolbar 
+                left={
+                    lang && (
+                        <span className="text-xs font-medium uppercase text-muted-foreground px-1.5 py-0.5 bg-muted rounded truncate">
+                            {lang}
+                        </span>
+                    )
+                }
+                right={
+                    <FullscreenToggle 
+                        isFullscreen={isFullscreen} 
+                        onToggle={toggleFullscreen} 
+                        disabled={loading}
+                    />
+                }
+            />
+            <div className="flex-1 overflow-auto text-sm">
+                {truncated && (
+                    <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                        <span>⚠ File truncated — showing first 512 KiB of a larger file. Download to view the full content.</span>
+                    </div>
+                )}
+                <pre className="!m-0 !rounded-none !bg-transparent p-0">
+                    <code
+                        ref={codeRef}
+                        className={lang ? `language-${lang}` : ""}
+                        style={{ background: "transparent" }}
+                    >
+                        {content}
+                    </code>
+                </pre>
+            </div>
         </div>
     );
 }

@@ -22,6 +22,9 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { API_BASE, fetchMaterialBlob } from "@/lib/api-client";
 import { getAccessToken } from "@/lib/auth-tokens";
+import { useFullscreen } from "@/hooks/use-fullscreen";
+import { FullscreenToggle } from "./fullscreen-toggle";
+import { ViewerToolbar } from "./viewer-toolbar";
 
 interface AudioPlayerProps {
     fileKey: string;
@@ -39,6 +42,9 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
     const [playbackRate, setPlaybackRate] = useState(1);
     const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
 
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
+
     const token = getAccessToken();
     const streamUrl = token 
         ? `${API_BASE}/materials/${materialId}/file?token=${encodeURIComponent(token)}`
@@ -46,7 +52,6 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
 
     const audioRef = useRef<HTMLAudioElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
 
     const isDark = resolvedTheme === "dark";
 
@@ -220,7 +225,20 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
     }, [isLoading, playbackRate, volume, isMuted]);
 
     return (
-        <div className="flex flex-col items-center justify-center p-4 md:p-8 w-full max-w-4xl mx-auto h-full" ref={containerRef}>
+        <div 
+            ref={containerRef} 
+            className={`flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
+        >
+            <ViewerToolbar 
+                right={
+                    <FullscreenToggle 
+                        isFullscreen={isFullscreen} 
+                        onToggle={toggleFullscreen} 
+                        disabled={isLoading}
+                    />
+                }
+            />
+            <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8 w-full max-w-4xl mx-auto overflow-auto">
             {isLoading ? (
                 <div className="flex flex-col items-center gap-6">
                     <div className="relative flex items-center justify-center">
@@ -408,6 +426,7 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                     />
                 </div>
             )}
+            </div>
         </div>
     );
 }

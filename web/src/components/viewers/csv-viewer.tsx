@@ -4,6 +4,9 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import Papa from "papaparse";
 import { fetchMaterialFile } from "@/lib/api-client";
+import { useFullscreen } from "@/hooks/use-fullscreen";
+import { FullscreenToggle } from "./fullscreen-toggle";
+import { ViewerToolbar } from "./viewer-toolbar";
 
 const MAX_FETCH_BYTES = 10 * 1024 * 1024; // 10 MiB hard cap before parsing
 const PAGE_SIZE = 100;
@@ -15,13 +18,15 @@ interface CsvViewerProps {
 }
 
 export function CsvViewer({ materialId }: CsvViewerProps) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
     const [headers, setHeaders] = useState<string[]>([]);
     const [rows, setRows] = useState<string[][]>([]);
     const [truncated, setTruncated] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [page, setPage] = useState(0);
-    const tableRef = useRef<HTMLDivElement>(null);
+    const tableContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -91,7 +96,7 @@ export function CsvViewer({ materialId }: CsvViewerProps) {
 
     const goToPage = (p: number) => {
         setPage(p);
-        tableRef.current?.scrollTo({ top: 0 });
+        tableContainerRef.current?.scrollTo({ top: 0 });
     };
 
     if (loading) {
@@ -111,93 +116,109 @@ export function CsvViewer({ materialId }: CsvViewerProps) {
     }
 
     return (
-        <div className="flex h-full flex-col">
-            {truncated && (
-                <div className="flex items-center gap-2 border-b bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                    <span>⚠ File exceeds 10 MiB — only the first {rows.length.toLocaleString()} rows are shown. Download to view the complete file.</span>
-                </div>
-            )}
-
-            {/* Table */}
-            <div ref={tableRef} className="flex-1 overflow-auto">
-                <table className="w-full border-collapse text-sm">
-                    <thead className="sticky top-0 z-10 bg-muted">
-                        <tr>
-                            <th className="border-b border-r px-2 py-1.5 text-right font-mono text-xs text-muted-foreground select-none w-[3rem]">
-                                #
-                            </th>
-                            {headers.map((h, i) => (
-                                <th
-                                    key={i}
-                                    className="border-b border-r px-3 py-1.5 text-left font-medium text-foreground whitespace-nowrap last:border-r-0"
-                                >
-                                    {h || <span className="text-muted-foreground/50 italic">col {i + 1}</span>}
-                                </th>
-                            ))}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {pageRows.map((row, ri) => {
-                            const globalRow = page * PAGE_SIZE + ri + 1;
-                            return (
-                                <tr
-                                    key={ri}
-                                    className="border-b last:border-b-0 hover:bg-muted/40 transition-colors"
-                                >
-                                    <td className="border-r px-2 py-1 text-right font-mono text-xs text-muted-foreground select-none">
-                                        {globalRow}
-                                    </td>
-                                    {headers.map((_, ci) => (
-                                        <td
-                                            key={ci}
-                                            className="border-r px-3 py-1 last:border-r-0 max-w-[300px] truncate"
-                                            title={row[ci] ?? ""}
-                                        >
-                                            {row[ci] ?? ""}
-                                        </td>
-                                    ))}
-                                </tr>
-                            );
-                        })}
-                        {pageRows.length === 0 && (
-                            <tr>
-                                <td colSpan={headers.length + 1} className="py-8 text-center text-muted-foreground text-sm">
-                                    No data rows
-                                </td>
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
-
-            {/* Pagination footer */}
-            <div className="flex items-center justify-between border-t bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
-                <span>
-                    {rows.length.toLocaleString()} row{rows.length !== 1 ? "s" : ""}{truncated ? "+" : ""} · {headers.length} column{headers.length !== 1 ? "s" : ""}
-                </span>
-                {totalPages > 1 && (
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => goToPage(page - 1)}
-                            disabled={page === 0}
-                            className="rounded p-0.5 hover:bg-muted disabled:opacity-40"
-                            aria-label="Previous page"
-                        >
-                            <ChevronLeft className="h-4 w-4" />
-                        </button>
-                        <span>
-                            Page {page + 1} of {totalPages}
-                        </span>
-                        <button
-                            onClick={() => goToPage(page + 1)}
-                            disabled={page >= totalPages - 1}
-                            className="rounded p-0.5 hover:bg-muted disabled:opacity-40"
-                            aria-label="Next page"
-                        >
-                            <ChevronRight className="h-4 w-4" />
-                        </button>
+        <div 
+            ref={containerRef} 
+            className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
+        >
+            <ViewerToolbar 
+                left={
+                    <span className="text-xs font-medium text-muted-foreground">
+                        {rows.length.toLocaleString()} rows · {headers.length} columns
+                    </span>
+                }
+                right={
+                    <FullscreenToggle 
+                        isFullscreen={isFullscreen} 
+                        onToggle={toggleFullscreen} 
+                        disabled={loading}
+                    />
+                }
+            />
+            <div className="flex h-full flex-col min-h-0">
+                {truncated && (
+                    <div className="flex items-center gap-2 border-b bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                        <span>⚠ File exceeds 10 MiB — only the first {rows.length.toLocaleString()} rows are shown. Download to view the complete file.</span>
                     </div>
                 )}
+
+                {/* Table */}
+                <div ref={tableContainerRef} className="flex-1 overflow-auto">
+                    <table className="w-full border-collapse text-sm">
+                        <thead className="sticky top-0 z-10 bg-muted">
+                            <tr>
+                                <th className="border-b border-r px-2 py-1.5 text-right font-mono text-xs text-muted-foreground select-none w-[3rem]">
+                                    #
+                                </th>
+                                {headers.map((h, i) => (
+                                    <th
+                                        key={i}
+                                        className="border-b border-r px-3 py-1.5 text-left font-medium text-foreground whitespace-nowrap last:border-r-0"
+                                    >
+                                        {h || <span className="text-muted-foreground/50 italic">col {i + 1}</span>}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {pageRows.map((row, ri) => {
+                                const globalRow = page * PAGE_SIZE + ri + 1;
+                                return (
+                                    <tr
+                                        key={ri}
+                                        className="border-b last:border-b-0 hover:bg-muted/40 transition-colors"
+                                    >
+                                        <td className="border-r px-2 py-1 text-right font-mono text-xs text-muted-foreground select-none">
+                                            {globalRow}
+                                        </td>
+                                        {headers.map((_, ci) => (
+                                            <td
+                                                key={ci}
+                                                className="border-r px-3 py-1 last:border-r-0 max-w-[300px] truncate"
+                                                title={row[ci] ?? ""}
+                                            >
+                                                {row[ci] ?? ""}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                );
+                            })}
+                            {pageRows.length === 0 && (
+                                <tr>
+                                    <td colSpan={headers.length + 1} className="py-8 text-center text-muted-foreground text-sm">
+                                        No data rows
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Pagination footer */}
+                <div className="flex items-center justify-between border-t bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+                    <span>
+                        Page {page + 1} of {totalPages}
+                    </span>
+                    {totalPages > 1 && (
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => goToPage(page - 1)}
+                                disabled={page === 0}
+                                className="rounded p-0.5 hover:bg-muted disabled:opacity-40"
+                                aria-label="Previous page"
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={() => goToPage(page + 1)}
+                                disabled={page >= totalPages - 1}
+                                className="rounded p-0.5 hover:bg-muted disabled:opacity-40"
+                                aria-label="Next page"
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

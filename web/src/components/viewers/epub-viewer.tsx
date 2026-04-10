@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { fetchMaterialFile } from "@/lib/api-client";
+import { useFullscreen } from "@/hooks/use-fullscreen";
+import { FullscreenToggle } from "./fullscreen-toggle";
+import { ViewerToolbar } from "./viewer-toolbar";
 
 interface EpubViewerProps {
     fileKey: string;
@@ -9,6 +12,8 @@ interface EpubViewerProps {
 }
 
 export function EpubViewer({ materialId }: EpubViewerProps) {
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const { isFullscreen, toggleFullscreen } = useFullscreen(wrapperRef);
     const viewerRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -78,13 +83,27 @@ export function EpubViewer({ materialId }: EpubViewerProps) {
     }
 
     return (
-        <div className="relative flex h-[800px] w-full flex-col bg-muted/20">
-            {loading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                </div>
-            )}
-            <div ref={viewerRef} className="h-full w-full overflow-hidden" />
+        <div 
+            ref={wrapperRef} 
+            className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
+        >
+            <ViewerToolbar 
+                right={
+                    <FullscreenToggle 
+                        isFullscreen={isFullscreen} 
+                        onToggle={toggleFullscreen} 
+                        disabled={loading || !!error}
+                    />
+                }
+            />
+            <div className={`relative flex flex-1 w-full flex-col bg-muted/20 ${isFullscreen ? "" : "h-[800px]"}`}>
+                {loading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
+                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                    </div>
+                )}
+                <div ref={viewerRef} className="h-full w-full overflow-hidden" />
+            </div>
         </div>
     );
 }

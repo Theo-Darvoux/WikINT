@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchMaterialFile } from "@/lib/api-client";
+import { useFullscreen } from "@/hooks/use-fullscreen";
+import { FullscreenToggle } from "./fullscreen-toggle";
+import { ViewerToolbar } from "./viewer-toolbar";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkWikiLink from "remark-wiki-link";
@@ -55,6 +58,8 @@ function getTextFromChildren(children: React.ReactNode, depth = 0): string {
 }
 
 export function MarkdownViewer({ materialId, material }: MarkdownViewerProps) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
     const [content, setContent] = useState<string>("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -165,18 +170,32 @@ export function MarkdownViewer({ materialId, material }: MarkdownViewerProps) {
     }
 
     return (
-        <div
-            className="prose prose-sm max-w-none p-6 dark:prose-invert
-                prose-img:rounded-lg prose-img:shadow-sm
-                prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-                prose-pre:bg-muted prose-pre:border prose-pre:border-border prose-pre:text-foreground
-                prose-code:before:content-none prose-code:after:content-none prose-code:text-foreground
-                prose-table:border-collapse
-                prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2
-                prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2
-                prose-headings:scroll-mt-20"
+        <div 
+            ref={containerRef} 
+            className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
         >
-            {rendered}
+            <ViewerToolbar 
+                right={
+                    <FullscreenToggle 
+                        isFullscreen={isFullscreen} 
+                        onToggle={toggleFullscreen} 
+                        disabled={loading || error}
+                    />
+                }
+            />
+            <div
+                className={`flex-1 overflow-auto prose prose-sm max-w-none p-6 dark:prose-invert
+                    prose-img:rounded-lg prose-img:shadow-sm
+                    prose-a:text-primary prose-a:no-underline hover:prose-a:underline
+                    prose-pre:bg-muted prose-pre:border prose-pre:border-border prose-pre:text-foreground
+                    prose-code:before:content-none prose-code:after:content-none prose-code:text-foreground
+                    prose-table:border-collapse
+                    prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2
+                    prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2
+                    prose-headings:scroll-mt-20`}
+            >
+                {rendered}
+            </div>
         </div>
     );
 }

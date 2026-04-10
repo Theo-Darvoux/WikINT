@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchMaterialBlob } from "@/lib/api-client";
+import { useFullscreen } from "@/hooks/use-fullscreen";
+import { FullscreenToggle } from "./fullscreen-toggle";
+import { ViewerToolbar } from "./viewer-toolbar";
 
 interface ImageViewerProps {
     fileKey: string;
@@ -11,6 +14,8 @@ interface ImageViewerProps {
 }
 
 export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
     const [blobUrl, setBlobUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -46,21 +51,35 @@ export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
     }, [materialId]);
 
     return (
-        <div className="relative flex h-[calc(100vh-10rem)] w-full items-center justify-center bg-muted/20">
-            {loading && (
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            )}
-            {error && (
-                <p className="text-sm text-destructive">{error}</p>
-            )}
-            {blobUrl && (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                    src={blobUrl}
-                    alt={fileName}
-                    className="max-h-[80vh] max-w-full object-contain"
-                />
-            )}
+        <div 
+            ref={containerRef} 
+            className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
+        >
+            <ViewerToolbar 
+                right={
+                    <FullscreenToggle 
+                        isFullscreen={isFullscreen} 
+                        onToggle={toggleFullscreen} 
+                        disabled={loading || !!error}
+                    />
+                }
+            />
+            <div className={`relative flex flex-1 w-full items-center justify-center bg-muted/20 ${isFullscreen ? "" : "h-[calc(100vh-10rem)]"}`}>
+                {loading && (
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                )}
+                {error && (
+                    <p className="text-sm text-destructive">{error}</p>
+                )}
+                {blobUrl && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                        src={blobUrl}
+                        alt={fileName}
+                        className={`${isFullscreen ? "max-h-[90vh]" : "max-h-[80vh]"} max-w-full object-contain`}
+                    />
+                )}
+            </div>
         </div>
     );
 }

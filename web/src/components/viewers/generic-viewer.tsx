@@ -1,8 +1,12 @@
 "use client";
 
+import { useRef } from "react";
 import { FileText, Download, Loader2 } from "lucide-react";
 import { formatFileSize } from "@/lib/file-utils";
 import { useDownload } from "@/hooks/use-download";
+import { useFullscreen } from "@/hooks/use-fullscreen";
+import { FullscreenToggle } from "./fullscreen-toggle";
+import { ViewerToolbar } from "./viewer-toolbar";
 
 interface GenericViewerProps {
     fileName: string;
@@ -12,10 +16,25 @@ interface GenericViewerProps {
 }
 
 export function GenericViewer({ fileName, fileSize, mimeType, materialId }: GenericViewerProps) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
     const { downloadMaterial, isDownloading } = useDownload();
 
     return (
-        <div className="flex flex-col items-center justify-center gap-4 py-16">
+        <div 
+            ref={containerRef} 
+            className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
+        >
+            <ViewerToolbar 
+                right={
+                    <FullscreenToggle 
+                        isFullscreen={isFullscreen} 
+                        onToggle={toggleFullscreen} 
+                        disabled={isDownloading}
+                    />
+                }
+            />
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16">
             <FileText className="h-16 w-16 text-muted-foreground/50" />
             <div className="text-center">
                 <p className="font-medium">{fileName}</p>
@@ -34,6 +53,7 @@ export function GenericViewer({ fileName, fileSize, mimeType, materialId }: Gene
                 )}
                 Download
             </button>
+            </div>
         </div>
     );
 }

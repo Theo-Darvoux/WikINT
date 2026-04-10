@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useFullscreen } from "@/hooks/use-fullscreen";
 import { FullscreenToggle } from "./fullscreen-toggle";
+import { ViewerToolbar } from "./viewer-toolbar";
 import { registerOfficePrint, unregisterOfficePrint } from "@/lib/office-print-registry";
 import { toast } from "sonner";
 
@@ -355,30 +356,32 @@ export function OfficeViewer({ materialId, fileName }: OfficeViewerProps) {
                 isFullscreen ? "h-screen" : "h-full"
             )}
         >
-            <div className="sticky top-0 z-10 flex-none flex items-center justify-between gap-1 rounded-t-lg bg-background/80 px-2 py-1 backdrop-blur border-b">
-                <div className="flex items-center gap-2 overflow-hidden">
-                    {!loading && fileName && (
-                        <span className="text-xs font-medium uppercase text-muted-foreground px-1.5 py-0.5 bg-muted rounded truncate">
-                            {fileName.split(".").pop()?.toUpperCase()}
-                        </span>
-                    )}
-                    {!loading && fileName && (
-                        <span className="text-xs font-medium text-muted-foreground truncate hidden sm:inline">
-                            {fileName}
-                        </span>
-                    )}
-                </div>
-                <div className="flex items-center gap-1">
-                    {supportsFullscreen && (
+            <ViewerToolbar 
+                left={
+                    <div className="flex items-center gap-2 overflow-hidden">
+                        {!loading && fileName && (
+                            <span className="text-xs font-medium uppercase text-muted-foreground px-1.5 py-0.5 bg-muted rounded truncate">
+                                {fileName.split(".").pop()?.toUpperCase()}
+                            </span>
+                        )}
+                        {!loading && fileName && (
+                            <span className="text-xs font-medium text-muted-foreground truncate hidden sm:inline">
+                                {fileName}
+                            </span>
+                        )}
+                    </div>
+                }
+                right={
+                    supportsFullscreen && (
                         <FullscreenToggle
                             isFullscreen={isFullscreen}
                             onToggle={toggleFullscreen}
                             disabled={loading}
                             aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
                         />
-                    )}
-                </div>
-            </div>
+                    )
+                }
+            />
 
             <div className="relative flex-1 min-h-0 bg-muted/20">
                 {loading && (

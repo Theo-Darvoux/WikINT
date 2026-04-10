@@ -10,6 +10,7 @@ import type { ThreadData } from "@/hooks/use-annotations";
 import { fetchMaterialBlob } from "@/lib/api-client";
 import { useFullscreen } from "@/hooks/use-fullscreen";
 import { FullscreenToggle } from "./fullscreen-toggle";
+import { ViewerToolbar } from "./viewer-toolbar";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -338,8 +339,8 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
 
     return (
         <div ref={containerRef} className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}>
-            <div className="sticky top-0 z-10 flex-none flex items-center justify-between gap-1 rounded-t-lg bg-background/80 px-2 py-1 backdrop-blur border-b">
-                <div className="flex items-center gap-1">
+            <ViewerToolbar 
+                left={
                     <button
                         onClick={() => setTwoPageView(!twoPageView)}
                         disabled={loading}
@@ -348,45 +349,48 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
                     >
                         <BookOpen className="h-4 w-4" />
                     </button>
-                </div>
-                {/* Page indicator */}
-                {numPages > 0 && (
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                        Page {currentPage} of {numPages}
-                    </span>
-                )}
-                <div className="flex items-center gap-1">
-                    <button
-                        onClick={() => setZoom(z => Math.max(MIN_ZOOM, z - ZOOM_STEP))}
-                        disabled={zoom <= MIN_ZOOM || loading}
-                        className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
-                        title="Zoom out (Ctrl+-)"
-                    >
-                        <ZoomOut className="h-4 w-4" />
-                    </button>
-                    <button
-                        onClick={() => setZoom(100)}
-                        disabled={loading}
-                        className="min-w-12 rounded-md px-2 py-1 text-center text-xs font-medium tabular-nums transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-40"
-                        title="Reset zoom (Ctrl+0)"
-                    >
-                        {zoom}%
-                    </button>
-                    <button
-                        onClick={() => setZoom(z => Math.min(MAX_ZOOM, z + ZOOM_STEP))}
-                        disabled={zoom >= MAX_ZOOM || loading}
-                        className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
-                        title="Zoom in (Ctrl++)"
-                    >
-                        <ZoomIn className="h-4 w-4" />
-                    </button>
-                    <FullscreenToggle
-                        isFullscreen={isFullscreen}
-                        onToggle={toggleFullscreen}
-                        disabled={loading}
-                    />
-                </div>
-            </div>
+                }
+                center={
+                    numPages > 0 && (
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                            Page {currentPage} of {numPages}
+                        </span>
+                    )
+                }
+                right={
+                    <>
+                        <button
+                            onClick={() => setZoom(z => Math.max(MIN_ZOOM, z - ZOOM_STEP))}
+                            disabled={zoom <= MIN_ZOOM || loading}
+                            className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
+                            title="Zoom out (Ctrl+-)"
+                        >
+                            <ZoomOut className="h-4 w-4" />
+                        </button>
+                        <button
+                            onClick={() => setZoom(100)}
+                            disabled={loading}
+                            className="min-w-12 rounded-md px-2 py-1 text-center text-xs font-medium tabular-nums transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-40"
+                            title="Reset zoom (Ctrl+0)"
+                        >
+                            {zoom}%
+                        </button>
+                        <button
+                            onClick={() => setZoom(z => Math.min(MAX_ZOOM, z + ZOOM_STEP))}
+                            disabled={zoom >= MAX_ZOOM || loading}
+                            className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
+                            title="Zoom in (Ctrl++)"
+                        >
+                            <ZoomIn className="h-4 w-4" />
+                        </button>
+                        <FullscreenToggle
+                            isFullscreen={isFullscreen}
+                            onToggle={toggleFullscreen}
+                            disabled={loading}
+                        />
+                    </>
+                }
+            />
 
             <div
                 ref={scrollRef}
