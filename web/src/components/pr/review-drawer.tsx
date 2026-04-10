@@ -81,6 +81,7 @@ function OperationCard({
     index,
     onRemove,
     onEdit,
+    onPreview,
 }: {
     staged: StagedOperation;
     index: number;
@@ -187,8 +188,8 @@ export function ReviewDrawer() {
             const res = await apiFetch<{ url: string }>(`/api/upload/preview?file_key=${encodeURIComponent(op.file_key)}`);
             if (res.url) {
                 setPreviewUrl(res.url);
-                setPreviewName(op.file_name);
-                setPreviewMime(op.file_mime_type);
+                setPreviewName(op.file_name || undefined);
+                setPreviewMime(op.file_mime_type || undefined);
             }
         } catch (e: any) {
             toast.error(e.message || "Unable to preview this file.");

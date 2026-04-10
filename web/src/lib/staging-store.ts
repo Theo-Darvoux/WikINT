@@ -129,7 +129,7 @@ export function unwrapOp(staged: StagedOperation): Operation {
 }
 
 /** Does this operation reference a file upload that could expire? */
-export function hasFileKey(op: Operation): boolean {
+export function hasFileKey(op: Operation): op is CreateMaterialOp | EditMaterialOp {
     if (!op) return false;
     if (op.op === "create_material" || op.op === "edit_material") {
         return !!op.file_key;

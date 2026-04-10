@@ -45,7 +45,7 @@ import { useIsMobile } from "@/hooks/use-media-query";
 import { unwrapOp } from "@/lib/staging-store";
 import { useDropZoneStore } from "@/components/pr/global-drop-zone";
 import { useSelectionStore } from "@/lib/selection-store";
-import type { CreateMaterialOp, CreateDirectoryOp, Operation, StagedOperation } from "@/lib/staging-store";
+import type { CreateMaterialOp, CreateDirectoryOp, MoveItemOp, Operation, StagedOperation } from "@/lib/staging-store";
 import type { SelectedItem } from "@/lib/selection-store";
 
 /** Check if a real item has any staged edit/delete/move targeting it */
@@ -145,6 +145,8 @@ interface GhostDirEntry {
     name: string;
 }
 
+type AugmentedOp = Operation & { isExternal: boolean; _previewIdx: number | undefined };
+
 export function DirectoryListing({
     directory,
     directories,
@@ -227,17 +229,15 @@ export function DirectoryListing({
     // At root, dirId is "" but parent_id is null — treat both as "root".
     const isRoot = !dirId;
     const ghostDirs = allOps.filter((op) => {
-        const isTarget = isRoot ? !op.new_parent_id : op.new_parent_id === dirId;
         if (op.op === "create_directory" && (isRoot ? !op.parent_id : op.parent_id === dirId)) return true;
-        if (op.op === "move_item" && op.target_type === "directory" && isTarget) return true;
+        if (op.op === "move_item" && op.target_type === "directory") {
+            const isTarget = isRoot ? !op.new_parent_id : op.new_parent_id === dirId;
+            return isTarget;
+        }
         return false;
-    }) as (Operation & { isExternal: boolean; _previewIdx: number | undefined })[];
+    }) as (AugmentedOp & (CreateDirectoryOp | MoveItemOp))[];
 
     const ghostMaterials = allOps.filter((op) => {
-        const isTarget = isAttachmentListing
-            ? op.new_parent_id === (parentMaterial?.id as string) // Move to attachments
-            : (isRoot ? !op.new_parent_id : op.new_parent_id === dirId);
-        
         if (op.op === "create_material") {
             const isCreatedHere = isAttachmentListing
                 ? op.parent_material_id === (parentMaterial?.id as string)
@@ -245,9 +245,14 @@ export function DirectoryListing({
             if (isCreatedHere) return true;
         }
         
-        if (op.op === "move_item" && op.target_type === "material" && isTarget) return true;
+        if (op.op === "move_item" && op.target_type === "material") {
+            const isTarget = isAttachmentListing
+                ? op.new_parent_id === (parentMaterial?.id as string)
+                : (isRoot ? !op.new_parent_id : op.new_parent_id === dirId);
+            return isTarget;
+        }
         return false;
-    }) as (Operation & { isExternal: boolean; _previewIdx: number | undefined })[];
+    }) as (AugmentedOp & (CreateMaterialOp | MoveItemOp))[];
 
     // When inside a ghost dir, there are no real items
     const effectiveDirs = useMemo(
@@ -861,7 +866,7 @@ export function DirectoryListing({
                                                     variant="secondary"
                                                     className="text-[10px] px-1.5 py-0 h-4 capitalize"
                                                 >
-                                                    {op.op === "create_material" ? (op as any).type : (op as any).target_material_type}
+                                                    {op.op === "create_material" ? op.type : op.target_material_type}
                                                 </Badge>
                                             )}
                                             {op.op === "create_material" && op.file_name && (
