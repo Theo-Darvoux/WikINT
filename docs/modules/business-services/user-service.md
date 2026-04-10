@@ -28,11 +28,15 @@ The `OnboardedUser` auth dependency in other routes will reject any user where `
 Updates display name, bio, academic year, and/or avatar.
 
 **Avatar handling:**
-1. If the new `avatar_url` starts with `uploads/`: the file is moved to a permanent `avatars/` prefix via `move_object()`
-2. If the user already had an avatar in `avatars/`: the old avatar is deleted from S3
-3. The final key (under `avatars/`) is stored in the user record
+1. If the new `avatar_url` starts with `quarantine/`:
+   - Checks if the upload record exists and belongs to the user.
+   - Downloads the file and applies **heavy compression** (256x256 WebP, 60% quality) via `process_avatar()`.
+   - Uploads processed image to `avatars/{user_id}/{uuid}.webp`.
+   - Original quarantine object is deleted.
+2. If the user already had an avatar in `avatars/`: the old avatar is deleted from S3.
+3. The final key (under `avatars/`) is stored in the user record.
 
-This ensures avatar files live outside the `uploads/` prefix and aren't caught by the 24-hour upload cleanup worker.
+This ensures avatar files are small, secure (metadata stripped), and live outside the `quarantine/` prefix.
 
 ### `get_user_by_id(db, user_id)`
 

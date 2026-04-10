@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchMaterialFile } from "@/lib/api-client";
 import { useFullscreen } from "@/hooks/use-fullscreen";
@@ -15,6 +15,7 @@ import rehypeHighlight from "rehype-highlight";
 import type { Components } from "react-markdown";
 import { Mermaid } from "./mermaid";
 import { AsyncMaterialImage } from "./async-material-image";
+import { Callout, CalloutType } from "./callout";
 
 interface MarkdownViewerProps {
     fileKey: string;
@@ -95,15 +96,19 @@ export function MarkdownViewer({ materialId, material }: MarkdownViewerProps) {
     }, [materialId]);
 
     const components: Components = useMemo(() => ({
-        img: ({ src, alt, ...props }) => (
-            <AsyncMaterialImage
-                src={(src as string) || ""}
-                alt={alt || ""}
-                material={material}
-                className="max-w-full rounded-lg shadow-sm"
-            />
-        ),
-        a: ({ href, children, ...props }) => {
+        img: (props: any) => {
+            const { src, alt } = props;
+            return (
+                <AsyncMaterialImage
+                    src={(src as string) || ""}
+                    alt={alt || ""}
+                    material={material as any}
+                    className="max-w-full rounded-lg shadow-sm"
+                />
+            );
+        },
+        a: (props: any) => {
+            const { href, children, ...rest } = props;
             const isExternal = href?.startsWith("http");
             return (
                 <a
@@ -111,31 +116,83 @@ export function MarkdownViewer({ materialId, material }: MarkdownViewerProps) {
                     {...(isExternal
                         ? { target: "_blank", rel: "noopener noreferrer" }
                         : {})}
-                    {...props}
+                    {...rest}
                 >
                     {children}
                 </a>
             );
         },
-        table: ({ children, ...props }) => (
+        table: ({ children, ...props }: any) => (
             <div className="overflow-x-auto">
                 <table {...props}>{children}</table>
             </div>
         ),
-        code: ({ node, inline, className, children, ...props }: any) => {
+        code: (props: any) => {
+            const { className, children, node, ...rest } = props;
             const match = /language-(\w+)/.exec(className || "");
             const language = match ? match[1] : "";
             
             // Mermaid check (robust)
-            if (!inline && (language === "mermaid" || (node?.properties?.className as string[])?.includes("language-mermaid"))) {
+            const isMermaid = language === "mermaid" || (node?.properties?.className as string[])?.includes("language-mermaid");
+            
+            // In react-markdown v9/v10, code blocks (pre > code) usually have node metadata 
+            // but we can also check if the parent is a 'pre' tag if we had access to it.
+            // For now, if it's mermaid, it's definitely a block.
+            if (isMermaid) {
                 const chart = getTextFromChildren(children);
                 return <Mermaid chart={chart.trim()} />;
             }
             return (
-                <code className={className} {...props}>
+                <code className={className} {...rest}>
                     {children}
                 </code>
             );
+        },
+        blockquote: ({ children }: any) => {
+            // Find the first paragraph and check if it starts with an Obsidian callout marker
+            const allChildren = React.Children.toArray(children);
+            const firstChild = allChildren[0] as React.ReactElement<{ children: React.ReactNode, node?: { type: string } }>;
+            
+            if (firstChild && (firstChild.type === "p" || (firstChild as any).props?.node?.type === "paragraph")) {
+                const pChildren = React.Children.toArray(firstChild.props.children);
+                const firstPChild = pChildren[0];
+
+                if (typeof firstPChild === "string") {
+                    const match = firstPChild.match(/^\[!(\w+)([+-]?)\]\s*(.*)$/);
+                    if (match) {
+                        const type = match[1].toLowerCase() as CalloutType;
+                        const collapseMarker = match[2];
+                        const titleText = match[3];
+                        const collapsible = collapseMarker === "+" || collapseMarker === "-";
+                        const defaultOpen = collapseMarker !== "-";
+
+                        // Remove the marker and title from the first paragraph
+                        const remainingPChildren = pChildren.slice(1);
+                        const otherChildren = allChildren.slice(1);
+                        
+                        const newFirstParagraph = remainingPChildren.length > 0 
+                            ? React.cloneElement(firstChild, {
+                                ...firstChild.props,
+                                children: remainingPChildren
+                            })
+                            : null;
+
+                        return (
+                            <Callout 
+                                type={type} 
+                                collapsible={collapsible} 
+                                defaultOpen={defaultOpen}
+                                title={titleText ? titleText : undefined}
+                            >
+                                {newFirstParagraph}
+                                {otherChildren}
+                            </Callout>
+                        );
+                    }
+                }
+            }
+
+            return <blockquote className="border-l-4 border-border pl-4 italic my-4">{children}</blockquote>;
         },
     }), [material]);
 
@@ -143,8 +200,8 @@ export function MarkdownViewer({ materialId, material }: MarkdownViewerProps) {
         () =>
             content ? (
                 <ReactMarkdown
-                    remarkPlugins={remarkPlugins}
-                    rehypePlugins={rehypePlugins}
+                    remarkPlugins={remarkPlugins as any}
+                    rehypePlugins={rehypePlugins as any}
                     components={components}
                 >
                     {content}

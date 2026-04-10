@@ -9,6 +9,7 @@ import { toast } from "sonner";
 
 function OwnProfileContent() {
     const [profile, setProfile] = useState<UserProfile | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
 
     const fetchProfile = useCallback(async () => {
         try {
@@ -29,6 +30,8 @@ function OwnProfileContent() {
         const file = e.target.files?.[0];
         if (!file) return;
 
+        setIsUploading(true);
+        const toastId = toast.loading("Uploading avatar...");
         try {
             const formData = new FormData();
             formData.append("file", file);
@@ -47,15 +50,19 @@ function OwnProfileContent() {
             }
             const upload = await res.json() as { file_key: string };
 
+            toast.loading("Processing and compressing...", { id: toastId });
+            
             await apiFetch("/users/me", {
                 method: "PATCH",
                 body: JSON.stringify({ avatar_url: upload.file_key }),
             });
 
-            toast.success("Avatar updated");
+            toast.success("Avatar updated", { id: toastId });
             fetchProfile();
-        } catch {
-            toast.error("Failed to upload avatar");
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Failed to upload avatar", { id: toastId });
+        } finally {
+            setIsUploading(false);
         }
     };
 

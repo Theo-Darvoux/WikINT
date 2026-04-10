@@ -6,6 +6,8 @@ import { create } from "zustand";
 import { UploadDrawer } from "@/components/pr/upload-drawer";
 import { usePathname } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
+import { collectDroppedFiles, type ScannedFile } from "@/lib/drop-utils";
+
 
 // ---------------------------------------------------------------------------
 // Lightweight store so other components can open the upload drawer with context
@@ -98,7 +100,8 @@ export function GlobalDropZone() {
     const [localDrawerOpen, setLocalDrawerOpen] = useState(false);
     const [target, setTarget] = useState<UploadTarget | null>(null);
     const dragCounterRef = useRef(0);
-    const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+    const [pendingFiles, setPendingFiles] = useState<ScannedFile[]>([]);
+
 
     const { uploadTarget, browseContext, setDismissOverlay, clear } = useDropZoneStore();
 
@@ -139,8 +142,9 @@ export function GlobalDropZone() {
 
     // Resolve target and open dock drawer with the given files
     const handleFileDrop = useCallback(
-        async (files: File[]) => {
+        async (files: ScannedFile[]) => {
             setPendingFiles(files);
+
 
             // Prefer the live browse context (tracks ghost dirs) over an API fetch
             if (browseContext) {
@@ -236,12 +240,12 @@ export function GlobalDropZone() {
             dragCounterRef.current = 0;
             setIsDragOver(false);
 
-            if (!e.dataTransfer?.files.length) return;
-            const files = Array.from(e.dataTransfer.files);
-            handleFileDrop(files);
+            if (!e.dataTransfer?.items.length) return;
+            collectDroppedFiles(e.dataTransfer.items).then(handleFileDrop);
         },
         [handleFileDrop],
     );
+
 
     return (
         <>

@@ -223,5 +223,39 @@
 
 .dark .hljs-regexp { color: #7ee787; }
 
-.dark .hljs-section,
-.dark .hljs-name { color: #ff7b72; }
+/* ─── Obsidian Callouts ─── */
+
+.callout {
+    --callout-bg-opacity: 0.1;
+    background-color: color-mix(in oklab, var(--callout-color), transparent 90%);
+    border-color: var(--callout-color);
+}
+
+.callout-header {
+    color: var(--callout-color);
+}
+
+.callout-info { --callout-color: oklch(0.6 0.15 250); }
+.callout-abstract { --callout-color: oklch(0.6 0.15 180); }
+.callout-tip { --callout-color: oklch(0.7 0.15 80); }
+.callout-success { --callout-color: oklch(0.6 0.15 140); }
+.callout-question { --callout-color: oklch(0.6 0.15 280); }
+.callout-warning { --callout-color: oklch(0.7 0.15 50); }
+.callout-failure { --callout-color: oklch(0.6 0.15 30); }
+.callout-danger { --callout-color: oklch(0.5 0.15 10); }
+.callout-example { --callout-color: oklch(0.6 0.15 300); }
+.callout-quote { --callout-color: oklch(0.6 0 0); }
+
+/* Dark mode adjustments for callouts */
+.dark .callout {
+    background-color: color-mix(in oklab, var(--callout-color), transparent 85%);
+}
+
+.callout-content {
+    color: var(--foreground);
+    @apply prose-p:my-2 first:prose-p:mt-0 last:prose-p:mb-0;
+}
+
+.callout summary {
+    @apply hover:opacity-80 transition-opacity;
+}

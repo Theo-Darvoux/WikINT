@@ -2,7 +2,7 @@
 
 ## Overview
 
-Three background workers handle resource cleanup. They prevent storage bloat, quota exhaustion, and orphaned S3 objects.
+Four background workers handle resource cleanup. They prevent storage bloat, quota exhaustion, and orphaned S3 objects, as well as ensure GDPR compliance.
 
 ## Worker Reliability Guards
 
@@ -11,6 +11,23 @@ WikINT workers include built-in safeguards to prevent system exhaustion:
 - **Disk Space Guard:** Before downloading any file for processing, the worker checks for available space in the temporary directory. If free space is less than **2.0x the file size**, the job is failed and automatically re-queued to prevent node crashes.
 - **Orphan Cleanup:** The system periodically checks the `cas/` prefix against Redis ref counts to identify unreferenced objects. Legacy `materials/` and `uploads/` objects are also cleaned up.
 - **Pull Request Expiration:** Open Pull Requests that have not been updated for **7 days** are automatically marked as `REJECTED` by the cleanup worker.
+- **GDPR Compliance:** Users who are soft-deleted are automatically purged after a **30-day grace period**.
+
+## GDPR Cleanup (`api/app/workers/gdpr_cleanup.py`)
+
+**Schedule:** Daily at 04:00 (configured via ARQ cron)
+
+Purges soft-deleted users past the 30-day grace period. This process utilizes the `hard_delete_user` service to ensure all associated private data (avatars, uploads, notifications) is securely removed from both the database and S3 storage.
+
+### Logic
+
+1. Query for users where `deleted_at` is older than 30 days.
+2. For each user, perform a `hard_delete_user` operation:
+   - Delete avatar from S3.
+   - Delete orphaned `Upload` records.
+   - Delete the user record (cascades to notifications, comments, annotations, etc.).
+3. Commit deletion.
+
 
 ## Cleanup Uploads (`api/app/workers/cleanup_uploads.py`)
 

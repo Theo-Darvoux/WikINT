@@ -37,96 +37,10 @@ import { uploadFile, getUploadConfig, logicalFileSize, type UploadConfig } from 
 import { ApiError } from "@/lib/api-client";
 import { TagInput } from "@/components/ui/tag-input";
 import { useDropZoneStore } from "@/components/pr/global-drop-zone";
+import { collectDroppedFiles, extractDirPaths, type ScannedFile } from "@/lib/drop-utils";
 
-// ---------------------------------------------------------------------------
-// Recursive folder traversal via FileSystem API
-// ---------------------------------------------------------------------------
 
-interface ScannedFile {
-    file: File;
-    /** Relative path from the drop root including filename, e.g. "FolderA/sub/file.pdf" */
-    relativePath: string;
-}
 
-async function readAllEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
-    const all: FileSystemEntry[] = [];
-    while (true) {
-        const batch = await new Promise<FileSystemEntry[]>((res, rej) =>
-            reader.readEntries(res, rej),
-        );
-        if (batch.length === 0) break;
-        all.push(...batch);
-    }
-    return all;
-}
-
-const MAX_TRAVERSE_DEPTH = 20;
-
-async function traverseEntry(
-    entry: FileSystemEntry,
-    pathPrefix: string,
-    out: ScannedFile[],
-    visited: Set<string>,
-    depth: number,
-): Promise<void> {
-    if (depth > MAX_TRAVERSE_DEPTH) return; // guard against very deep trees
-
-    if (entry.isFile) {
-        const file = await new Promise<File>((res, rej) =>
-            (entry as FileSystemFileEntry).file(res, rej),
-        );
-        out.push({ file, relativePath: pathPrefix + file.name });
-    } else if (entry.isDirectory) {
-        const dirEntry = entry as FileSystemDirectoryEntry;
-        // Use the full path to detect symlink cycles
-        const fullPath = dirEntry.fullPath;
-        if (visited.has(fullPath)) return; // cycle detected — skip
-        visited.add(fullPath);
-        const children = await readAllEntries(dirEntry.createReader());
-        for (const child of children) {
-            await traverseEntry(child, pathPrefix + dirEntry.name + "/", out, visited, depth + 1);
-        }
-    }
-}
-
-/** Collect all files from a DataTransferItemList, preserving folder structure. */
-async function collectDroppedFiles(items: DataTransferItemList): Promise<ScannedFile[]> {
-    const out: ScannedFile[] = [];
-    const visited = new Set<string>(); // shared across all top-level entries
-    const promises: Promise<void>[] = [];
-    for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind !== "file") continue;
-        const entry = item.webkitGetAsEntry?.();
-        if (entry) {
-            promises.push(traverseEntry(entry, "", out, visited, 0));
-        } else {
-            // Fallback: no FileSystem API support
-            const f = item.getAsFile();
-            if (f) out.push({ file: f, relativePath: f.name });
-        }
-    }
-    await Promise.all(promises);
-    return out;
-}
-
-/** Derive all unique directory paths from a list of file paths (excluding root ""). */
-function extractDirPaths(scanned: ScannedFile[]): string[] {
-    const dirs = new Set<string>();
-    for (const { relativePath } of scanned) {
-        const parts = relativePath.split("/");
-        // Parts: ["FolderA", "sub", "file.pdf"] → dirs: ["FolderA", "FolderA/sub"]
-        for (let i = 1; i < parts.length; i++) {
-            dirs.add(parts.slice(0, i).join("/"));
-        }
-    }
-    // Sort by depth so parents come before children
-    return [...dirs].sort((a, b) => {
-        const da = a.split("/").length;
-        const db = b.split("/").length;
-        return da !== db ? da - db : a.localeCompare(b);
-    });
-}
 
 interface UploadDrawerProps {
     open: boolean;
@@ -138,8 +52,9 @@ interface UploadDrawerProps {
     /** When set, uploaded files become attachments of this material */
     parentMaterialId?: string | null;
     /** Files to auto-add when the drawer opens (from global drop zone) */
-    initialFiles?: File[];
+    initialFiles?: File[] | ScannedFile[];
 }
+
 
 const MAX_CONCURRENT_UPLOADS = 4; // simultaneous XHR uploads
 const MAX_FILES_PER_BATCH = 50;
@@ -374,133 +289,6 @@ export function UploadDrawer({
         drainQueue();
     }, [updateItem]);
 
-    /** Add flat files (from file input or flat drag). All go to current directory. */
-    const addFlatFiles = useCallback(
-        (newFiles: FileList | File[]) => {
-            const currentCount = useUploadQueue.getState().items.length;
-            const remaining = MAX_FILES_PER_BATCH - currentCount;
-            if (remaining <= 0) {
-                toast.error(`Maximum ${MAX_FILES_PER_BATCH} files per batch`);
-                return;
-            }
-            const capped = Array.from(newFiles).slice(0, remaining);
-            if (capped.length < newFiles.length) {
-                toast.warning(`Only adding ${remaining} file(s) — batch limit is ${MAX_FILES_PER_BATCH}`);
-            }
-
-            const newItems: QueueItem[] = [];
-            for (const f of capped) {
-                // ── Client-side validation using fetched config ──
-                const maxSize = (config?.max_file_size_mb || MAX_FILE_SIZE_MB) * 1024 * 1024;
-                if (f.size > maxSize) {
-                    toast.error(`${f.name} exceeds the ${config?.max_file_size_mb || MAX_FILE_SIZE_MB} MiB size limit`);
-                    continue;
-                }
-
-                if (config) {
-                    const ext = `.${f.name.split(".").pop()?.toLowerCase()}`;
-                    const isAllowedExt = config.allowed_extensions.includes(ext);
-                    const isAllowedMime = f.type ? config.allowed_mimetypes.includes(f.type) : false;
-
-                    // Allow if either the extension or the MIME type matches (some text files have no type)
-                    if (!isAllowedExt && !isAllowedMime && !f.type.startsWith("text/")) {
-                        toast.error(`File type '${f.type || ext}' is not supported.`);
-                        continue;
-                    }
-                }
-
-                const clientId = crypto.randomUUID();
-                fileObjectsRef.current.set(clientId, f);
-
-                // Create local preview if image/pdf
-                if (f.type.startsWith("image/") || f.type === "application/pdf") {
-                    previewUrlsRef.current.set(clientId, URL.createObjectURL(f));
-                }
-
-                newItems.push({
-                    clientId,
-                    uploadId: crypto.randomUUID(),
-                    fileName: f.name,
-                    fileSize: f.size,
-                    fileMimeType: f.type || "application/octet-stream",
-                    title: titleFromFilename(f.name),
-                    status: "pending",
-                    progress: 0,
-                    processingStatus: "",
-                    targetDirPath: "",
-                });
-            }
-
-            if (newItems.length === 0) return;
-            addItems(newItems);
-            for (const item of newItems) startUpload(item.clientId);
-        },
-        [addItems, startUpload, files.length],
-    );
-
-    // Auto-process files passed from global drop zone or external trigger
-    useEffect(() => {
-        if (open && initialFiles && initialFiles.length > 0 && !initialFilesProcessedRef.current) {
-            initialFilesProcessedRef.current = true;
-            queueMicrotask(() => addFlatFiles(initialFiles));
-        }
-        if (!open) {
-            initialFilesProcessedRef.current = false;
-        }
-    }, [open, initialFiles, addFlatFiles]);
-
-    // When the drawer is open, intercept drops ANYWHERE on the page and add files
-    const dismissOverlay = useDropZoneStore((s) => s.dismissOverlay);
-
-    // Clipboard paste for images
-    useEffect(() => {
-        if (!open) return;
-        const handlePaste = (e: ClipboardEvent) => {
-            if (!e.clipboardData) return;
-            const items = e.clipboardData.items;
-            const imageFiles: File[] = [];
-            for (let i = 0; i < items.length; i++) {
-                const item = items[i];
-                if (item.kind === "file" && item.type.startsWith("image/")) {
-                    const file = item.getAsFile();
-                    if (file) imageFiles.push(file);
-                }
-            }
-            if (imageFiles.length > 0) {
-                addFlatFiles(imageFiles);
-            }
-        };
-        document.addEventListener("paste", handlePaste);
-        return () => document.removeEventListener("paste", handlePaste);
-    }, [open, addFlatFiles]);
-
-    useEffect(() => {
-        if (!open) return;
-
-        const onDragOver = (e: DragEvent) => {
-            if (!e.dataTransfer?.types.includes("Files")) return;
-            e.preventDefault();
-            if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-        };
-
-        const onDrop = (e: DragEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dismissOverlay?.();
-            if (!e.dataTransfer?.files.length) return;
-            addFlatFiles(Array.from(e.dataTransfer.files));
-        };
-
-        // Use capture phase so we intercept before the Sheet overlay can swallow events
-        document.addEventListener("dragover", onDragOver, true);
-        document.addEventListener("drop", onDrop, true);
-
-        return () => {
-            document.removeEventListener("dragover", onDragOver, true);
-            document.removeEventListener("drop", onDrop, true);
-        };
-    }, [open, addFlatFiles, dismissOverlay]);
-
     /** Shared logic: validate, create dir temp IDs, build FileEntry[], start uploads. */
     const processScannedFiles = useCallback(
         (scanned: ScannedFile[]) => {
@@ -585,6 +373,96 @@ export function UploadDrawer({
         },
         [startUpload, nextTempId, addItems, files.length],
     );
+
+    /** Add flat files (from file input or flat drag). All go to current directory. */
+    const addFlatFiles = useCallback(
+        (newFiles: FileList | File[] | ScannedFile[]) => {
+            const currentCount = useUploadQueue.getState().items.length;
+            const remaining = MAX_FILES_PER_BATCH - currentCount;
+            if (remaining <= 0) {
+                toast.error(`Maximum ${MAX_FILES_PER_BATCH} files per batch`);
+                return;
+            }
+            const filesArray = Array.isArray(newFiles) ? newFiles : Array.from(newFiles);
+            const capped = (filesArray as (File | ScannedFile)[]).slice(0, remaining);
+            if (capped.length < newFiles.length) {
+                toast.warning(`Only adding ${remaining} file(s) — batch limit is ${MAX_FILES_PER_BATCH}`);
+            }
+
+            const scanned: ScannedFile[] = capped.map(f => {
+                if ("file" in f && "relativePath" in f) return f;
+                return { file: f, relativePath: f.name };
+            });
+
+            processScannedFiles(scanned);
+        },
+        [processScannedFiles, files.length],
+    );
+
+
+    // Auto-process files passed from global drop zone or external trigger
+    useEffect(() => {
+        if (open && initialFiles && initialFiles.length > 0 && !initialFilesProcessedRef.current) {
+            initialFilesProcessedRef.current = true;
+            queueMicrotask(() => addFlatFiles(initialFiles));
+        }
+        if (!open) {
+            initialFilesProcessedRef.current = false;
+        }
+    }, [open, initialFiles, addFlatFiles]);
+
+    // When the drawer is open, intercept drops ANYWHERE on the page and add files
+    const dismissOverlay = useDropZoneStore((s) => s.dismissOverlay);
+
+    // Clipboard paste for images
+    useEffect(() => {
+        if (!open) return;
+        const handlePaste = (e: ClipboardEvent) => {
+            if (!e.clipboardData) return;
+            const items = e.clipboardData.items;
+            const imageFiles: File[] = [];
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item.kind === "file" && item.type.startsWith("image/")) {
+                    const file = item.getAsFile();
+                    if (file) imageFiles.push(file);
+                }
+            }
+            if (imageFiles.length > 0) {
+                addFlatFiles(imageFiles);
+            }
+        };
+        document.addEventListener("paste", handlePaste);
+        return () => document.removeEventListener("paste", handlePaste);
+    }, [open, addFlatFiles]);
+
+    useEffect(() => {
+        if (!open) return;
+
+        const onDragOver = (e: DragEvent) => {
+            if (!e.dataTransfer?.types.includes("Files")) return;
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+        };
+
+        const onDrop = (e: DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dismissOverlay?.();
+            if (!e.dataTransfer?.files.length) return;
+            addFlatFiles(Array.from(e.dataTransfer.files));
+        };
+
+        // Use capture phase so we intercept before the Sheet overlay can swallow events
+        document.addEventListener("dragover", onDragOver, true);
+        document.addEventListener("drop", onDrop, true);
+
+        return () => {
+            document.removeEventListener("dragover", onDragOver, true);
+            document.removeEventListener("drop", onDrop, true);
+        };
+    }, [open, addFlatFiles, dismissOverlay]);
+
 
     /** Process a DataTransferItemList — handles dropped folders recursively. */
     const processDropItems = useCallback(

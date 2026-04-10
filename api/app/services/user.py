@@ -1,3 +1,4 @@
+import logging
 import typing
 import uuid
 from datetime import UTC, datetime
@@ -15,6 +16,11 @@ from app.models.pull_request import PRComment, PullRequest
 from app.models.user import User
 from app.models.view_history import ViewHistory
 from app.services.material import material_orm_to_dict
+from app.models.upload import Upload
+
+logger = logging.getLogger("wikint")
+from app.core.storage import delete_object, download_file, upload_file
+from app.core.avatar_processor import process_avatar
 
 
 async def onboard_user(
@@ -172,8 +178,6 @@ async def update_user_profile(
     avatar_url: str | None = None,
     auto_approve: bool | None = None,
 ) -> User:
-    from app.core.storage import delete_object, move_object
-
     if display_name is not None:
         user.display_name = display_name
     if bio is not None:
@@ -185,11 +189,53 @@ async def update_user_profile(
 
     if avatar_url is not None and avatar_url != user.avatar_url:
         final_url = avatar_url
-        if avatar_url.startswith("uploads/"):
-            # Move from uploads/ to permanent avatars/ prefix
-            new_key = avatar_url.replace("uploads/", "avatars/", 1)
-            await move_object(avatar_url, new_key)
-            final_url = new_key
+        
+        # Handle new avatar from quarantine
+        if avatar_url.startswith("quarantine/"):
+            # 1. Security check: Verify ownership and existence
+            stmt = select(Upload).where(
+                Upload.quarantine_key == avatar_url,
+                Upload.user_id == user.id
+            )
+            res = await db.execute(stmt)
+            upload_rec = res.scalar_one_or_none()
+            
+            if not upload_rec:
+                raise BadRequestError("Invalid avatar upload key or unauthorized")
+            
+            # 2. Process and Compress (Synchronous-ish)
+            import tempfile
+            from pathlib import Path
+            import uuid as uuid_pkg
+            
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                local_input = Path(tmp_dir) / "input_avatar"
+                await download_file(avatar_url, local_input)
+                
+                try:
+                    processed_path = process_avatar(local_input)
+                    try:
+                        # 3. Upload to permanent avatars/ prefix
+                        avatar_uuid = uuid_pkg.uuid4()
+                        new_key = f"avatars/{user.id}/{avatar_uuid}.webp"
+                        
+                        with open(processed_path, "rb") as f:
+                            await upload_file(
+                                f, 
+                                new_key, 
+                                content_type="image/webp",
+                                content_disposition="inline" # Avatars should be viewable inline
+                            )
+                        final_url = new_key
+                    finally:
+                        if processed_path.exists():
+                            processed_path.unlink()
+                except Exception as exc:
+                    logger.error("Avatar processing failed: %s", exc)
+                    raise BadRequestError(f"Failed to process avatar: {exc}")
+
+            # 4. Cleanup quarantine
+            await delete_object(avatar_url)
 
         # Delete old avatar from permanent storage if it's being replaced
         if (
