@@ -189,6 +189,7 @@ async def complete_upload(
 
     # We run mime correction exactly as we do in direct upload
     import os
+
     ext = os.path.splitext(intent["filename"])[1].lower()
 
     if real_mime != "application/octet-stream":
@@ -414,5 +415,7 @@ async def presigned_multipart_abort(
             await session.commit()
     except Exception as exc:
         logger.warning(
-            "Failed to update upload %s to cancelled: %s", intent["upload_id"], exc,
+            "Failed to update upload %s to cancelled: %s",
+            intent["upload_id"],
+            exc,
         )

@@ -173,7 +173,7 @@ async def get_directory_by_id(db: AsyncSession, directory_id: str | uuid.UUID) -
     return directory
 
 
-async def get_directory_children(db: AsyncSession, directory_id: str | uuid.UUID) -> dict:
+async def get_directory_children(db: AsyncSession, directory_id: str | uuid.UUID) -> dict[str, typing.Any]:
 
     if isinstance(directory_id, str):
         import uuid
@@ -285,13 +285,13 @@ async def get_directory_children(db: AsyncSession, directory_id: str | uuid.UUID
     return {"directories": dirs_with_counts, "materials": materials_out}
 
 
-async def get_directory_path(db: AsyncSession, directory_id: str | uuid.UUID) -> list[dict]:
+async def get_directory_path(db: AsyncSession, directory_id: str | uuid.UUID) -> list[dict[str, typing.Any]]:
 
     if isinstance(directory_id, str):
         import uuid
 
         directory_id = uuid.UUID(directory_id)
-    path: list[dict] = []
+    path: list[dict[str, typing.Any]] = []
     current: Directory | None = await get_directory_by_id(db, directory_id)
     seen: set[uuid.UUID] = set()
 
@@ -309,7 +309,7 @@ async def get_directory_path(db: AsyncSession, directory_id: str | uuid.UUID) ->
     return path
 
 
-async def resolve_browse_path(db: AsyncSession, path: str) -> dict:
+async def resolve_browse_path(db: AsyncSession, path: str) -> dict[str, typing.Any]:
     segments = [s for s in path.split("/") if s]
 
     if not segments:
@@ -320,10 +320,7 @@ async def resolve_browse_path(db: AsyncSession, path: str) -> dict:
     last_material: Material | None = None
 
     for i, segment in enumerate(segments):
-        if segment == "attachments":
-            if last_material is None:
-                raise NotFoundError("Invalid path: 'attachments' without a material context")
-
+        if segment == "attachments" and last_material is not None:
             # If there are more segments after 'attachments', resolve a specific attachment
             remaining = segments[i + 1 :]
             if remaining:

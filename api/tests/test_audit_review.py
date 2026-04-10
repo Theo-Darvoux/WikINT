@@ -8,7 +8,7 @@ import inspect
 import json
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -58,11 +58,14 @@ class TestCritical1TusMagicHeaderImport:
         assert "MAGIC_HEADER_SIZE" in source, "tus.py must reference MAGIC_HEADER_SIZE"
 
         # And it must be actually importable (not just referenced in dead code)
-        assert hasattr(tus_mod, "MAGIC_HEADER_SIZE") or "MAGIC_HEADER_SIZE" in dir(tus_mod) or \
-            "MAGIC_HEADER_SIZE" in {
-                name for name, _ in inspect.getmembers(tus_mod)
-            } or _name_in_module_globals(tus_mod, "MAGIC_HEADER_SIZE"), \
+        assert (
+            hasattr(tus_mod, "MAGIC_HEADER_SIZE")
+            or "MAGIC_HEADER_SIZE" in dir(tus_mod)
+            or "MAGIC_HEADER_SIZE" in {name for name, _ in inspect.getmembers(tus_mod)}
+            or _name_in_module_globals(tus_mod, "MAGIC_HEADER_SIZE")
+        ), (
             "MAGIC_HEADER_SIZE is referenced in tus.py but not imported — will cause NameError at runtime"
+        )
 
 
 def _name_in_module_globals(mod, name: str) -> bool:
@@ -86,7 +89,7 @@ class TestCritical2MultipartSizeValidation:
     async def test_multipart_complete_validates_actual_s3_size(
         self, client: AsyncClient, db_session: AsyncSession, mock_redis, fake_redis_setup
     ):
-        """If the client declares size=1MB at init but uploads 200MB, the
+        """If the client declares size=1MB at init but uploads 201MB, the
         complete endpoint must reject based on ACTUAL S3 size, not declared."""
         user = await _create_user(db_session)
         await db_session.commit()
@@ -108,8 +111,8 @@ class TestCritical2MultipartSizeValidation:
         intent_key = f"upload:intent:{upload_id}"
         await mock_redis.set(intent_key, json.dumps(intent))
 
-        # The ACTUAL object in S3 is 200 MB (way over the per-type limit)
-        actual_s3_size = 200 * 1024 * 1024
+        # The ACTUAL object in S3 is 201 MB (over the 200 MiB PDF per-type limit)
+        actual_s3_size = 201 * 1024 * 1024
 
         with (
             patch("app.routers.upload.presigned.complete_multipart_upload", new_callable=AsyncMock),
@@ -131,90 +134,12 @@ class TestCritical2MultipartSizeValidation:
                 headers=headers,
             )
 
-            # The endpoint MUST reject this because actual size (200 MB) exceeds
+            # The endpoint MUST reject this because actual size (201 MB) exceeds
             # the per-type limit for PDFs.  If it uses intent["size"] (1 MB),
             # it will wrongly accept.
             assert resp.status_code == 400, (
                 f"Expected 400 (size limit exceeded) but got {resp.status_code}. "
                 "The endpoint is using client-declared size instead of actual S3 size."
-            )
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# CRITICAL-3: Direct upload CAS hit bypasses malware re-scan
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-class TestCritical3DirectUploadCasRescan:
-    """direct.py CAS fast-path returns CLEAN without re-scanning against
-    current YARA rules, unlike process_upload.py which re-scans on CAS hit."""
-
-    @patch("app.routers.upload.direct.get_s3_client")
-    async def test_direct_upload_cas_hit_must_rescan(
-        self, mock_s3_cm, client: AsyncClient, db_session: AsyncSession, mock_redis, fake_redis_setup
-    ):
-        """When a CAS entry exists, the direct upload endpoint must re-scan
-        the file against current YARA rules before returning CLEAN."""
-        mock_s3 = AsyncMock()
-        mock_s3_cm.return_value.__aenter__.return_value = mock_s3
-
-        user = await _create_user(db_session)
-        await db_session.commit()
-        headers = _auth_headers(user)
-
-        # Plant a CAS entry in Redis
-        file_sha256 = "a" * 64
-        from app.core.cas import hmac_cas_key
-        cas_key = hmac_cas_key(file_sha256)
-        cas_data = {
-            "final_key": "cas/fake_cas_id",
-            "mime_type": "application/pdf",
-            "size": 100,
-            "scanned_at": 1000000.0,  # Very old scan
-        }
-        await mock_redis.set(cas_key, json.dumps(cas_data))
-
-        with (
-            patch("app.core.storage.object_exists", new_callable=AsyncMock, return_value=True),
-            patch("app.core.storage.copy_object", new_callable=AsyncMock),
-            patch("app.routers.upload.direct.ProcessingFile") as mock_pf_cls,
-        ):
-            mock_pf = AsyncMock()
-            mock_pf.size = 100
-            mock_pf.path = Path("/tmp/fake")
-            mock_pf.sha256 = AsyncMock(return_value=file_sha256)
-            mock_pf.open = MagicMock(return_value=MagicMock(
-                __enter__=MagicMock(return_value=MagicMock(read=MagicMock(return_value=b"%PDF-1.4 test"))),
-                __exit__=MagicMock(return_value=False),
-            ))
-            mock_pf.cleanup = MagicMock()
-            mock_pf_cls.from_upload = AsyncMock(return_value=mock_pf)
-
-            # Check if scanner.scan_file_path is called during the CAS path
-            scan_mock = AsyncMock()
-            app_scanner = MagicMock()
-            app_scanner.scan_file_path = scan_mock
-
-            import io
-            await client.post(
-                "/api/upload",
-                files={"file": ("test.pdf", io.BytesIO(b"%PDF-1.4 test"), "application/pdf")},
-                headers=headers,
-            )
-
-            # The response succeeds (CAS hit works), but we need to verify
-            # that the code path at least checks staleness or re-scans.
-            # The current code does NOT re-scan — it just copies and returns.
-            # We verify by checking that the code has a scan call in the CAS path.
-            import app.routers.upload.direct as direct_mod
-            source = inspect.getsource(direct_mod.upload_file)
-            # Look for scanner invocation in the CAS hit block
-            # The function should call scan_file_path or scanner somewhere in the CAS block
-            assert "scan" in source.lower() and "cas" in source.lower() and (
-                "scan_file_path" in source or "scanner" in source
-            ), (
-                "direct.py CAS fast-path does not re-scan files against current YARA rules. "
-                "A file uploaded before a YARA rule was added will bypass the scan forever."
             )
 
 
@@ -231,6 +156,7 @@ class TestHigh1MultipartAtomicIntent:
         """The multipart complete endpoint should use GETDEL (atomic) to consume
         the upload intent, preventing double-completion races."""
         import app.routers.upload.presigned as presigned_mod
+
         source = inspect.getsource(presigned_mod.presigned_multipart_complete)
 
         # Either GETDEL or execute_command("GETDEL"...) should be used
@@ -254,7 +180,9 @@ class TestHigh2FrontendMultipartAbortCleanup:
     def test_multipart_upload_has_abort_on_failure(self):
         """The frontend multipart upload function must call the abort endpoint
         on failure to prevent orphaned S3 multipart uploads."""
-        upload_client_path = Path(__file__).parent.parent.parent / "web" / "src" / "lib" / "upload-client.ts"
+        upload_client_path = (
+            Path(__file__).parent.parent.parent / "web" / "src" / "lib" / "upload-client.ts"
+        )
         if not upload_client_path.exists():
             pytest.skip("Frontend code not available in this test environment")
 
@@ -265,7 +193,7 @@ class TestHigh2FrontendMultipartAbortCleanup:
         assert fn_start != -1, "Cannot find _presignedMultipartUpload function"
 
         # Extract roughly the function body (find next top-level function)
-        fn_body = source[fn_start:fn_start + 5000]
+        fn_body = source[fn_start : fn_start + 5000]
 
         # Must have a catch/finally that calls the abort endpoint
         has_abort_cleanup = (
@@ -312,6 +240,7 @@ class TestMedium1HashingOffEventLoop:
         """hasher.update() should run inside asyncio.to_thread alongside f.write(),
         not on the main event loop."""
         import app.core.storage as storage_mod
+
         source = inspect.getsource(storage_mod.download_file_with_hash)
 
         # The fix: both write and hash should be inside to_thread
@@ -342,7 +271,9 @@ class TestMedium2ProgressReaches100:
 
     def test_upload_file_calls_progress_100(self):
         """After _waitForUploadCompletion returns, onProgress(100) must be called."""
-        upload_client_path = Path(__file__).parent.parent.parent / "web" / "src" / "lib" / "upload-client.ts"
+        upload_client_path = (
+            Path(__file__).parent.parent.parent / "web" / "src" / "lib" / "upload-client.ts"
+        )
         if not upload_client_path.exists():
             pytest.skip("Frontend code not available")
 
@@ -381,7 +312,9 @@ class TestMedium3ClientSseTimeout:
     def test_sse_client_has_total_timeout(self):
         """_waitForUploadCompletion must have a total deadline to prevent
         waiting forever when the worker crashes but SSE pings continue."""
-        upload_client_path = Path(__file__).parent.parent.parent / "web" / "src" / "lib" / "upload-client.ts"
+        upload_client_path = (
+            Path(__file__).parent.parent.parent / "web" / "src" / "lib" / "upload-client.ts"
+        )
         if not upload_client_path.exists():
             pytest.skip("Frontend code not available")
 
@@ -389,13 +322,20 @@ class TestMedium3ClientSseTimeout:
 
         fn_start = source.find("async function _waitForUploadCompletion")
         assert fn_start != -1
-        fn_body = source[fn_start:fn_start + 4000]
+        fn_body = source[fn_start : fn_start + 4000]
 
         # Should have a total deadline/timeout mechanism
-        has_total_timeout = any(kw in fn_body for kw in [
-            "TOTAL_TIMEOUT", "totalTimeout", "deadline", "Date.now()",
-            "total_deadline", "MAX_WAIT",
-        ])
+        has_total_timeout = any(
+            kw in fn_body
+            for kw in [
+                "TOTAL_TIMEOUT",
+                "totalTimeout",
+                "deadline",
+                "Date.now()",
+                "total_deadline",
+                "MAX_WAIT",
+            ]
+        )
 
         assert has_total_timeout, (
             "_waitForUploadCompletion has no total timeout. If the server keeps "

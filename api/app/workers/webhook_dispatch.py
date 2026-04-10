@@ -137,7 +137,10 @@ async def dispatch_webhook(ctx: dict, *, upload_id: str, attempt: int = 1) -> No
         if response.is_success:
             logger.info(
                 "Webhook delivered for upload %s (attempt %d/%d, status %d)",
-                upload_id, attempt, _MAX_ATTEMPTS, response.status_code,
+                upload_id,
+                attempt,
+                _MAX_ATTEMPTS,
+                response.status_code,
             )
             upload_webhook_total.labels(outcome="success").inc()
             return
@@ -145,7 +148,8 @@ async def dispatch_webhook(ctx: dict, *, upload_id: str, attempt: int = 1) -> No
             # 4xx: permanent client error — don't retry
             logger.warning(
                 "Webhook HTTP %d for upload %s (permanent, not retrying)",
-                response.status_code, upload_id,
+                response.status_code,
+                upload_id,
             )
             upload_webhook_total.labels(outcome="http_error").inc()
             return
@@ -156,7 +160,10 @@ async def dispatch_webhook(ctx: dict, *, upload_id: str, attempt: int = 1) -> No
 
     logger.warning(
         "Webhook transient failure for upload %s (attempt %d/%d): %s",
-        upload_id, attempt, _MAX_ATTEMPTS, transient_failure,
+        upload_id,
+        attempt,
+        _MAX_ATTEMPTS,
+        transient_failure,
     )
 
     # ── Exponential backoff via ARQ re-enqueue ────────────────────────────────
@@ -174,7 +181,10 @@ async def dispatch_webhook(ctx: dict, *, upload_id: str, attempt: int = 1) -> No
             )
             logger.info(
                 "Webhook re-enqueued for upload %s (attempt %d → %d, defer %ds)",
-                upload_id, attempt, attempt + 1, backoff,
+                upload_id,
+                attempt,
+                attempt + 1,
+                backoff,
             )
             return
 
@@ -185,10 +195,10 @@ async def dispatch_webhook(ctx: dict, *, upload_id: str, attempt: int = 1) -> No
     upload_webhook_total.labels(outcome="network_error").inc()
 
     try:
-        from app.workers.process_upload import _insert_dead_letter
+        from app.workers.upload.repository import UploadWorkerRepository
 
-        await _insert_dead_letter(
-            ctx,
+        repo = UploadWorkerRepository(ctx)
+        await repo.insert_dead_letter(
             upload_id=upload_id,
             job_name="dispatch_webhook",
             payload={"upload_id": upload_id, "attempt": attempt},

@@ -324,6 +324,7 @@ async def generate_presigned_put(
         if checksum_sha256 is not None:
             params["ChecksumAlgorithm"] = "SHA256"
             import base64
+
             params["ChecksumSHA256"] = base64.b64encode(bytes.fromhex(checksum_sha256)).decode()
         url: str = await client.generate_presigned_url(
             "put_object",
@@ -337,6 +338,8 @@ async def generate_presigned_get(
     file_key: str,
     ttl: int = 900,
     force_download: bool = True,
+    filename: str | None = None,
+    content_type: str | None = None,
 ) -> str:
     """Generate a presigned GET URL for a stored object.
 
@@ -347,6 +350,9 @@ async def generate_presigned_get(
         force_download: When True (default) sets ``ResponseContentDisposition``
             to ``attachment`` so browsers download rather than render the file.
             Pass False only for inline viewing (e.g. OnlyOffice integration).
+        filename: Override the download filename via ResponseContentDisposition.
+            Essential for CAS keys (``cas/{hmac}``) which are opaque hashes.
+        content_type: Override the response Content-Type via ResponseContentType.
     """
     if file_key.startswith("quarantine/"):
         raise ValueError(
@@ -357,8 +363,22 @@ async def generate_presigned_get(
         "Bucket": settings.s3_bucket,
         "Key": file_key,
     }
-    if force_download:
+
+    if filename:
+        from urllib.parse import quote
+
+        ascii_safe = filename.encode("ascii", "replace").decode()
+        utf8_encoded = quote(filename)
+        disposition = "attachment" if force_download else "inline"
+        params["ResponseContentDisposition"] = (
+            f'{disposition}; filename="{ascii_safe}"; '
+            f"filename*=UTF-8''{utf8_encoded}"
+        )
+    elif force_download:
         params["ResponseContentDisposition"] = "attachment"
+
+    if content_type:
+        params["ResponseContentType"] = content_type
 
     async with get_s3_client() as client:
         url: str = await client.generate_presigned_url(

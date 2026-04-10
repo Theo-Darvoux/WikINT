@@ -69,9 +69,7 @@ def is_safe_url(url: str) -> bool:
             try:
                 ip = ip_address(ip_str)
                 if ip.is_private or ip.is_loopback or ip.is_link_local:
-                    logger.warning(
-                        "URL blocked: %s resolves to private IP %s", hostname, ip_str
-                    )
+                    logger.warning("URL blocked: %s resolves to private IP %s", hostname, ip_str)
                     return False
             except ValueError:
                 continue

@@ -16,6 +16,7 @@ async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     import typing
+
     async with async_session_factory() as session:
         jobs: list[tuple[typing.Any, ...]] = []
         session.info["post_commit_jobs"] = jobs

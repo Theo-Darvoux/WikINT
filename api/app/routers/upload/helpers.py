@@ -111,11 +111,14 @@ async def _check_pending_cap(
             from app.models.upload import Upload
 
             async with async_session_factory() as _db:
-                db_count = await _db.scalar(
-                    select(func.count())
-                    .select_from(Upload)
-                    .where(Upload.user_id == UUID(user_id), Upload.status == "pending")
-                ) or 0
+                db_count = (
+                    await _db.scalar(
+                        select(func.count())
+                        .select_from(Upload)
+                        .where(Upload.user_id == UUID(user_id), Upload.status == "pending")
+                    )
+                    or 0
+                )
             if db_count >= cap:
                 raise BadRequestError(
                     f"Too many pending uploads ({cap} max). "
@@ -158,7 +161,17 @@ async def _enqueue_processing(
 
     # Priority-based queue routing
     is_fast_mime = any(mime_type.startswith(m) for m in ("text/", "image/"))
-    is_heavy_mime = any(mime_type.startswith(m) for m in ("video/", "application/pdf", "application/zip", "application/x-zip-compressed", "application/epub+zip", "application/vnd.openxmlformats-officedocument"))
+    is_heavy_mime = any(
+        mime_type.startswith(m)
+        for m in (
+            "video/",
+            "application/pdf",
+            "application/zip",
+            "application/x-zip-compressed",
+            "application/epub+zip",
+            "application/vnd.openxmlformats-officedocument",
+        )
+    )
 
     if is_fast_mime and not is_heavy_mime:
         queue_name = _FAST_QUEUE_NAME

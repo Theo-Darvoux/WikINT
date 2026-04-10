@@ -74,7 +74,7 @@ Each viewer handles a specific file type:
 - `VideoPlayer` — HTML5 video player
 - `AudioPlayer` — HTML5 audio player
 - `CodeViewer` — Syntax-highlighted code (highlight.js or similar)
-- `MarkdownViewer` — Rendered markdown
+- `MarkdownViewer` — Rendered markdown (with GFM, WikiLinks, and Mermaid diagrams)
 - `EpubViewer` — EPUB reader
 - `DjvuViewer` — DjVu document viewer
 - `OfficeViewer` — OnlyOffice integration for docx/xlsx/pptx

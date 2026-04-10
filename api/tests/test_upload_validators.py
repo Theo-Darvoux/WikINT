@@ -1,6 +1,5 @@
 """Tests for upload/validators.py — filename validation, MIME correction, size checks."""
 
-
 import pytest
 
 from app.core.exceptions import BadRequestError

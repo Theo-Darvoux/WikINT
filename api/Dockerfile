@@ -2,8 +2,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
+# Install uv via pip to avoid ghcr.io network timeouts
+RUN pip install --no-cache-dir uv
 # Install system dependencies for yara-python, ghostscript (PDF compression), ffmpeg (video compression), bubblewrap (sandboxing), and exiftool (metadata stripping)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libyara-dev \

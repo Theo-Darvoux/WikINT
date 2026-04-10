@@ -7,7 +7,7 @@ from app.models.download_audit import DownloadAudit
 from app.models.flag import Flag
 from app.models.material import Material, MaterialVersion
 from app.models.notification import Notification
-from app.models.pull_request import PRComment, PRVote, PullRequest
+from app.models.pull_request import PRComment, PRFileClaim, PullRequest
 from app.models.tag import Tag, directory_tags, material_tags
 from app.models.user import User
 from app.models.view_history import ViewHistory
@@ -24,7 +24,7 @@ __all__ = [
     "MaterialVersion",
     "Notification",
     "PRComment",
-    "PRVote",
+    "PRFileClaim",
     "PullRequest",
     "Tag",
     "User",

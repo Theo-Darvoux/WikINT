@@ -6,6 +6,7 @@ import threading
 # keeping the pytest process open. We disable Python's strict thread shutdown waiting.
 try:
     import concurrent.futures.thread
+
     atexit.unregister(concurrent.futures.thread._python_exit)
 except Exception:
     pass

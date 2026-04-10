@@ -157,6 +157,7 @@ async def get_contributions(
             serialized_items.append(PullRequestOut.model_validate(item))
         elif type == "materials":
             from typing import cast
+
             m_item = cast(dict[str, typing.Any], item)
             serialized_items.append(
                 MaterialDetail.model_validate(

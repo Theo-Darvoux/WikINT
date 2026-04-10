@@ -27,8 +27,13 @@ async def test_reconcile_aborts_orphan():
     ctx = {"redis": mock_redis, "db_sessionmaker": mock_session_factory}
 
     with (
-        patch("app.workers.reconcile_multipart.list_multipart_uploads", side_effect=mock_list_multipart),
-        patch("app.workers.reconcile_multipart.abort_multipart_upload", new_callable=AsyncMock) as m_abort
+        patch(
+            "app.workers.reconcile_multipart.list_multipart_uploads",
+            side_effect=mock_list_multipart,
+        ),
+        patch(
+            "app.workers.reconcile_multipart.abort_multipart_upload", new_callable=AsyncMock
+        ) as m_abort,
     ):
         await reconcile_multipart_uploads(ctx)
         m_abort.assert_called_once_with("quarantine/u1/up1/f.txt", "s3-orphan")
@@ -56,8 +61,13 @@ async def test_reconcile_skips_active_tus():
     ctx = {"redis": mock_redis, "db_sessionmaker": mock_session_factory}
 
     with (
-        patch("app.workers.reconcile_multipart.list_multipart_uploads", side_effect=mock_list_multipart),
-        patch("app.workers.reconcile_multipart.abort_multipart_upload", new_callable=AsyncMock) as m_abort
+        patch(
+            "app.workers.reconcile_multipart.list_multipart_uploads",
+            side_effect=mock_list_multipart,
+        ),
+        patch(
+            "app.workers.reconcile_multipart.abort_multipart_upload", new_callable=AsyncMock
+        ) as m_abort,
     ):
         await reconcile_multipart_uploads(ctx)
         m_abort.assert_not_called()
@@ -79,8 +89,13 @@ async def test_reconcile_skips_recent():
     ctx = {"redis": mock_redis, "db_sessionmaker": mock_session_factory}
 
     with (
-        patch("app.workers.reconcile_multipart.list_multipart_uploads", side_effect=mock_list_multipart),
-        patch("app.workers.reconcile_multipart.abort_multipart_upload", new_callable=AsyncMock) as m_abort
+        patch(
+            "app.workers.reconcile_multipart.list_multipart_uploads",
+            side_effect=mock_list_multipart,
+        ),
+        patch(
+            "app.workers.reconcile_multipart.abort_multipart_upload", new_callable=AsyncMock
+        ) as m_abort,
     ):
         await reconcile_multipart_uploads(ctx)
         m_abort.assert_not_called()

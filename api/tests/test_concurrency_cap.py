@@ -23,8 +23,8 @@ async def test_tus_concurrency_cap_enforced():
     # Mock INCR to return a value higher than the limit (8)
     mock_redis.incr.return_value = 10
 
-
     import uuid
+
     response = await tus_patch(uuid.UUID(tus_id), mock_request, mock_user, mock_redis)
 
     assert response.status_code == 429

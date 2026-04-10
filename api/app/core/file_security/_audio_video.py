@@ -6,6 +6,7 @@ Provides:
 - _compress_video_path: ffmpeg H.264/VP9 re-encode (path-based)
 - _convert_to_opus_path: ffmpeg Opus conversion (path-based)
 """
+
 import asyncio
 import logging
 import tempfile
@@ -46,39 +47,172 @@ _AUDIO_FILENAME_HINTS: dict[str, str] = {
 def _build_video_codec_args(suffix: str) -> list[str]:
     """Return ffmpeg codec arguments for the given video container suffix based on compression profile."""
     from app.config import settings
+
     profile = settings.video_compression_profile
 
     # Determine arguments based on profile
     if profile == "light":
         scale_vf = None
         framerate = None
-        mp4_args = ["-c:v", "libx264", "-crf", "28", "-preset", "fast", "-c:a", "aac", "-b:a", "128k"]
-        webm_args = ["-c:v", "libvpx-vp9", "-crf", "35", "-b:v", "0", "-c:a", "libopus", "-b:a", "96k"]
+        mp4_args = [
+            "-c:v",
+            "libx264",
+            "-crf",
+            "32",
+            "-preset",
+            "veryfast",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+        ]
+        webm_args = [
+            "-c:v",
+            "libvpx-vp9",
+            "-crf",
+            "39",
+            "-b:v",
+            "0",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "96k",
+        ]
     elif profile == "medium":
         scale_vf = None
         framerate = None
-        mp4_args = ["-c:v", "libx264", "-crf", "32", "-preset", "medium", "-c:a", "aac", "-b:a", "128k"]
-        webm_args = ["-c:v", "libvpx-vp9", "-crf", "42", "-b:v", "0", "-c:a", "libopus", "-b:a", "96k"]
+        mp4_args = [
+            "-c:v",
+            "libx264",
+            "-crf",
+            "36",
+            "-preset",
+            "veryfast",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+        ]
+        webm_args = [
+            "-c:v",
+            "libvpx-vp9",
+            "-crf",
+            "46",
+            "-b:v",
+            "0",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "96k",
+        ]
     elif profile == "aggressive":
         scale_vf = "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2"
         framerate = None
-        mp4_args = ["-c:v", "libx264", "-crf", "36", "-preset", "medium", "-c:a", "aac", "-b:a", "96k"]
-        webm_args = ["-c:v", "libvpx-vp9", "-crf", "46", "-b:v", "0", "-c:a", "libopus", "-b:a", "64k"]
+        mp4_args = [
+            "-c:v",
+            "libx264",
+            "-crf",
+            "40",
+            "-preset",
+            "veryfast",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "96k",
+        ]
+        webm_args = [
+            "-c:v",
+            "libvpx-vp9",
+            "-crf",
+            "50",
+            "-b:v",
+            "0",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "64k",
+        ]
     elif profile == "heavy":
         scale_vf = "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2"
         framerate = None
-        mp4_args = ["-c:v", "libx264", "-crf", "40", "-preset", "medium", "-c:a", "aac", "-b:a", "64k"]
-        webm_args = ["-c:v", "libvpx-vp9", "-crf", "50", "-b:v", "0", "-c:a", "libopus", "-b:a", "48k"]
+        mp4_args = [
+            "-c:v",
+            "libx264",
+            "-crf",
+            "44",
+            "-preset",
+            "veryfast",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "64k",
+        ]
+        webm_args = [
+            "-c:v",
+            "libvpx-vp9",
+            "-crf",
+            "54",
+            "-b:v",
+            "0",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "48k",
+        ]
     elif profile == "extreme":
         scale_vf = "scale='min(854,iw)':'min(480,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2"
         framerate = "24"
-        mp4_args = ["-c:v", "libx264", "-crf", "48", "-preset", "medium", "-c:a", "aac", "-b:a", "48k"]
-        webm_args = ["-c:v", "libvpx-vp9", "-crf", "56", "-b:v", "0", "-c:a", "libopus", "-b:a", "32k"]
-    else: # Fallback to medium
+        mp4_args = [
+            "-c:v",
+            "libx264",
+            "-crf",
+            "51",
+            "-preset",
+            "veryfast",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "48k",
+        ]
+        webm_args = [
+            "-c:v",
+            "libvpx-vp9",
+            "-crf",
+            "60",
+            "-b:v",
+            "0",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "32k",
+        ]
+    else:  # Fallback to medium
         scale_vf = None
         framerate = None
-        mp4_args = ["-c:v", "libx264", "-crf", "32", "-preset", "medium", "-c:a", "aac", "-b:a", "128k"]
-        webm_args = ["-c:v", "libvpx-vp9", "-crf", "42", "-b:v", "0", "-c:a", "libopus", "-b:a", "96k"]
+        mp4_args = [
+            "-c:v",
+            "libx264",
+            "-crf",
+            "36",
+            "-preset",
+            "veryfast",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+        ]
+        webm_args = [
+            "-c:v",
+            "libvpx-vp9",
+            "-crf",
+            "46",
+            "-b:v",
+            "0",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "96k",
+        ]
 
     base_args = webm_args if suffix == ".webm" else mp4_args
     final_args = []
@@ -103,9 +237,14 @@ async def _strip_video_from_path(file_path: Path, mime_type: str) -> Path:
     def _run(src_name: str, dst_name: str) -> "object":
         return sandboxed_run(
             [
-                "ffmpeg", "-y", "-i", src_name,
-                "-map_metadata", "-1",  # strip all global/stream metadata
-                "-c", "copy",           # no re-encoding
+                "ffmpeg",
+                "-y",
+                "-i",
+                src_name,
+                "-map_metadata",
+                "-1",  # strip all global/stream metadata
+                "-c",
+                "copy",  # no re-encoding
                 dst_name,
             ],
             rw_paths=[Path(src_name).parent, Path(dst_name).parent],
@@ -116,11 +255,11 @@ async def _strip_video_from_path(file_path: Path, mime_type: str) -> Path:
     try:
         async with _get_concurrency_guard("subprocess"):
             result = await asyncio.to_thread(_run, str(file_path), dst_name)
-        if result.returncode != 0:  # type: ignore[union-attr]
-            stderr_str = result.stderr.decode('utf-8', errors='replace')  # type: ignore[union-attr]
+        if result.returncode != 0:  # type: ignore[attr-defined]
+            stderr_str = result.stderr.decode("utf-8", errors="replace")  # type: ignore[attr-defined]
             logger.warning(
                 "ffmpeg metadata strip path failed (rc=%d): %s",
-                result.returncode,  # type: ignore[union-attr]
+                result.returncode,  # type: ignore[attr-defined]
                 stderr_str[-500:],
             )
             Path(dst_name).unlink(missing_ok=True)
@@ -187,8 +326,16 @@ async def _convert_to_opus_path(file_path: Path) -> Path:
             result = await asyncio.to_thread(
                 sandboxed_run,
                 [
-                    "ffmpeg", "-y", "-i", str(file_path),
-                    "-c:a", "libopus", "-b:a", "96k", "-map_metadata", "-1",
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(file_path),
+                    "-c:a",
+                    "libopus",
+                    "-b:a",
+                    "96k",
+                    "-map_metadata",
+                    "-1",
                     out_name,
                 ],
                 rw_paths=[Path(out_name).parent, file_path.parent],

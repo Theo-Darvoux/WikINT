@@ -50,7 +50,6 @@ async def list_annotations(
         ThreadOut(
             root=AnnotationOut.model_validate(r),
             replies=[AnnotationOut.model_validate(rep) for rep in r._replies],
-
         )
         for r in roots
     ]
@@ -105,7 +104,7 @@ async def remove_annotation(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     annotation = await delete_annotation(db, annotation_id, user)
-    if annotation:
+    if annotation is not None:
         broadcast_to_topic(str(annotation.material_id), {"type": "annotation_deleted"})
 
 

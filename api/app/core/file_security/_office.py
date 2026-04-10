@@ -7,6 +7,7 @@ Provides:
 - _strip_ole2_from_path: exiftool-based OLE2 metadata strip (path-based)
 - _strip_ooxml_from_path: ZIP-based OOXML metadata strip (removes docProps/)
 """
+
 import asyncio
 import logging
 import tempfile
@@ -55,6 +56,7 @@ _OLE2_AUTO_EXEC = frozenset(
 
 async def _run_exiftool(file_path: Path) -> "object":
     """Run ``exiftool -all= -overwrite_original`` on *file_path* in-place."""
+
     def _run() -> "object":
         return sandboxed_run(
             ["exiftool", "-all=", "-overwrite_original", str(file_path)],
@@ -122,11 +124,11 @@ async def _strip_ole2_from_path(file_path: Path) -> Path:
 
     try:
         result = await _run_exiftool(new_path)
-        if result.returncode != 0:  # type: ignore[union-attr]
+        if result.returncode != 0:  # type: ignore
             logger.warning(
                 "exiftool OLE2 metadata strip path failed (rc=%d): %s",
-                result.returncode,  # type: ignore[union-attr]
-                result.stderr[:500],  # type: ignore[union-attr]
+                result.returncode,  # type: ignore
+                result.stderr[:500],  # type: ignore
             )
             new_path.unlink(missing_ok=True)
             return file_path
@@ -145,6 +147,7 @@ async def _strip_ooxml_from_path(file_path: Path) -> Path:
     new_path = Path(tempfile.NamedTemporaryFile(delete=False).name)
 
     try:
+
         def _zip_strip() -> None:
             with (
                 zipfile.ZipFile(file_path, "r") as zin,
@@ -159,9 +162,9 @@ async def _strip_ooxml_from_path(file_path: Path) -> Path:
                     if item.file_size > _ZIP_MAX_ENTRY_BYTES:
                         raise ValueError(f"ZIP entry '{item.filename}' is too large")
 
-                    # Strip docProps/ (core.xml, app.xml, custom.xml)
-                    # and _rels/ thumbnail references (can contain sensitive previews)
-                    if item.filename.startswith("docProps/"):
+                    # Strip docProps/ (OOXML metadata: core.xml, app.xml, custom.xml)
+                    # Strip Basic/ and Scripts/ (ODF macro/script containers)
+                    if item.filename.startswith(("docProps/", "Basic/", "Scripts/")):
                         continue
 
                     safe_name = _sanitize_zip_entry_name(item.filename)
@@ -178,9 +181,13 @@ async def _strip_ooxml_from_path(file_path: Path) -> Path:
                             total_actual_written += len(chunk)
 
                             if written > _ZIP_MAX_ENTRY_BYTES:
-                                raise ValueError(f"ZIP entry '{item.filename}' expanded beyond limit")
+                                raise ValueError(
+                                    f"ZIP entry '{item.filename}' expanded beyond limit"
+                                )
                             if total_actual_written > _ZIP_MAX_TOTAL_BYTES:
-                                raise ValueError("ZIP archive actual uncompressed content exceeds total limit")
+                                raise ValueError(
+                                    "ZIP archive actual uncompressed content exceeds total limit"
+                                )
 
                             dest.write(chunk)
 

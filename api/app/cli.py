@@ -17,7 +17,6 @@ async def _seed(email: str, role: str) -> None:
     from sqlalchemy import select
 
     from app.core.database import async_session_factory
-    from app.models.directory import Directory, DirectoryType
     from app.models.user import User, UserRole
 
     async with async_session_factory() as session:
@@ -25,57 +24,13 @@ async def _seed(email: str, role: str) -> None:
         user = user_res.scalar_one_or_none()
 
         role_enum = UserRole(role)
-        if user:
+        if user is not None:
             user.role = role_enum
             typer.echo(f"Updated {email} to role '{role}'")
         else:
             user = User(email=email, role=role_enum)
             session.add(user)
             typer.echo(f"Created user {email} with role '{role}'")
-
-        root_structure: list[tuple[str, list[tuple[str, list]]]] = [
-            ("1A", [("S1", []), ("S2", [])]),
-            ("2A", [("S1", []), ("S2", [])]),
-            ("3A", [("S1", []), ("S2", [])]),
-        ]
-
-        for year_name, semesters in root_structure:
-            year_res = await session.execute(
-                select(Directory).where(
-                    Directory.slug == year_name.lower(),
-                    Directory.parent_id.is_(None),
-                )
-            )
-            year_dir = year_res.scalar_one_or_none()
-            if not year_dir:
-                year_dir = Directory(
-                    name=year_name,
-                    slug=year_name.lower(),
-                    type=DirectoryType.FOLDER,
-                    created_by=user.id,
-                )
-                session.add(year_dir)
-                await session.flush()
-                typer.echo(f"  Created directory: {year_name}")
-
-            for sem_name, _ in semesters:
-                sem_res = await session.execute(
-                    select(Directory).where(
-                        Directory.slug == sem_name.lower(),
-                        Directory.parent_id == year_dir.id,
-                    )
-                )
-                sem_dir = sem_res.scalar_one_or_none()
-                if not sem_dir:
-                    sem_dir = Directory(
-                        name=sem_name,
-                        slug=sem_name.lower(),
-                        type=DirectoryType.FOLDER,
-                        parent_id=year_dir.id,
-                        created_by=user.id,
-                    )
-                    session.add(sem_dir)
-                    typer.echo(f"  Created directory: {year_name}/{sem_name}")
 
         await session.commit()
         typer.echo("Seed complete.")
@@ -142,7 +97,7 @@ async def _reindex() -> None:
                     "tags": [t.name for t in mat.tags] if mat.tags else [],
                     "authorName": mat.author.display_name if mat.author else None,
                     "directory_id": str(mat.directory_id) if mat.directory_id else None,
-                    "created_at": mat.created_at.isoformat() if mat.created_at else None,
+                    "created_at": mat.created_at.isoformat() if mat.created_at is not None else None,
                     "ancestor_path": ancestor_path,
                     "extra_searchable": extra,
                     "browse_path": browse_path,
@@ -187,7 +142,7 @@ async def _reindex() -> None:
                     "tags": [t.name for t in dir_obj.tags] if dir_obj.tags else [],
                     "code": code,
                     "parent_id": str(dir_obj.parent_id) if dir_obj.parent_id else None,
-                    "created_at": dir_obj.created_at.isoformat() if dir_obj.created_at else None,
+                    "created_at": dir_obj.created_at.isoformat() if dir_obj.created_at is not None else None,
                     "ancestor_path": ancestor_path,
                     "extra_searchable": extra,
                     "browse_path": browse_path,
@@ -227,6 +182,144 @@ async def _year_rollover() -> None:
 
     await run_rollover({})
     typer.echo("Year rollover complete.")
+
+
+@app.command(name="migrate-cas-v2")
+def migrate_cas_v2(
+    dry_run: bool = typer.Option(True, help="Preview changes without writing"),
+    batch_size: int = typer.Option(100, help="Process this many rows per batch"),
+) -> None:
+    """Migrate MaterialVersion file_keys from materials/ to cas/ (CAS V2).
+
+    For each MaterialVersion with a materials/ file_key:
+    1. Find the original SHA-256 via the linked Upload row
+    2. Compute the HMAC CAS key and verify the cas/ S3 object exists
+    3. If missing, copy from materials/ to cas/
+    4. Update file_key to cas/{hmac} and set cas_sha256
+    5. Initialize CAS ref count in Redis
+    """
+    asyncio.run(_migrate_cas_v2(dry_run, batch_size))
+
+
+async def _migrate_cas_v2(dry_run: bool, batch_size: int) -> None:
+
+    from sqlalchemy import func, select
+
+    from app.core.cas import hmac_cas_key, increment_cas_ref
+    from app.core.database import async_session_factory
+    from app.core.redis import init_redis, redis_client
+    from app.core.storage import copy_object, init_s3_client, object_exists
+    from app.models.material import MaterialVersion
+    from app.models.upload import Upload
+
+    await init_s3_client()
+    await init_redis()
+
+    async with async_session_factory() as db:
+        total = await db.scalar(
+            select(func.count())
+            .select_from(MaterialVersion)
+            .where(MaterialVersion.file_key.like("materials/%"))
+        ) or 0
+
+    typer.echo(f"Found {total} MaterialVersion(s) with materials/ file_keys")
+    if total == 0:
+        typer.echo("Nothing to migrate.")
+        return
+
+    migrated = 0
+    skipped = 0
+    copied = 0
+    errors = 0
+    offset = 0
+
+    while offset < total:
+        async with async_session_factory() as db:
+            rows = (
+                await db.execute(
+                    select(MaterialVersion)
+                    .where(MaterialVersion.file_key.like("materials/%"))
+                    .order_by(MaterialVersion.id)
+                    .offset(offset)
+                    .limit(batch_size)
+                )
+            ).scalars().all()
+
+            if not rows:
+                break
+
+            for mv in rows:
+                try:
+                    # Find the Upload row that produced this file.
+                    # Strategy: match by upload_id embedded in the materials/ key path.
+                    # Key format: materials/{user_id}/{upload_id}/{filename}
+                    parts = mv.file_key.split("/")
+                    if len(parts) < 4:
+                        typer.echo(f"  SKIP {mv.id}: unexpected key format {mv.file_key}")
+                        skipped += 1
+                        continue
+
+                    upload_id_str = parts[2]
+
+                    upload = await db.scalar(
+                        select(Upload).where(Upload.upload_id == upload_id_str)
+                    )
+
+                    sha256: str | None = None
+                    if upload and upload.sha256:
+                        sha256 = upload.sha256
+                    elif upload and upload.content_sha256:
+                        sha256 = upload.content_sha256
+
+                    if not sha256:
+                        typer.echo(
+                            f"  SKIP {mv.id}: no SHA-256 found for upload {upload_id_str}"
+                        )
+                        skipped += 1
+                        continue
+
+                    cas_hmac = hmac_cas_key(sha256).split(":")[-1]
+                    cas_s3_key = f"cas/{cas_hmac}"
+
+                    if dry_run:
+                        exists = await object_exists(cas_s3_key)
+                        typer.echo(
+                            f"  [DRY] {mv.id}: {mv.file_key} -> {cas_s3_key} "
+                            f"(CAS exists: {exists})"
+                        )
+                        migrated += 1
+                        continue
+
+                    # Ensure CAS object exists
+                    if not await object_exists(cas_s3_key):
+                        await copy_object(mv.file_key, cas_s3_key)
+                        copied += 1
+
+                    # Update DB
+                    mv.file_key = cas_s3_key
+                    mv.cas_sha256 = sha256
+
+                    # Initialize CAS ref count
+                    await increment_cas_ref(redis_client, sha256)
+
+                    migrated += 1
+
+                except Exception as exc:
+                    typer.echo(f"  ERROR {mv.id}: {exc}")
+                    errors += 1
+
+            if not dry_run:
+                await db.commit()
+
+        offset += batch_size
+        typer.echo(f"  Progress: {min(offset, total)}/{total}")
+
+    typer.echo(
+        f"\nMigration {'preview' if dry_run else 'complete'}: "
+        f"{migrated} migrated, {copied} S3 copies, {skipped} skipped, {errors} errors"
+    )
+    if dry_run:
+        typer.echo("Run with --no-dry-run to apply changes.")
 
 
 if __name__ == "__main__":

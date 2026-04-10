@@ -22,6 +22,7 @@ async def startup(ctx: dict) -> None:
 
     try:
         import oletools.olevba as _olevba
+
         _ = _olevba
     except ImportError:
         raise RuntimeError(

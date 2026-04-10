@@ -35,7 +35,7 @@ async def get_material(
 ) -> MaterialDetail:
     data = await get_material_with_version(db, material_id)
     mat_dict = data["material"]  # already a plain dict
-    if user:
+    if user is not None:
         check_material_access(user.id, mat_dict)
     ver = data.get("current_version_info")
     mat_out = MaterialOut.model_validate(mat_dict)
@@ -54,7 +54,7 @@ async def get_material_download_url(
     await increment_download_count(db, material_id)
     data = await get_material_with_version(db, material_id)
     version = data.get("current_version_info")
-    if not version or not version.file_key:
+    if version is None or version.file_key is None:
         from app.core.exceptions import NotFoundError
 
         raise NotFoundError("No file available for download")
@@ -71,7 +71,11 @@ async def get_material_download_url(
 
     from app.core.storage import generate_presigned_get_url
 
-    url = await generate_presigned_get_url(version.file_key)
+    url = await generate_presigned_get_url(
+        version.file_key,
+        filename=version.file_name,
+        content_type=version.file_mime_type,
+    )
     return {"url": url}
 
 
@@ -87,7 +91,7 @@ async def inline_material(
     check_material_access(user.id, data)
 
     version = data.get("current_version_info")
-    if not version or not version.file_key:
+    if version is None or version.file_key is None:
         from app.core.exceptions import NotFoundError
 
         raise NotFoundError("No file available for preview")
@@ -98,7 +102,12 @@ async def inline_material(
     # to download so the browser never executes or parses unknown content.
     file_mime = getattr(version, "file_mime_type", "") or ""
     inline_safe = file_mime.startswith("image/") or file_mime == "application/pdf"
-    url = await generate_presigned_get_url(version.file_key, force_download=not inline_safe)
+    url = await generate_presigned_get_url(
+        version.file_key,
+        force_download=not inline_safe,
+        filename=version.file_name,
+        content_type=version.file_mime_type,
+    )
     return {"url": url}
 
 
@@ -120,11 +129,13 @@ async def stream_material_file(
     # (S7/S12) Ensure redis is available for auth checks
     if redis is None:
         from app.core.redis import redis_client
+
         redis = redis_client
 
-    if user:  # security dependency gives HTTPAuthorizationCredentials or None
+    if user is not None:  # security dependency gives HTTPAuthorizationCredentials or None
         try:
             from app.dependencies.auth import get_user_from_token
+
             effective_user = await get_user_from_token(db, redis, user.credentials)
         except Exception:
             pass
@@ -132,6 +143,7 @@ async def stream_material_file(
     if not effective_user and token:
         try:
             from app.dependencies.auth import get_user_from_token
+
             effective_user = await get_user_from_token(db, redis, token)
         except Exception:
             pass
@@ -143,7 +155,7 @@ async def stream_material_file(
     check_material_access(effective_user.id, data)
 
     version = data.get("current_version_info")
-    if not version or not version.file_key:
+    if version is None or version.file_key is None:
         raise NotFoundError("No file available")
 
     await record_download(
@@ -160,7 +172,11 @@ async def stream_material_file(
 
     # Redirect to presigned URL. S3/MinIO handles Range requests (206) perfectly,
     # which is required for browser media players to seek and parse metadata.
-    url = await generate_presigned_get_url(version.file_key)
+    url = await generate_presigned_get_url(
+        version.file_key,
+        filename=version.file_name,
+        content_type=version.file_mime_type,
+    )
     return RedirectResponse(url=url, status_code=302)
 
 
@@ -212,7 +228,11 @@ async def get_version_download_url(
 
     from app.core.storage import generate_presigned_get_url
 
-    url = await generate_presigned_get_url(version.file_key)
+    url = await generate_presigned_get_url(
+        version.file_key,
+        filename=version.file_name,
+        content_type=version.file_mime_type,
+    )
     return {"url": url}
 
 

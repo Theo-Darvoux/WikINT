@@ -57,6 +57,8 @@ hljs.registerAliases("toml", { languageName: "ini" });
 /* highlight.js theme CSS — loaded once */
 import "highlight.js/styles/github.css";
 
+const MAX_DISPLAY_BYTES = 512 * 1024; // 512 KiB
+
 interface CodeViewerProps {
     fileKey: string;
     materialId: string;
@@ -95,6 +97,7 @@ function getLang(fileName: string): string {
 
 export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
     const [content, setContent] = useState<string>("");
+    const [truncated, setTruncated] = useState(false);
     const [loading, setLoading] = useState(true);
     const codeRef = useRef<HTMLElement>(null);
 
@@ -112,7 +115,14 @@ export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
         fetchMaterialFile(materialId)
             .then((res) => res.text())
             .then((text) => {
-                if (!cancelled) setContent(text);
+                if (!cancelled) {
+                    if (text.length > MAX_DISPLAY_BYTES) {
+                        setTruncated(true);
+                        setContent(text.slice(0, MAX_DISPLAY_BYTES));
+                    } else {
+                        setContent(text);
+                    }
+                }
             })
             .catch(() => {
                 if (!cancelled) setContent("Failed to load file content.");
@@ -142,6 +152,11 @@ export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
 
     return (
         <div className="overflow-x-auto text-sm">
+            {truncated && (
+                <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                    <span>⚠ File truncated — showing first 512 KiB of a larger file. Download to view the full content.</span>
+                </div>
+            )}
             <pre className="!m-0 !rounded-none !bg-transparent p-0">
                 <code
                     ref={codeRef}

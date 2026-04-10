@@ -294,7 +294,9 @@ async def tus_patch(
                 async for data_chunk in request.stream():
                     total_read += len(data_chunk)
                     if total_read > chunk_size or total_read > settings.tus_chunk_max_bytes:
-                        raise BadRequestError("Payload size exceeded Content-Length or maximum limits.")
+                        raise BadRequestError(
+                            "Payload size exceeded Content-Length or maximum limits."
+                        )
                     await asyncio.to_thread(_write_and_hash, data_chunk)
 
                 if total_read != chunk_size:
@@ -321,7 +323,9 @@ async def tus_patch(
                 total_length = int(state["length"])
 
                 if state.get("sniffed") != "1" and current_offset < MAGIC_HEADER_SIZE:
-                    if (current_offset == 0 and chunk_size > 0) or (current_offset < MAGIC_HEADER_SIZE and chunk_size > 0):
+                    if (current_offset == 0 and chunk_size > 0) or (
+                        current_offset < MAGIC_HEADER_SIZE and chunk_size > 0
+                    ):
                         is_final = (current_offset + chunk_size) == total_length
 
                         if current_offset == 0 and (chunk_size >= MAGIC_HEADER_SIZE or is_final):
@@ -329,17 +333,24 @@ async def tus_patch(
                                 head = f.read(MAGIC_HEADER_SIZE)
                             detected_mime = guess_mime_from_bytes(head)
 
-                            if detected_mime != "application/octet-stream" and detected_mime != state["mime_type"]:
+                            if (
+                                detected_mime != "application/octet-stream"
+                                and detected_mime != state["mime_type"]
+                            ):
                                 logger.warning(
                                     "TUS MIME mismatch for %s: declared %s, detected %s",
-                                    tus_id_str, state["mime_type"], detected_mime
+                                    tus_id_str,
+                                    state["mime_type"],
+                                    detected_mime,
                                 )
                                 raise BadRequestError(
                                     f"File content ({detected_mime}) does not match declared type ({state['mime_type']}).",
-                                    code=ERR_TUS_CONTENT_TYPE
+                                    code=ERR_TUS_CONTENT_TYPE,
                                 )
                             await redis.hset(f"{_TUS_STATE_PREFIX}{tus_id_str}", "sniffed", "1")
-                        elif current_offset == 0 and chunk_size < MAGIC_HEADER_SIZE and not is_final:
+                        elif (
+                            current_offset == 0 and chunk_size < MAGIC_HEADER_SIZE and not is_final
+                        ):
                             pass
 
                 if client_offset != current_offset:

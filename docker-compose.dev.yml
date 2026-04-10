@@ -207,6 +207,7 @@ services:
 
 networks:
   frontend:
+  backend:
 
 volumes:
   minio_data:

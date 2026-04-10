@@ -4,6 +4,7 @@ Routes by MIME type to the appropriate compression strategy.
 SVG safety is always checked regardless of file size.
 Fail-open: returns original path + size on any non-security error.
 """
+
 import asyncio
 import logging
 import tempfile
@@ -75,7 +76,7 @@ async def compress_file_path(
     - application/pdf: Ghostscript profile (configurable, default /prepress)
     - video/mp4, video/webm: FFmpeg re-encode via configurable compression profiles (default 'heavy')
     - audio/*: FFmpeg to Opus conversion
-    - ZIP formats (DOCX/XLSX/PPTX/ODT/ODS/EPUB): re-deflate
+    - ZIP formats (DOCX/XLSX/PPTX/ODT/ODS/EPUB): content-aware re-compression
     - text/* + gzip-eligible MIME types: gzip level 9
 
     SVG files are validated against the security allowlist both before and after
@@ -96,7 +97,9 @@ async def compress_file_path(
             except Exception as gz_err:
                 logger.warning("SVG gzip failed: %s", gz_err)
                 if source_path != file_path:
-                    return CompressResultPath(source_path, source_path.stat().st_size, None, mime_type)
+                    return CompressResultPath(
+                        source_path, source_path.stat().st_size, None, mime_type
+                    )
                 return CompressResultPath(file_path, file_size, None, mime_type)
 
         # Skip compression entirely for very small files
@@ -104,7 +107,8 @@ async def compress_file_path(
             return CompressResultPath(file_path, file_size, None, mime_type)
 
         if mime_type == "application/pdf":
-            compressed = await _compress_pdf_path(file_path)
+            async with _get_concurrency_guard("image"):
+                compressed = await _compress_pdf_path(file_path)
             return CompressResultPath(compressed, compressed.stat().st_size, None, mime_type)
 
         if mime_type in ("video/mp4", "video/webm"):
@@ -136,7 +140,11 @@ async def compress_file_path(
                 compressed = await asyncio.to_thread(_compress_image_path, file_path)
 
             # If the file was successfully compressed/converted and it's not a GIF, it's now a WEBP
-            new_mime = "image/webp" if (compressed != file_path and mime_type != "image/gif") else mime_type
+            new_mime = (
+                "image/webp"
+                if (compressed != file_path and mime_type != "image/gif")
+                else mime_type
+            )
             return CompressResultPath(compressed, compressed.stat().st_size, None, new_mime)
 
     except SvgSecurityError:

@@ -37,25 +37,31 @@ def test_missing_scheme_is_blocked():
 # ── Private IP blocks ────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("ip", [
-    "127.0.0.1",
-    "::1",
-    "10.0.0.1",
-    "192.168.1.1",
-    "172.16.0.1",
-    "169.254.0.1",
-])
+@pytest.mark.parametrize(
+    "ip",
+    [
+        "127.0.0.1",
+        "::1",
+        "10.0.0.1",
+        "192.168.1.1",
+        "172.16.0.1",
+        "169.254.0.1",
+    ],
+)
 def test_private_ip_direct_is_blocked(ip):
     """Direct private/loopback/link-local IPs are blocked."""
     assert is_safe_url(f"https://{ip}/hook") is False
 
 
-@pytest.mark.parametrize("ip", [
-    "127.0.0.1",
-    "10.0.0.1",
-    "192.168.100.1",
-    "169.254.169.254",  # AWS metadata service
-])
+@pytest.mark.parametrize(
+    "ip",
+    [
+        "127.0.0.1",
+        "10.0.0.1",
+        "192.168.100.1",
+        "169.254.169.254",  # AWS metadata service
+    ],
+)
 def test_hostname_resolving_to_private_ip_is_blocked(ip):
     """A hostname that resolves to a private IP is blocked (DNS rebinding prevention)."""
     with patch(

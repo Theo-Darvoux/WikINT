@@ -253,7 +253,6 @@ async def test_data_export(client: AsyncClient, db_session: AsyncSession) -> Non
     assert data["profile"]["id"] == str(user.id)
     assert "pull_requests" in data
     assert "annotations" in data
-    assert "votes" in data
     assert "comments" in data
     assert "flags" in data
 

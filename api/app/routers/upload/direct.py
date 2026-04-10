@@ -10,7 +10,7 @@ from redis.asyncio import Redis
 
 from app.config import settings
 from app.core.constants import MAGIC_HEADER_SIZE, PRIVILEGED_ROLES
-from app.core.exceptions import BadRequestError, ServiceUnavailableError
+from app.core.exceptions import BadRequestError
 from app.core.file_security import SvgSecurityError
 from app.core.mimetypes import guess_mime_from_bytes
 from app.core.processing import ProcessingFile
@@ -50,6 +50,10 @@ async def upload_file(
 
     Returns immediately (202 Accepted) with the quarantine key.
     The client should open GET /events/{file_key} to track processing status.
+
+    Every upload goes through the full async security pipeline — there is no
+    CAS fast-path here by design.  Deduplication happens in the background
+    worker after scanning, not at upload time.
     """
     user_id = str(user.id)
     upload_id = str(uuid4())
@@ -104,10 +108,6 @@ async def upload_file(
             except SvgSecurityError as exc:
                 raise BadRequestError(str(exc), code=ERR_SVG_UNSAFE) from exc
 
-        # ── Server-side CAS pre-check (issue 4D / 2.7) ───────────────────────
-        # Compute SHA-256 once for both idempotency and CAS dedup.
-        # If the content already exists in CAS, we can return CLEAN immediately
-        # without quarantine upload or background processing.
         file_sha256 = await pf.sha256()
 
         if not idem_cache_key:
@@ -115,74 +115,6 @@ async def upload_file(
             idem_cache_key = f"{_IDEM_KEY_PREFIX}{user_id}:{upload_id}:{file_sha256}"
             if cached := await redis.get(idem_cache_key):
                 return UploadPendingOut.model_validate_json(cached)
-
-        from app.core.cas import hmac_cas_key
-
-        _cas_key = hmac_cas_key(file_sha256)
-        _cas_raw = await redis.get(_cas_key)
-        if _cas_raw:
-            import json
-            import time
-
-            try:
-                _cas_data = json.loads(_cas_raw)
-                _cas_s3_key = _cas_data["final_key"]
-
-                from app.core.storage import copy_object, object_exists
-
-                # CAS staleness check (audit review fix): re-scan if CAS entry
-                # is older than YARA rules or exceeds cas_max_age_seconds.
-                _scanned_at = _cas_data.get("scanned_at")
-                _is_stale = (
-                    _scanned_at is None
-                    or (time.time() - _scanned_at > settings.cas_max_age_seconds > 0)
-                )
-                if _is_stale:
-                    logger.info("CAS entry stale for %s — falling through to full scan", file_sha256[:12])
-                    raise ValueError("stale CAS entry")
-
-                # Re-scan against current YARA rules (audit review fix):
-                # prevents cache poisoning when rules are updated after the
-                # original scan.
-                scanner = request.app.state.scanner
-                await scanner.scan_file_path(pf.path, safe_name, bazaar_hash=file_sha256)
-
-                if await object_exists(_cas_s3_key):
-                    final_key = f"uploads/{user_id}/{upload_id}/{safe_name}"
-                    await copy_object(_cas_s3_key, final_key)
-
-                    await redis.zadd(f"quota:uploads:{user_id}", {final_key: time.time()})
-                    await redis.set(
-                        f"upload:sha256:{user_id}:{file_sha256}", final_key, ex=24 * 3600
-                    )
-
-                    await _create_upload_row(
-                        upload_id=upload_id,
-                        user_id=user_id,
-                        quarantine_key=final_key,
-                        filename=safe_name,
-                        mime_type=_cas_data.get("mime_type", mime_type),
-                        size_bytes=pf.size,
-                        status="clean",
-                    )
-
-                    logger.info(
-                        "Direct upload CAS hit for user %s (sha256=%s)", user_id, file_sha256[:12]
-                    )
-                    result = UploadPendingOut(
-                        upload_id=upload_id,
-                        file_key=final_key,
-                        status=UploadStatus.CLEAN,
-                        size=_cas_data.get("size", pf.size),
-                        mime_type=_cas_data.get("mime_type", mime_type),
-                    )
-                    if idem_cache_key:
-                        await redis.set(idem_cache_key, result.model_dump_json(), ex=_IDEM_TTL)
-                    return result
-            except (BadRequestError, ServiceUnavailableError, SvgSecurityError):
-                raise  # Security rejections must NOT be swallowed
-            except Exception as _cas_exc:
-                logger.debug("CAS pre-check failed, proceeding normally: %s", _cas_exc)
 
         quarantine_key = f"quarantine/{user_id}/{upload_id}/{safe_name}"
 
@@ -200,9 +132,7 @@ async def upload_file(
                 Filename=str(pf.path),
                 Bucket=settings.s3_bucket,
                 Key=quarantine_key,
-                ExtraArgs={
-                    "ContentType": mime_type
-                }
+                ExtraArgs={"ContentType": mime_type},
             )
 
         await _create_upload_row(

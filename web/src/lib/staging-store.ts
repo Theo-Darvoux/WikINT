@@ -6,11 +6,11 @@ import { safeLocalStorage } from "./safe-storage";
 // Upload expiry — files in MinIO are cleaned up after 24h
 // ---------------------------------------------------------------------------
 
-/** Uploads are deleted after this many milliseconds (24 hours). */
-export const UPLOAD_EXPIRY_MS = 24 * 60 * 60 * 1000;
+/** Uploads are deleted after this many milliseconds (72 hours). */
+export const UPLOAD_EXPIRY_MS = 72 * 60 * 60 * 1000;
 
 /** Warning threshold — show a warning when less than this time remains. */
-export const UPLOAD_WARNING_MS = 2 * 60 * 60 * 1000;
+export const UPLOAD_WARNING_MS = 6 * 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Operation types (mirrors backend schemas)

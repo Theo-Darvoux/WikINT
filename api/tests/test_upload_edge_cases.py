@@ -104,7 +104,7 @@ class LocalFakeRedis(AsyncMock):
         if key not in self.state:
             self.state[key] = {}
         if mapping:
-            for k, v in (mapping.items() if isinstance(mapping, dict) else []):
+            for k, v in mapping.items() if isinstance(mapping, dict) else []:
                 self.state[key][k] = v
 
     async def expire(self, key, ttl):
@@ -161,6 +161,7 @@ async def test_upload_quota_race_condition(
     await db_session.commit()
 
     import typing
+
     state: dict[str, typing.Any] = {}
     fake_redis = LocalFakeRedis(state)
 
@@ -196,6 +197,7 @@ async def test_presigned_upload_quota_reservation(
     await db_session.commit()
 
     import typing
+
     state: dict[str, typing.Any] = {}
     fake_redis = LocalFakeRedis(state)
 
@@ -230,6 +232,7 @@ async def test_tus_create_quota_reservation(client: AsyncClient, db_session: Asy
     await db_session.commit()
 
     import typing
+
     state: dict[str, typing.Any] = {}
     fake_redis = LocalFakeRedis(state)
 

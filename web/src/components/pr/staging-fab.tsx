@@ -30,7 +30,7 @@ export function StagingFab() {
             ) : (
                 <ClipboardList className="h-5 w-5" />
             )}
-            <span>{expiredCount > 0 ? "Expired uploads" : "Review Changes"}</span>
+            <span>{expiredCount > 0 ? "Fichiers expirés" : "Brouillon"}</span>
             <Badge
                 variant="secondary"
                 className="ml-1 h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-bold"

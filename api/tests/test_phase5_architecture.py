@@ -115,12 +115,12 @@ async def test_quota_check_db_fallback_enforces_cap(mock_redis: AsyncMock):
 
 
 def test_update_db_status_accepts_cas_fields():
-    """_update_db_status signature accepts cas_key and cas_ref_count."""
+    """UploadWorkerRepository.update_upload_status signature accepts cas_key and cas_ref_count."""
     import inspect
 
-    from app.workers.process_upload import _update_db_status
+    from app.workers.upload.repository import UploadWorkerRepository
 
-    sig = inspect.signature(_update_db_status)
+    sig = inspect.signature(UploadWorkerRepository.update_upload_status)
     assert "cas_key" in sig.parameters
     assert "cas_ref_count" in sig.parameters
 
@@ -128,7 +128,7 @@ def test_update_db_status_accepts_cas_fields():
 @pytest.mark.asyncio
 async def test_increment_cas_ref_returns_count():
     """_increment_cas_ref returns the new ref count (int)."""
-    from app.workers.process_upload import _increment_cas_ref
+    from app.core.cas import increment_cas_ref as _increment_cas_ref
 
     mock_redis = AsyncMock()
     mock_redis.eval = AsyncMock(return_value=1)
@@ -140,7 +140,7 @@ async def test_increment_cas_ref_returns_count():
 @pytest.mark.asyncio
 async def test_increment_cas_ref_returns_0_on_error():
     """_increment_cas_ref returns 0 on Redis error (fail-open)."""
-    from app.workers.process_upload import _increment_cas_ref
+    from app.core.cas import increment_cas_ref as _increment_cas_ref
 
     mock_redis = AsyncMock()
     mock_redis.eval = AsyncMock(side_effect=ConnectionError("Redis down"))
@@ -172,7 +172,17 @@ async def test_webhook_reenqueues_on_transient_failure():
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
     # Minimal Upload row mock — all fields must be JSON serializable
-    row = MagicMock(spec=["webhook_url", "upload_id", "status", "final_key", "sha256", "mime_type", "size_bytes"])
+    row = MagicMock(
+        spec=[
+            "webhook_url",
+            "upload_id",
+            "status",
+            "final_key",
+            "sha256",
+            "mime_type",
+            "size_bytes",
+        ]
+    )
     row.webhook_url = "https://example.com/webhook"
     row.upload_id = upload_id
     row.status = "clean"
@@ -225,7 +235,17 @@ async def test_webhook_inserts_dlq_after_max_attempts():
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
-    row = MagicMock(spec=["webhook_url", "upload_id", "status", "final_key", "sha256", "mime_type", "size_bytes"])
+    row = MagicMock(
+        spec=[
+            "webhook_url",
+            "upload_id",
+            "status",
+            "final_key",
+            "sha256",
+            "mime_type",
+            "size_bytes",
+        ]
+    )
     row.webhook_url = "https://example.com/webhook"
     row.upload_id = upload_id
     row.status = "clean"
@@ -250,7 +270,10 @@ async def test_webhook_inserts_dlq_after_max_attempts():
     with (
         patch("app.workers.webhook_dispatch.validate_webhook_url", return_value=True),
         patch("httpx.AsyncClient") as mock_client_cls,
-        patch("app.workers.process_upload._insert_dead_letter", mock_insert_dlq),
+        patch(
+            "app.workers.upload.repository.UploadWorkerRepository.insert_dead_letter",
+            mock_insert_dlq,
+        ),
     ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -267,7 +290,10 @@ async def test_webhook_inserts_dlq_after_max_attempts():
     mock_insert_dlq.assert_awaited_once()
     dlq_kwargs = mock_insert_dlq.await_args
     assert dlq_kwargs is not None
-    assert dlq_kwargs.kwargs.get("job_name") == "dispatch_webhook" or dlq_kwargs.args[2] == "dispatch_webhook"
+    assert (
+        dlq_kwargs.kwargs.get("job_name") == "dispatch_webhook"
+        or dlq_kwargs.args[2] == "dispatch_webhook"
+    )
 
 
 # ── 3.11: Optimistic locking ──────────────────────────────────────────────────

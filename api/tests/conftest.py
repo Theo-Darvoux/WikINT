@@ -32,10 +32,12 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     import app.core.database as c_db
+
     orig_factory = c_db.async_session_factory
     c_db.async_session_factory = session_factory
     # also patch in helpers where it might have been imported already
     from app.routers.upload import helpers as u_helpers
+
     orig_helpers_factory = u_helpers.async_session_factory
     u_helpers.async_session_factory = session_factory
 
@@ -55,7 +57,6 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
     c_db.async_session_factory = orig_factory
     u_helpers.async_session_factory = orig_helpers_factory
-
 
 
 @pytest.fixture
@@ -110,6 +111,7 @@ class FakeRedis:
 
     def lock(self, name, timeout=None):
         from unittest.mock import AsyncMock
+
         lock_mock = AsyncMock()
         lock_mock.__aenter__ = AsyncMock(return_value=lock_mock)
         lock_mock.__aexit__ = AsyncMock(return_value=None)
@@ -285,6 +287,7 @@ class FakeRedis:
 
     async def keys(self, pattern):
         import fnmatch
+
         return [k for k in self.data.keys() if fnmatch.fnmatch(k, pattern)]
 
     async def sadd(self, name, *members):
@@ -383,5 +386,3 @@ async def client(
             yield ac
 
     app.dependency_overrides.clear()
-
-

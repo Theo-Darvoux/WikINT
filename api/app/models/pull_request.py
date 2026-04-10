@@ -6,14 +6,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
-    DateTime,
     Enum,
     ForeignKey,
-    SmallInteger,
     String,
     Text,
-    UniqueConstraint,
-    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -48,6 +44,9 @@ class PullRequest(UUIDMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     payload: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
+    # Populated on approval: enriched copy of operations with result_id and
+    # result_browse_path. The original payload is never mutated.
+    applied_result: Mapped[list[dict[str, object]] | None] = mapped_column(JSONB, nullable=True)
     summary_types: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
@@ -60,15 +59,16 @@ class PullRequest(UUIDMixin, TimestampMixin, Base):
         default=VirusScanResult.PENDING,
         server_default="pending",
     )
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     author: Mapped[User | None] = relationship(
         back_populates="pull_requests", foreign_keys=[author_id]
     )
     reviewer: Mapped[User | None] = relationship(foreign_keys=[reviewed_by])
-    votes: Mapped[list[PRVote]] = relationship(
+    comments: Mapped[list[PRComment]] = relationship(
         back_populates="pull_request", cascade="all, delete-orphan"
     )
-    comments: Mapped[list[PRComment]] = relationship(
+    file_claims: Mapped[list[PRFileClaim]] = relationship(
         back_populates="pull_request", cascade="all, delete-orphan"
     )
 
@@ -78,23 +78,27 @@ class PullRequest(UUIDMixin, TimestampMixin, Base):
         if self.status != PRStatus.OPEN:
             return None
         from datetime import timedelta
+
         return self.updated_at + timedelta(days=7)
 
 
-class PRVote(UUIDMixin, Base):
-    __tablename__ = "pr_votes"
-    __table_args__ = (UniqueConstraint("pr_id", "user_id", name="uq_pr_vote_user"),)
+class PRFileClaim(Base):
+    """
+    Tracks which file_keys are claimed by open pull requests.
 
+    The PRIMARY KEY on file_key enforces that only one open PR can reference
+    a given file at a time, replacing the previous Redis global lock + JSONB scan.
+    Claims are deleted when the PR is approved or rejected.
+    """
+
+    __tablename__ = "pr_file_claims"
+
+    file_key: Mapped[str] = mapped_column(Text, primary_key=True)
     pr_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("pull_requests.id", ondelete="CASCADE"), nullable=False
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    value: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    pull_request: Mapped[PullRequest] = relationship(back_populates="votes")
+    pull_request: Mapped[PullRequest] = relationship(back_populates="file_claims")
 
 
 class PRComment(UUIDMixin, TimestampMixin, Base):

@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  transpilePackages: ["papaparse"],
   async rewrites() {
     // Proxy /api/* to the backend in development to avoid cross-origin SSE/CORS issues.
     // API_INTERNAL_URL must be set to the backend URL reachable from this server:

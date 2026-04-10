@@ -85,6 +85,7 @@ class UploadCompleteOut(BaseModel):
     """Final result delivered inside the SSE 'clean' event."""
 
     file_key: str
+    file_name: str | None = None
     size: int
     original_size: int
     mime_type: str

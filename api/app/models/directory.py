@@ -42,7 +42,9 @@ class Directory(UUIDMixin, TimestampMixin, Base):
         nullable=False,
     )
     description: Mapped[str | None] = mapped_column(Text)
-    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
+    metadata_: Mapped[dict[str, object]] = mapped_column(
+        "metadata", JSONB, default=dict, server_default="{}"
+    )
     sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -58,6 +60,4 @@ class Directory(UUIDMixin, TimestampMixin, Base):
     materials: Mapped[list[Material]] = relationship(
         back_populates="directory", cascade="all, delete-orphan"
     )
-    tags: Mapped[list[Tag]] = relationship(
-        secondary="directory_tags", back_populates="directories"
-    )
+    tags: Mapped[list[Tag]] = relationship(secondary="directory_tags", back_populates="directories")

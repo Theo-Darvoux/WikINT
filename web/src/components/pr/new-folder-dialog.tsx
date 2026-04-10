@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
     Dialog,
     DialogContent,
@@ -12,10 +13,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { FolderPlus } from "lucide-react";
+import { FolderPlus, Plus, Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useStagingStore } from "@/lib/staging-store";
+import { useStagingStore, type Operation } from "@/lib/staging-store";
 import { TagInput } from "@/components/ui/tag-input";
+import { submitDirectOperations } from "@/lib/pr-client";
 
 interface NewFolderDialogProps {
     open: boolean;
@@ -31,39 +33,61 @@ export function NewFolderDialog({
     parentId,
     parentName,
 }: NewFolderDialogProps) {
+    const router = useRouter();
     const addOperation = useStagingStore((s) => s.addOperation);
     const nextTempId = useStagingStore((s) => s.nextTempId);
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
     const [tags, setTags] = useState<string[]>([]);
+    const [submitting, setSubmitting] = useState(false);
 
-    const canSubmit = name.trim().length >= 1;
+    const canSubmit = name.trim().length >= 1 && !submitting;
+    const isDraftParent = parentId?.startsWith("$") ?? false;
 
-    const handleStage = () => {
-        if (!canSubmit) return;
-
+    const buildOp = (): Operation => {
         const tempId = nextTempId("dir");
-
-        addOperation({
+        return {
             op: "create_directory",
             temp_id: tempId,
             parent_id: parentId,
             name: name.trim(),
             description: description.trim() || undefined,
             tags: tags.length > 0 ? tags : undefined,
-        });
+        };
+    };
 
-        toast.success(`Folder "${name.trim()}" staged for creation`);
+    const handleDraft = () => {
+        if (!canSubmit) return;
+        addOperation(buildOp());
+        toast.success(`Ajouté au brouillon : Dossier "${name.trim()}"`);
         setName("");
         setDescription("");
         setTags([]);
         onOpenChange(false);
     };
 
+    const handleDirectSubmit = async () => {
+        if (!canSubmit) return;
+        setSubmitting(true);
+        const result = await submitDirectOperations([buildOp()]);
+        setSubmitting(false);
+        setName("");
+        setDescription("");
+        setTags([]);
+        onOpenChange(false);
+        if (result?.status === "approved") {
+            router.refresh();
+        }
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === "Enter" && !e.shiftKey && canSubmit) {
             e.preventDefault();
-            handleStage();
+            if (isDraftParent) {
+                handleDraft();
+            } else {
+                handleDirectSubmit();
+            }
         }
     };
 
@@ -73,22 +97,22 @@ export function NewFolderDialog({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <FolderPlus className="h-5 w-5 text-green-600" />
-                        New Folder
+                        Nouveau dossier
                     </DialogTitle>
                     <DialogDescription>
-                        Create a new folder
+                        Création d'un dossier
                         {parentName ? (
                             <>
                                 {" "}
-                                in{" "}
+                                dans{" "}
                                 <span className="font-medium text-foreground">
                                     {parentName}
                                 </span>
                             </>
                         ) : (
-                            " at root level"
+                            " à la racine"
                         )}
-                        . This will be staged as a pending change.
+                        .
                     </DialogDescription>
                 </DialogHeader>
 
@@ -98,14 +122,15 @@ export function NewFolderDialog({
                             htmlFor="folder-name"
                             className="text-sm font-medium"
                         >
-                            Folder Name
+                            Nom du dossier
                         </label>
                         <Input
                             id="folder-name"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            placeholder="e.g. Week 5"
+                            placeholder="ex: Semaine 5"
                             maxLength={100}
+                            disabled={submitting}
                             autoFocus
                         />
                     </div>
@@ -116,15 +141,16 @@ export function NewFolderDialog({
                         >
                             Description{" "}
                             <span className="text-muted-foreground">
-                                (optional)
+                                (optionnel)
                             </span>
                         </label>
                         <Textarea
                             id="folder-desc"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            placeholder="What's in this folder?"
+                            placeholder="Que contient ce dossier ?"
                             maxLength={500}
+                            disabled={submitting}
                             rows={2}
                         />
                     </div>
@@ -133,26 +159,43 @@ export function NewFolderDialog({
                         <TagInput
                             tags={tags}
                             onChange={setTags}
-                            placeholder="Add folder tags..."
+                            placeholder="math, analyse..."
                         />
                     </div>
                 </div>
 
-                <DialogFooter>
+                <DialogFooter className="gap-2 sm:gap-0 mt-2">
+                    <Button
+                        variant="ghost"
+                        onClick={() => onOpenChange(false)}
+                        disabled={submitting}
+                        className="sm:mr-auto"
+                    >
+                        Annuler
+                    </Button>
                     <Button
                         variant="outline"
-                        onClick={() => onOpenChange(false)}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleStage}
+                        onClick={handleDraft}
                         disabled={!canSubmit}
-                        className="gap-2"
+                        className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
                     >
-                        <FolderPlus className="h-4 w-4" />
-                        Stage Folder
+                        <Plus className="h-4 w-4" />
+                        Brouillon
                     </Button>
+                    {!isDraftParent && (
+                        <Button
+                            onClick={handleDirectSubmit}
+                            disabled={!canSubmit}
+                            className="gap-2"
+                        >
+                            {submitting ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Send className="h-4 w-4" />
+                            )}
+                            Créer direct
+                        </Button>
+                    )}
                 </DialogFooter>
             </DialogContent>
         </Dialog>

@@ -23,7 +23,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/users", label: "Users", icon: Users },
         { href: "/admin/flags", label: "Flags", icon: Flag },
         { href: "/admin/directories", label: "Directories", icon: FolderTree },
-        { href: "/admin/pull-requests", label: "Pull Requests", icon: GitPullRequest },
+        { href: "/admin/pull-requests", label: "Contributions", icon: GitPullRequest },
     ];
 
     return (

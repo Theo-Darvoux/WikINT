@@ -368,8 +368,10 @@ async def test_tus_patch_chunk_too_large(
         }
     )
 
-    with patch("app.routers.tus.settings.tus_chunk_min_bytes", 512), \
-         patch("app.routers.tus.settings.tus_chunk_max_bytes", 1024):
+    with (
+        patch("app.routers.tus.settings.tus_chunk_min_bytes", 512),
+        patch("app.routers.tus.settings.tus_chunk_max_bytes", 1024),
+    ):
         chunk = b"a" * 2048
         response = await client.patch(f"/api/upload/tus/{tus_id}", headers=headers, content=chunk)
         assert response.status_code == 400

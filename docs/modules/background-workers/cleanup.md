@@ -8,48 +8,30 @@ Three background workers handle resource cleanup. They prevent storage bloat, qu
 
 WikINT workers include built-in safeguards to prevent system exhaustion:
 
-- **Disk Space Guard:** Before downloading any file for processing, the worker checks for available space in the temporary directory. If free space is less than **1.5x the file size**, the job is failed and automatically re-queued to prevent node crashes.
-- **Orphan Cleanup:** The system periodically checks the `materials/` and `cas/` prefixes against the database to identify files that are no longer referenced. This job can be run in `dry_run` mode for verification.
-- **Pull Request Expiration:** Open Pull Requests that have not been updated for **7 days** are automatically marked as `REJECTED` by the cleanup worker. This releases their staged files in `uploads/` for automated S3 cleanup (see Cloudflare R2 Lifecycle Policies).
+- **Disk Space Guard:** Before downloading any file for processing, the worker checks for available space in the temporary directory. If free space is less than **2.0x the file size**, the job is failed and automatically re-queued to prevent node crashes.
+- **Orphan Cleanup:** The system periodically checks the `cas/` prefix against Redis ref counts to identify unreferenced objects. Legacy `materials/` and `uploads/` objects are also cleaned up.
+- **Pull Request Expiration:** Open Pull Requests that have not been updated for **7 days** are automatically marked as `REJECTED` by the cleanup worker.
 
 ## Cleanup Uploads (`api/app/workers/cleanup_uploads.py`)
 
 **Schedule:** Periodic (configured via ARQ cron)
 
-Removes uploaded files that are no longer needed based on DB status, and scans quarantine/ for stale objects that have no DB record.
+Removes uploaded files that are no longer needed based on DB status, scans quarantine/ for stale objects, and manages CAS reference counting for expired uploads.
 
-### Logic (Phase 5 — status-based)
+### Logic (CAS V2)
 
 1. **Expire stale PRs** — mark `OPEN` PRs older than 7 days as `REJECTED`.
-2. **Collect protected keys** — gather `file_key` values from all `OPEN`/`APPROVED` PRs.
-3. **Status-based cleanup (3.8)** — query `Upload` table for rows with terminal status (`clean`, `failed`, `malicious`) and `updated_at < 48h ago`. Deletes are batched into chunks of 1,000 keys and incrementally flushed to prevent unbounded memory growth (OOM) and S3 API limit violations, skipping protected keys. This avoids listing millions of S3 objects.
-4. **Quarantine scan** — scan `quarantine/` prefix for objects older than 2 hours (these may have no DB row — e.g. pre-row-creation failures) and delete them.
-5. **Orphan cleanup** — scan `materials/` and `cas/` prefixes against the DB, removing unreferenced objects.
-
-### Why Status-Based Over S3 Scan
-
-The old approach listed all objects with the `uploads/` prefix and checked their modification time. This requires O(N) S3 API calls proportional to total uploads. The status-based approach queries a single DB table and is O(terminal uploads in window), which is dramatically faster for large deployments.
-
-## Cleanup Orphans (`api/app/workers/cleanup_orphans.py`)
-
-**Schedule:** Periodic (less frequent than upload cleanup)
-
-Identifies and removes S3 objects that have no corresponding database reference.
-
-### Logic
-1. **Materials Scan**: List all objects in `materials/` and delete those not found in `MaterialVersion`.
-2. **CAS Scan**: List all objects in `cas/` prefix.
-   - For each object, extract the CAS ID (HMAC suffix).
-   - Check if any `Upload` row has a `sha256` matching this CAS ID.
-   - If no reference exists: call `delete_storage_objects` to decrement reference count or delete the S3 object.
-
-### Why This Exists
-Edge cases can leave orphaned objects:
-- A PR was deleted but its file cleanup job failed
-- An upload was completed but the DB row insertion failed
-- A race condition between cleanup and PR approval
-
-This worker is the safety net that catches everything the other cleanup mechanisms miss.
+2. **Expire stale pending uploads** — mark `pending` uploads older than 2 hours as `failed`.
+3. **Abort stale multipart uploads** — abort S3 multipart uploads older than 24 hours.
+4. **Collect protected keys** — gather `file_key` values from all `OPEN`/`APPROVED` PRs.
+5. **Status-based cleanup** — query `Upload` table for rows with terminal status (`clean`, `failed`, `malicious`) and `updated_at < 48h ago`:
+   - **CAS keys (`cas/`):** Decrement the CAS ref count using the upload's `sha256`. The S3 object is only deleted when ref_count reaches 0.
+   - **Legacy keys (`uploads/`, `quarantine/`):** Direct S3 delete.
+   - Clean up synthetic staging quota entries from Redis.
+6. **Quarantine scan** — scan `quarantine/` prefix for objects older than 2 hours and delete them.
+7. **CAS orphan scan** — list `cas/` S3 objects and compare against Redis `upload:cas:*` keys. Objects without a Redis ref entry older than 48h are deleted.
+8. **Legacy prefix cleanup** — scan any remaining `materials/` and `uploads/` S3 objects and delete them (V1 migration remnants).
+9. **Integrity check** — verify all CAS-backed MaterialVersions have existing S3 objects. Log warnings for any missing objects (manual investigation required).
 
 ## Reconcile Multipart (`api/app/workers/reconcile_multipart.py`)
 
@@ -87,7 +69,7 @@ Sends HMAC-SHA256 signed HTTP POST requests to webhook URLs registered on upload
   "event": "upload.complete",
   "upload_id": "...",
   "status": "clean",
-  "file_key": "uploads/...",
+  "file_key": "cas/...",
   "sha256": "...",
   "mime_type": "...",
   "size": 12345,

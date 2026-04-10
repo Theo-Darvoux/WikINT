@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
     Dialog,
     DialogContent,
@@ -12,9 +13,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { FilePenLine, FolderPen } from "lucide-react";
+import { FilePenLine, FolderPen, Plus, Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useStagingStore } from "@/lib/staging-store";
+import { useStagingStore, type Operation } from "@/lib/staging-store";
+import { submitDirectOperations } from "@/lib/pr-client";
 import { TagInput } from "@/components/ui/tag-input";
 
 interface EditItemDialogProps {
@@ -33,6 +35,7 @@ export function EditItemDialog({
     target,
 }: EditItemDialogProps) {
     const addOperation = useStagingStore((s) => s.addOperation);
+    const router = useRouter();
     const isMaterial = target.type === "material";
 
     // Pre-fill from current values
@@ -48,12 +51,11 @@ export function EditItemDialog({
     const [title, setTitle] = useState(currentTitle);
     const [description, setDescription] = useState(currentDescription);
     const [tags, setTags] = useState<string[]>(currentTags);
+    const [submitting, setSubmitting] = useState(false);
 
     // Track whether anything actually changed
     const hasTagsChanged = () => {
         if (tags.length !== currentTags.length) return true;
-        // Compare sorted to be order-agnostic for "has changes" check if preferred,
-        // but simple sequence check is safer for PR purposes.
         return tags.some((t, i) => t !== currentTags[i]);
     };
 
@@ -62,13 +64,12 @@ export function EditItemDialog({
         description !== currentDescription ||
         hasTagsChanged();
 
-    const canSubmit = hasChanges && title.trim().length > 0;
+    const canSubmit = hasChanges && title.trim().length > 0 && !submitting;
+    const isDraftTarget = target.id.startsWith("$");
 
-    const handleStage = () => {
-        if (!canSubmit) return;
-
+    const buildOp = (): Operation => {
         if (isMaterial) {
-            addOperation({
+            return {
                 op: "edit_material",
                 material_id: target.id,
                 ...(title !== currentTitle ? { title: title.trim() } : {}),
@@ -76,10 +77,9 @@ export function EditItemDialog({
                     ? { description: description.trim() || null }
                     : {}),
                 ...(hasTagsChanged() ? { tags } : {}),
-            });
-            toast.success(`Edit to "${title.trim()}" staged`);
+            };
         } else {
-            addOperation({
+            return {
                 op: "edit_directory",
                 directory_id: target.id,
                 ...(title !== currentTitle ? { name: title.trim() } : {}),
@@ -87,11 +87,26 @@ export function EditItemDialog({
                     ? { description: description.trim() || null }
                     : {}),
                 ...(hasTagsChanged() ? { tags } : {}),
-            });
-            toast.success(`Edit to folder "${title.trim()}" staged`);
+            };
         }
+    };
 
+    const handleDraft = () => {
+        if (!canSubmit) return;
+        addOperation(buildOp());
+        toast.success(`Ajouté au brouillon : "${title.trim()}"`);
         onOpenChange(false);
+    };
+
+    const handleDirectSubmit = async () => {
+        if (!canSubmit) return;
+        setSubmitting(true);
+        const result = await submitDirectOperations([buildOp()]);
+        setSubmitting(false);
+        onOpenChange(false);
+        if (result?.status === "approved") {
+            router.refresh();
+        }
     };
 
     // Reset fields when dialog opens with new target
@@ -105,7 +120,7 @@ export function EditItemDialog({
     };
 
     const Icon = isMaterial ? FilePenLine : FolderPen;
-    const typeLabel = isMaterial ? "Material" : "Folder";
+    const typeLabel = isMaterial ? "un document" : "un dossier";
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -113,14 +128,14 @@ export function EditItemDialog({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Icon className="h-5 w-5 text-blue-600" />
-                        Edit {typeLabel}
+                        Modifier {typeLabel}
                     </DialogTitle>
                     <DialogDescription>
-                        Edit{" "}
+                        Modification de{" "}
                         <span className="font-medium text-foreground">
                             {currentTitle}
                         </span>
-                        . Changes will be staged as a pending PR operation.
+                        . Vous pouvez soumettre directement la contribution ou l&apos;ajouter à votre brouillon.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -130,13 +145,14 @@ export function EditItemDialog({
                             htmlFor="edit-title"
                             className="text-sm font-medium"
                         >
-                            {isMaterial ? "Title" : "Name"}
+                            {isMaterial ? "Titre" : "Nom"}
                         </label>
                         <Input
                             id="edit-title"
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                             maxLength={100}
+                            disabled={submitting}
                             autoFocus
                         />
                     </div>
@@ -148,7 +164,7 @@ export function EditItemDialog({
                         >
                             Description{" "}
                             <span className="text-muted-foreground">
-                                (optional)
+                                (optionnel)
                             </span>
                         </label>
                         <Textarea
@@ -156,6 +172,7 @@ export function EditItemDialog({
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                             maxLength={1000}
+                            disabled={submitting}
                             rows={3}
                         />
                     </div>
@@ -171,26 +188,43 @@ export function EditItemDialog({
                             key={target.id}
                             tags={tags}
                             onChange={setTags}
-                            placeholder="math, algebra, lecture..."
+                            placeholder="math, algebra..."
                         />
                     </div>
                 </div>
 
-                <DialogFooter>
+                <DialogFooter className="gap-2 sm:gap-0 mt-2">
+                    <Button
+                        variant="ghost"
+                        onClick={() => onOpenChange(false)}
+                        disabled={submitting}
+                        className="sm:mr-auto"
+                    >
+                        Annuler
+                    </Button>
                     <Button
                         variant="outline"
-                        onClick={() => onOpenChange(false)}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleStage}
+                        onClick={handleDraft}
                         disabled={!canSubmit}
-                        className="gap-2"
+                        className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
                     >
-                        <Icon className="h-4 w-4" />
-                        Stage Edit
+                        <Plus className="h-4 w-4" />
+                        Ajouter au brouillon
                     </Button>
+                    {!isDraftTarget && (
+                        <Button
+                            onClick={handleDirectSubmit}
+                            disabled={!canSubmit}
+                            className="gap-2"
+                        >
+                            {submitting ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Send className="h-4 w-4" />
+                            )}
+                            Soumettre direct
+                        </Button>
+                    )}
                 </DialogFooter>
             </DialogContent>
         </Dialog>

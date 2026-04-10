@@ -14,9 +14,10 @@ async def delete_storage_objects(ctx: dict, keys: list[str]) -> None:
     redis = ctx.get("redis")
     if redis is None:
         from app.core.redis import redis_client
+
         redis = redis_client
 
-    from app.workers.process_upload import _LUA_CAS_DECR
+    from app.core.cas import _LUA_CAS_DECR
 
     for key in keys:
         try:

@@ -6,6 +6,7 @@ Provides:
 - _strip_image_from_path: EXIF removal via PIL re-save
 - _compress_image_path: resize to 2K + aggressive quality reduction
 """
+
 import io
 import logging
 import tempfile
@@ -56,8 +57,12 @@ def _strip_gif_to_dest(img: Image.Image, dest: "io.BytesIO | str") -> None:
             durations.append(img.info.get("duration", 100))
         loop = img.info.get("loop", 0)
         frames[0].save(
-            dest, format="GIF", save_all=True,
-            append_images=frames[1:], duration=durations, loop=loop,
+            dest,
+            format="GIF",
+            save_all=True,
+            append_images=frames[1:],
+            duration=durations,
+            loop=loop,
         )
     else:
         frames[0].save(dest, format="GIF")

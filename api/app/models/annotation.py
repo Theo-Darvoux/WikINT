@@ -24,7 +24,6 @@ class Annotation(UUIDMixin, TimestampMixin, Base):
 
     _replies: list[Annotation]
 
-
     material_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("materials.id", ondelete="CASCADE"), nullable=False
     )

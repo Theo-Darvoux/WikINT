@@ -92,12 +92,18 @@ def hmac_cas_key(sha256: str) -> str:
 
 ### Deduplication Flow
 
-1. Worker downloads file from quarantine, computes SHA-256
-2. Computes HMAC CAS key, checks Redis
-3. **CAS hit:** Verify the entry is not stale (`scanned_at` must be present and within `cas_max_age_seconds`). Re-scan the file against current YARA rules to ensure detection signatures haven't been updated since the CAS entry was created. Copy the existing processed file to the new user's staging area. Increment `ref_count` atomically (Lua script).
-4. **CAS miss:** Run full pipeline. On success, write CAS entry with `ref_count: 1` and `scanned_at` timestamp.
+1. Worker downloads file from quarantine, computes SHA-256.
+2. The file **always** goes through the full processing pipeline (Scan -> Strip -> Compress). Processing is never bypassed on reupload.
+3. During the Finalize stage, a global CAS lock is acquired. If the S3 object doesn't exist in the `cas/` prefix, it's uploaded.
+4. The CAS entry is written to Redis with `ref_count: 1` and `scanned_at` timestamp.
 
 CAS entries persist indefinitely in Redis (no TTL). They are removed when `ref_count` drops to 0 via the `_LUA_CAS_DECR` script.
+
+`api/app/core/cas.py` now also hosts the reusable CAS worker helpers:
+- `increment_cas_ref(redis, sha256, initial_data)`
+- `decrement_cas_ref(redis, sha256)`
+
+The upload worker imports these from `app.core.cas` and keeps compatibility wrappers in `app.workers.process_upload` for legacy tests.
 
 ## Upload Quota Enforcement
 
@@ -185,7 +191,7 @@ A polyglot file is simultaneously valid under two or more format parsers. Attack
 
 2. **ZIP tail check**: ZIP archives append a 22-byte End-of-Central-Directory (EOCD) record at the end. A non-archive file (image, PDF, text) containing this signature in its last 256 bytes is flagged as a polyglot. This catches the JZBOMB and PDF+ZIP patterns.
 
-Format families that are expected for a given MIME type (e.g. PDF magic in `application/pdf`) are whitelisted to avoid false positives. On read error, the check **fails closed** (raises `ValueError`) to prevent unverified files from bypassing structural analysis.
+Format families that are expected for a given MIME type (e.g., PDF magic in `application/pdf`, or ZIP magic in Office, OpenDocument, and EPUB formats) are whitelisted to avoid false positives. On read error, the check **fails closed** (raises `ValueError`) to prevent unverified files from bypassing structural analysis.
 
 ## TUS Resumable Upload Hardening
 
@@ -237,6 +243,16 @@ After completing an S3 multipart upload, the presigned complete endpoint fetches
 
 Used by `webhook_dispatch.py` before dispatching signed upload-complete webhooks.
 
+### PR File Claiming (Atomic Promotion)
+
+To prevent race conditions where two concurrent pull requests try to claim the same newly-uploaded file, WikINT implements an atomic claiming mechanism via the `pr_file_claims` table.
+
+1. **Claiming**: When a PR is created, every `file_key` (whether `uploads/` or `cas/`) is registered in `pr_file_claims`. The database enforces a `UNIQUE` constraint on the `file_key`.
+2. **Conflict**: If another pending PR has already claimed that file, the second PR submission fails with a `400 BadRequestError` (Issue S6).
+3. **Release**: Claims are released only when the PR is **approved** (at which point the file is moved to `materials/` or its CAS ref is incremented) or **rejected** (at which point the staging file is deleted).
+
+This ensures "last-write-wins" semantics are avoided and every file upload corresponds to exactly one materialized material or one rejected contribution.
+
 ## Error Response Format (3C)
 
 All `AppError` responses (400/401/403/404/409/429/503) are formatted as:
@@ -269,18 +285,13 @@ The `/api/materials/{id}/inline` endpoint passes `force_download=False` only for
 
 ## Upload Flow Security Audit Fixes (Audit v3)
 
-### CRITICAL: CAS Pre-Check Exception Handling (`direct.py`)
+### CRITICAL: No CAS Fast-Path in Direct Upload (`direct.py`)
 
-The CAS deduplication fast-path in the direct upload router previously had a bare `except Exception` handler that caught **all** exceptions — including security rejections like `BadRequestError` (malware detected), `ServiceUnavailableError` (scanner unavailable), and `SvgSecurityError`. This meant a malicious file that triggered a scan failure during the CAS pre-check would be silently allowed through.
+The direct upload router (`POST /api/upload`) does **not** implement a CAS fast-path. Every upload goes through the full async security pipeline: quarantine → worker scan → strip → promote. Deduplication via CAS happens inside the background worker after scanning completes, not at upload time.
 
-**Fix:** Security-critical exceptions (`BadRequestError`, `ServiceUnavailableError`, `SvgSecurityError`) are now explicitly re-raised before the generic fallback catches non-security errors (e.g. Redis timeouts, S3 connectivity):
+**Rationale:** A CAS fast-path in the upload router creates an irreducible security problem — either the file must be re-scanned against current YARA rules before trusting the CAS entry (defeating the performance benefit entirely), or stale CAS entries can permanently bypass future rules added after a file was first uploaded. Neither trade-off is acceptable. The background worker is the correct and only place for CAS deduplication.
 
-```python
-except (BadRequestError, ServiceUnavailableError, SvgSecurityError):
-    raise  # Security rejections must NOT be swallowed
-except Exception as _cas_exc:
-    logger.debug("CAS pre-check failed, proceeding normally: %s", _cas_exc)
-```
+**Do not add a CAS fast-path to `direct.py`.** If this is reconsidered in future, the YARA staleness window and re-scan cost must be fully evaluated first.
 
 ### HIGH: Batch Status IDOR via Substring Ownership (`status.py`)
 

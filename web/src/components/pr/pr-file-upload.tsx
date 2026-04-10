@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, ACCEPTED_FILE_TYPES, formatFileSize } from "@/lib/file-utils";
-import { uploadFile, UploadResult } from "@/lib/upload-client";
+import { uploadFile, logicalFileSize, type UploadResult } from "@/lib/upload-client";
 import { ApiError } from "@/lib/api-client";
 
 interface UploadCompleteResult {
@@ -60,6 +60,8 @@ export function PRFileUpload({
     const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
     const [progress, setProgress] = useState(0);
     const [processingStatus, setProcessingStatus] = useState("Processing…");
+    const [stageIndex, setStageIndex] = useState<number | undefined>(undefined);
+    const [stageTotal, setStageTotal] = useState<number | undefined>(undefined);
     const [errorMsg, setErrorMsg] = useState("");
     const [isDragging, setIsDragging] = useState(false);
     const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
@@ -133,11 +135,17 @@ export function PRFileUpload({
         setProgress(0);
         setErrorMsg("");
         setProcessingStatus("Preparing…");
+        setStageIndex(undefined);
+        setStageTotal(undefined);
 
         try {
             const result = await uploadFile(target, {
                 onProgress: setProgress,
-                onStatusUpdate: setProcessingStatus,
+                onStatusUpdate: (msg, si, st) => {
+                    setProcessingStatus(msg);
+                    setStageIndex(si);
+                    setStageTotal(st);
+                },
                 signal: controller.signal,
             });
 
@@ -146,7 +154,7 @@ export function PRFileUpload({
             onUploadComplete({
                 fileKey: result.file_key,
                 fileName: result.correctedName,
-                fileSize: result.size,
+                fileSize: logicalFileSize(result),
                 mimeType: result.mime_type,
             });
         } catch (err: unknown) {
@@ -173,15 +181,10 @@ export function PRFileUpload({
         setErrorMsg("");
         setUploadResult(null);
         setProgress(0);
+        setStageIndex(undefined);
+        setStageTotal(undefined);
         if (fileInputRef.current) fileInputRef.current.value = "";
     };
-
-    // Determine the progress label
-    const progressLabel = (() => {
-        if (progress < 5) return "Computing checksum…";
-        if (progress < 80) return `Uploading… ${progress}%`;
-        return `${processingStatus}${elapsedSec > 0 ? ` (${elapsedSec}s)` : ""}`;
-    })();
 
     return (
         <div
@@ -210,7 +213,7 @@ export function PRFileUpload({
         >
             {/* Live region for screen readers */}
             <div aria-live="polite" aria-atomic="true" className="sr-only">
-                {status === "uploading" ? progressLabel : ""}
+                {status === "uploading" ? (progress >= 80 ? processingStatus : `Uploading ${Math.min(Math.round(progress * 100 / 80), 100)}%`) : ""}
                 {status === "success" ? "Upload complete" : ""}
                 {status === "error" ? `Upload failed: ${errorMsg}` : ""}
             </div>
@@ -255,30 +258,59 @@ export function PRFileUpload({
             {status === "uploading" && (
                 <div className="space-y-3 max-w-xs mx-auto">
                     <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" aria-hidden="true" />
-                    <div className="text-sm font-medium" aria-live="polite">
-                        {progressLabel}
-                    </div>
-                    <div
-                        className="h-2 bg-secondary rounded-full overflow-hidden"
-                        role="progressbar"
-                        aria-valuenow={progress}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-label="Upload progress"
-                    >
-                        {progress >= 80 ? (
-                            // Processing phase — indeterminate pulse anchored at actual progress
-                            <div
-                                className="h-full bg-primary animate-pulse transition-all duration-300"
-                                style={{ width: `${progress}%` }}
-                            />
-                        ) : (
+
+                    {/* Upload / transfer bar */}
+                    <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>Upload</span>
+                            <span>{Math.min(Math.round(progress * 100 / 80), 100)}%</span>
+                        </div>
+                        <div
+                            className="h-2 bg-secondary rounded-full overflow-hidden"
+                            role="progressbar"
+                            aria-valuenow={Math.min(Math.round(progress * 100 / 80), 100)}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label="Upload transfer progress"
+                        >
                             <div
                                 className="h-full bg-primary transition-all duration-300"
-                                style={{ width: `${progress}%` }}
+                                style={{ width: `${Math.min(Math.round(progress * 100 / 80), 100)}%` }}
                             />
-                        )}
+                        </div>
                     </div>
+
+                    {/* Processing bar — appears during server-side stages */}
+                    {progress >= 80 && (
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                                <Loader2 className="h-3 w-3 animate-spin shrink-0" aria-hidden="true" />
+                                <span className="truncate">{processingStatus || "Processing…"}</span>
+                                {stageIndex != null && stageTotal != null && (
+                                    <span className="ml-auto shrink-0 font-normal text-muted-foreground text-[10px]">
+                                        {stageIndex + 1}/{stageTotal}
+                                    </span>
+                                )}
+                            </div>
+                            <div
+                                className="h-2 rounded-full overflow-hidden bg-amber-100 dark:bg-amber-950/40"
+                                role="progressbar"
+                                aria-valuenow={Math.min((progress - 80) * 5, 100)}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-label="Processing progress"
+                            >
+                                <div
+                                    className="h-full bg-amber-500 dark:bg-amber-400 animate-pulse transition-all duration-500"
+                                    style={{ width: `${Math.min((progress - 80) * 5, 100)}%` }}
+                                />
+                            </div>
+                            {elapsedSec > 0 && (
+                                <p className="text-[10px] text-muted-foreground text-center">{elapsedSec}s elapsed</p>
+                            )}
+                        </div>
+                    )}
+
                     <Button
                         variant="outline"
                         size="sm"

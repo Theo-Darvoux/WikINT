@@ -34,6 +34,10 @@ export interface QueueItem {
     progress: number;
     /** Latest granular status message (e.g. "Scanning for malware…") */
     processingStatus: string;
+    /** Current processing stage index (0-based), set during server-side processing */
+    stageIndex?: number;
+    /** Total number of processing stages */
+    stageTotal?: number;
 
     // Optional tus URL for resumability across sessions
     tusUrl?: string;

@@ -28,7 +28,7 @@ Each action appends an operation to the Zustand staging store, which persists to
   "title": "Lecture Notes",
   "directory_id": "existing-uuid-or-$ref",
   "type": "pdf",
-  "file_key": "uploads/{user_id}/{upload_id}/notes.pdf",
+  "file_key": "cas/abc123...",
   "file_name": "notes.pdf",
   "file_size": 12345,
   "file_mime_type": "application/pdf",
@@ -63,27 +63,26 @@ The UI disables PR submission if any referenced uploads have expired.
 
 ### Step 2.2: Server Validation (`POST /api/pull-requests`)
 
-1. **File key ownership check:** Every `file_key` in the payload must start with `uploads/{requesting_user_id}/`
-2. **File existence check:** Every referenced file must exist in S3
-3. **Virus scan check:** Redis `upload:scanned:{file_key}` must be `"CLEAN"` for every file
-4. **Summary types extraction:** Collect unique `op` values (e.g., `["create_material", "create_directory"]`)
+1. **Operation count check:** Regular users ≤ 50 ops; privileged users ≤ 500 ops
+2. **Open PR limit:** Regular users capped at 5 open PRs (moderators, bureau, vieux exempt)
+3. **File key ownership check:** Every `file_key` must start with `uploads/{requesting_user_id}/` or `cas/`. Ownership of `cas/` keys is verified via the `uploads` table.
+4. **File existence check:** Every referenced file must exist in S3
+5. **Scan result check:** The user must have a clean `Upload` row for every file
+6. **Summary types extraction:** Collect unique `op` values
 
-### Step 2.3: PR Record Creation
+### Step 2.3: PR Record + File Claims
 
-```
-DB: pull_requests row
-  id: uuid
-  title: "Add Linear Algebra notes"
-  description: "Notes from Prof. Martin's lectures"
-  author_id: user_uuid
-  status: OPEN
-  payload: [ {op1}, {op2}, ... ]  (JSONB)
-  summary_types: ["create_material", "create_directory"]
-  virus_scan_result: CLEAN
-  created_at: now()
-```
+(same as before)
 
-### Step 2.4: Client Cleanup
+### Step 2.4: Auto-Approval (Privileged Users)
+
+If the author has `BUREAU` or `VIEUX` roles:
+1. The PR status is set directly to `APPROVED`.
+2. `apply_pr()` is executed immediately in the same transaction.
+3. `pr_file_claims` are released.
+4. The response includes the `applied_result`, allowing the UI to navigate to the result immediately.
+
+### Step 2.5: Client Cleanup
 
 On successful PR creation, the staging store clears all submitted operations.
 
@@ -94,28 +93,18 @@ On successful PR creation, the staging store clears all submitted operations.
 PRs appear on the `/pull-requests` page with status filtering (open, approved, rejected). Each card shows:
 - Title, description, author
 - Operation summary (counts by type)
-- Vote tally (upvotes - downvotes)
-- Comment count
 
-### Step 3.2: Community Voting
-
-Any authenticated user can vote:
-- `POST /api/pull-requests/{id}/vote` with `{ "value": 1 }` or `{ "value": -1 }`
-- Uses a `(pr_id, user_id)` unique constraint — upsert semantics
-- Votes are advisory; they don't trigger auto-approval
-
-### Step 3.3: Discussion
+### Step 3.2: Discussion
 
 Users and moderators can leave comments on the PR:
 - Threaded comments with `parent_comment_id` for replies
 - Comments create notifications for the PR author and other participants
 
-### Step 3.4: PR Detail View
+### Step 3.3: PR Detail View
 
 The PR detail page (`/pull-requests/{id}`) renders:
 - Full operation list with visual diff (what will be created/edited/deleted)
 - File previews for uploaded materials
-- Vote buttons and current tally
 - Comment thread
 - Approve/Reject buttons (moderator-only)
 
@@ -129,7 +118,6 @@ The PR detail page (`/pull-requests/{id}`) renders:
 
 Pre-checks:
 - PR status must be `OPEN`
-- Virus scan result must be `CLEAN`
 
 ### Step 4.2: Topological Sort
 
@@ -137,6 +125,8 @@ Pre-checks:
 - Any operation defining a `temp_id` executes before operations referencing that `temp_id`
 - Uses Kahn's algorithm with stable index-based ordering
 - Raises `BadRequestError` on cyclic dependencies
+
+The sort operates on a copy of `pr.payload` — the original is never modified.
 
 ### Step 4.3: Sequential Execution
 
@@ -158,19 +148,18 @@ For each operation:
 1. Resolve any `$`-prefixed references from the `id_map`
 2. Execute the operation
 3. Register the result UUID in `id_map` for downstream references
-4. Enrich the operation with `result_id` and `result_browse_path`
+4. Build an enriched record (`result_id`, `result_browse_path`) in `result_ops`
 
 ### Step 4.4: create_material Execution Detail
 
 The most complex executor:
 
 1. Get or create tags
-2. Generate a unique slug within the target directory (`SELECT ... FOR UPDATE` to prevent races)
+2. Generate a unique slug within the target directory (`SELECT ... FOR UPDATE` to prevent races; regex post-filter to avoid false prefix collisions)
 3. Create `Material` row
 4. If `file_key` is present:
-   - Read actual file size and MIME type from S3 (`get_object_info`)
-   - Copy file: `uploads/... → materials/...`
-   - Schedule post-commit delete of the `uploads/` copy
+   - **CAS V2 (`cas/`):** no S3 copy needed; size and MIME from payload
+   - **Legacy V1 (`uploads/`):** copy file to `materials/` prefix; schedule delete of staging copy
    - Create `MaterialVersion` row (version 1, scan result `CLEAN`)
 5. If `attachments` are present: create a system directory and child materials
 6. Schedule search index job
@@ -192,13 +181,20 @@ For materials:
 - Updates `directory_id`
 - Regenerates slug for uniqueness in the new location
 
-### Step 4.7: Transaction Commit
+### Step 4.7: Post-Execution
+
+After all operations succeed:
+- `pr.applied_result` is set to the enriched operation list (each op annotated with `result_id` and `result_browse_path`)
+- `pr_file_claims` rows for this PR are deleted (files now live in permanent locations)
+- Status set to `APPROVED`, `reviewed_by` recorded
+
+### Step 4.8: Transaction Commit
 
 All operations succeed → single `COMMIT`.
 
-If any operation fails → full `ROLLBACK`. No materials, directories, or versions are created. Upload files remain in `uploads/` for retry.
+If any operation fails → full `ROLLBACK`. No materials, directories, or versions are created. Upload files remain in `uploads/` for retry. File claims remain in `pr_file_claims` (PR stays `OPEN`).
 
-### Step 4.8: Post-Commit Jobs
+### Step 4.9: Post-Commit Jobs
 
 After successful commit, jobs are dispatched via ARQ:
 
@@ -207,7 +203,7 @@ After successful commit, jobs are dispatched via ARQ:
 | `index_material` | Add/update material in MeiliSearch |
 | `index_directory` | Add/update directory in MeiliSearch |
 | `delete_indexed_item` | Remove from MeiliSearch (for deletes) |
-| `delete_storage_objects` | Delete `uploads/` staging files |
+| `delete_storage_objects` | Delete `uploads/` staging files (legacy V1) |
 
 These are fire-and-forget. If a post-commit job fails, the cleanup worker catches it later.
 
@@ -217,14 +213,17 @@ These are fire-and-forget. If a post-commit job fails, the cleanup worker catche
 
 ```
 DB:
-  pull_requests row → status=APPROVED, payload enriched with result_id + result_browse_path
+  pull_requests row → status=APPROVED, applied_result enriched with result_id + result_browse_path
+  pull_requests row → payload unchanged (original intent preserved)
   materials rows → created/edited/deleted per operations
-  material_versions rows → new versions with file_key under materials/ prefix
+  material_versions rows → new versions with file_key under cas/ or materials/ prefix
   directories rows → created/edited/deleted per operations
+  pr_file_claims rows → deleted (claims released)
 
 S3:
-  materials/{user_id}/{upload_id}/{filename} → permanent location
-  uploads/{user_id}/{upload_id}/{filename} → DELETED (post-commit)
+  cas/{hmac} → permanent (CAS V2, ref-counted)
+  materials/{user_id}/{upload_id}/{filename} → permanent (legacy V1)
+  uploads/{user_id}/{upload_id}/{filename} → DELETED post-commit (legacy V1 only)
 
 MeiliSearch:
   New/updated materials and directories indexed for full-text search
@@ -232,23 +231,26 @@ MeiliSearch:
 
 ### Post-Approval Navigation
 
-The PR payload is enriched with `result_browse_path` for each operation, allowing the UI to link directly to the created/edited items from the PR detail page.
+`pr.applied_result` contains `result_browse_path` for each operation, allowing the UI to link directly to the created/edited items from the PR detail page.
 
-## Rejection Flow
+### Step 4.0: Direct Submission (Auto-approval)
 
-`POST /api/pull-requests/{id}/reject` (moderator-only):
-- Sets status to `REJECTED`
-- Records `reviewed_by` and timestamp
-- **No content changes occur**
-- Referenced `uploads/` files will be cleaned up by the 24-hour cleanup worker
+Privileged users (`BUREAU`, `VIEUX`) can skip the review period by selecting "Direct Submit" in the UI. This triggers a `POST /api/pull-requests/submit-direct` call, which:
+1. Atomically creates the PR with status `APPROVED`.
+2. Immediately triggers `apply_pr()`.
+3. Returns the enriched `applied_result` in the response, allowing the UI to navigate to the new content instantly.
 
-## Error Recovery
+---
+
+### Step 4.10: Rejection with Reason
+
+When a moderator rejects a PR, they can provide a `rejection_reason` (string). This is stored in the DB and shown to the author, helping them understand why their contribution was not accepted.
 
 | Scenario | Behavior |
 |----------|----------|
-| Transaction rollback during approval | All DB changes rolled back; uploads preserved; PR remains `OPEN` |
+| Transaction rollback during approval | All DB changes rolled back; uploads preserved; PR remains `OPEN`; file claims preserved |
 | Post-commit job failure | Cleanup worker catches orphaned files; search re-indexes on next change |
-| Duplicate slug collision | `SELECT ... FOR UPDATE` + suffix generation prevents races |
+| Duplicate slug collision | `SELECT ... FOR UPDATE` + regex post-filter + suffix generation prevents races and false conflicts |
 | Circular directory move | Ancestry walk detects cycles; raises `BadRequestError` |
 | Expired upload files | PR submission blocked client-side; server validates file existence |
-| Idempotent retry | Operations with existing `result_id` are skipped on re-application |
+| Duplicate file claim | DB `IntegrityError` on `pr_file_claims.file_key` PRIMARY KEY → 400 Bad Request |

@@ -100,6 +100,7 @@ app = FastAPI(
 
 # ── Security Headers (S23) ───────────────────────────────────────────────────
 
+
 @app.middleware("http")
 async def add_security_headers(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -128,6 +129,7 @@ async def add_security_headers(
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
+
 
 app.state.limiter = limiter
 
@@ -167,9 +169,10 @@ app.add_middleware(
 )
 
 
-
 @app.middleware("http")
-async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+async def log_requests(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     start = time.perf_counter()
     response: Response = await call_next(request)
     elapsed = time.perf_counter() - start
@@ -216,6 +219,7 @@ async def metrics(request: Request) -> Response:
 
     if settings.metrics_token:
         import hmac
+
         token = request.headers.get("Authorization", "").removeprefix(
             "Bearer "
         ).strip() or request.query_params.get("token", "")
@@ -224,7 +228,6 @@ async def metrics(request: Request) -> Response:
 
     data = generate_latest(REGISTRY)
     return Response(content=data, media_type=CONTENT_TYPE_LATEST)
-
 
 
 app.include_router(admin_router)
@@ -286,7 +289,7 @@ if settings.is_dev:
         from app.models.flag import Flag
         from app.models.material import Material, MaterialVersion
         from app.models.notification import Notification
-        from app.models.pull_request import PRComment, PRVote, PullRequest
+        from app.models.pull_request import PRComment, PullRequest
         from app.models.tag import Tag
         from app.models.user import User
         from app.models.view_history import ViewHistory
@@ -312,9 +315,6 @@ if settings.is_dev:
 
         class PullRequestAdmin(ModelView, model=PullRequest):
             column_list = [PullRequest.id, PullRequest.title, PullRequest.type, PullRequest.status]
-
-        class PRVoteAdmin(ModelView, model=PRVote):
-            column_list = [PRVote.id, PRVote.pr_id, PRVote.user_id, PRVote.value]
 
         class PRCommentAdmin(ModelView, model=PRComment):
             column_list = [PRComment.id, PRComment.pr_id, PRComment.body]
@@ -345,7 +345,6 @@ if settings.is_dev:
         admin.add_view(MaterialVersionAdmin)
         admin.add_view(TagAdmin)
         admin.add_view(PullRequestAdmin)
-        admin.add_view(PRVoteAdmin)
         admin.add_view(PRCommentAdmin)
         admin.add_view(CommentAdmin)
         admin.add_view(AnnotationAdmin)

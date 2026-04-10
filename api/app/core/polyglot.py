@@ -25,17 +25,17 @@ logger = logging.getLogger("wikint")
 # ``format_family`` groups semantically related MIME types so we do not flag
 # legitimate subtypes (e.g. application/zip vs application/x-zip-compressed).
 _HEADER_MAGIC: list[tuple[str, bytes, str]] = [
-    ("zip",         b"PK\x03\x04", "archive"),
-    ("zip_empty",   b"PK\x05\x06", "archive"),
+    ("zip", b"PK\x03\x04", "archive"),
+    ("zip_empty", b"PK\x05\x06", "archive"),
     ("zip_spanned", b"PK\x07\x08", "archive"),
-    ("pdf",         b"%PDF-",      "pdf"),
-    ("html_doctype",b"<!DOCTYPE ", "html"),
-    ("html_tag",    b"<html",      "html"),
-    ("html_tag_uc", b"<HTML",      "html"),
-    ("script_tag",  b"<script",    "html"),
-    ("pe_exe",      b"MZ",         "executable"),
-    ("elf_exe",     b"\x7fELF",    "executable"),
-    ("java_class",  b"\xca\xfe\xba\xbe", "executable"),
+    ("pdf", b"%PDF-", "pdf"),
+    ("html_doctype", b"<!DOCTYPE ", "html"),
+    ("html_tag", b"<html", "html"),
+    ("html_tag_uc", b"<HTML", "html"),
+    ("script_tag", b"<script", "html"),
+    ("pe_exe", b"MZ", "executable"),
+    ("elf_exe", b"\x7fELF", "executable"),
+    ("java_class", b"\xca\xfe\xba\xbe", "executable"),
 ]
 
 # Signature of a ZIP End-of-Central-Directory record.
@@ -44,16 +44,18 @@ _ZIP_EOCD = b"PK\x05\x06"
 # Per-MIME-prefix: which additional format families are expected/allowed.
 # An empty set means *no* other format magic is acceptable.
 _ALLOWED_EXTRA_FAMILIES: dict[str, set[str]] = {
-    "image/":            set(),
-    "video/":            set(),
-    "audio/":            set(),
-    "application/pdf":   {"pdf"},       # PDF magic inside a PDF is fine
-    "application/zip":   {"archive"},
+    "image/": set(),
+    "video/": set(),
+    "audio/": set(),
+    "application/pdf": {"pdf"},  # PDF magic inside a PDF is fine
+    "application/zip": {"archive"},
     "application/x-zip": {"archive"},
-    "text/html":         {"html"},      # HTML magic expected in HTML files
-    "text/xml":          {"html"},      # XML can look like HTML (<?xml)
-    "application/xml":   {"html"},
-    "application/vnd.openxmlformats-": {"archive"}, # Office formats are ZIPs
+    "text/html": {"html"},  # HTML magic expected in HTML files
+    "text/xml": {"html"},  # XML can look like HTML (<?xml)
+    "application/xml": {"html"},
+    "application/vnd.openxmlformats-": {"archive"},  # Office formats are ZIPs
+    "application/vnd.oasis.opendocument.": {"archive"},  # ODS/ODT/ODP are ZIPs
+    "application/epub+zip": {"archive"},  # EPUB is a ZIP
 }
 
 

@@ -81,7 +81,7 @@ export function DirectoryOpenPRs({ directoryId }: DirectoryOpenPRsProps) {
             <div className="flex items-center gap-2 px-4 py-2.5 border-b border-amber-200/60 dark:border-amber-800/40">
                 <GitPullRequest className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                 <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                    {prs.length} open pull request{prs.length !== 1 ? "s" : ""}{" "}
+                    {prs.length} open contribution{prs.length !== 1 ? "s" : ""}{" "}
                     in this folder
                 </span>
             </div>

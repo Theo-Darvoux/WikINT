@@ -8,7 +8,7 @@ export default function PrivacyPage() {
                 <p className="text-muted-foreground leading-relaxed">
                     WikINT collects the minimum data necessary to provide the service. This includes
                     your school email address, display name, academic year, and any content you
-                    voluntarily contribute (materials, comments, annotations, pull requests).
+                    voluntarily contribute (materials, comments, annotations, contributions).
                 </p>
             </section>
 

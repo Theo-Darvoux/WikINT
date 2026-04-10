@@ -1,7 +1,6 @@
 import * as tus from "tus-js-client";
 import { API_BASE, ApiError, apiRequest, getClientId } from "@/lib/api-client";
 import { getAccessToken } from "@/lib/auth-tokens";
-import { sha256File } from "@/lib/crypto-utils";
 import { compressImageIfNeeded } from "@/lib/file-utils";
 
 export type UploadStatus = "pending" | "processing" | "clean" | "malicious" | "failed";
@@ -15,14 +14,14 @@ export interface TusUploadHandle {
 export interface UploadFileOptions {
     /**
      * Progress callback. Values:
-     *   0–5    SHA-256 computation
+     *   0–5    Initialisation
      *   5–80   Transfer to S3 (XHR PUT for small files, tus chunks for large)
      *   80–99  Server-side processing (via SSE overall_percent)
      *   100    Complete
      */
     onProgress?: (pct: number) => void;
     /** Called with granular server status messages (e.g. "Scanning for malware…"). */
-    onStatusUpdate?: (status: string) => void;
+    onStatusUpdate?: (status: string, stageIndex?: number, stageTotal?: number) => void;
     /** Called with raw byte progress. */
     onBytesProgress?: (uploaded: number, total: number) => void;
     /** Called when a tus upload is ready to be controlled (paused/resumed). */
@@ -38,12 +37,23 @@ export interface UploadFileOptions {
     skipCompression?: boolean;
 }
 
+/**
+ * Returns the logical file size — i.e. what the user will see when they download the file.
+ * For gzip-encoded objects S3 decompresses transparently, so the download size equals
+ * the pre-compression original, not the stored (compressed) bytes.
+ */
+export function logicalFileSize(result: Pick<UploadResult, "size" | "original_size" | "content_encoding">): number {
+    return result.content_encoding === "gzip" ? result.original_size : result.size;
+}
+
 export interface UploadResult {
     file_key: string;
     size: number;
     /** Size before server-side compression/optimisation. Equals size if unchanged. */
     original_size: number;
     mime_type: string;
+    /** Content-Encoding set on the S3 object (e.g. "gzip"). Null for binary formats. */
+    content_encoding: string | null;
     /** Server-corrected filename (e.g. misnamed .wav → .flac). */
     correctedName: string;
     /** True when client-side image compression was applied before upload. */
@@ -66,10 +76,6 @@ const S3_PART_SIZE = 8 * 1024 * 1024; // 8 MiB
 
 // ── Internal types ────────────────────────────────────────────────────────────
 
-interface CheckExistsResponse {
-    exists: boolean;
-    file_key?: string;
-}
 interface InitUploadResponse {
     quarantine_key: string;
     upload_id: string;
@@ -92,9 +98,11 @@ interface UploadEventPayload {
     detail?: string;
     result?: {
         file_key: string;
+        file_name?: string;
         size: number;
         original_size: number;
         mime_type: string;
+        content_encoding?: string | null;
     };
     stage_index?: number;
     stage_total?: number;
@@ -494,63 +502,16 @@ export async function uploadFile(
 ): Promise<UploadResult> {
     const { onProgress, signal } = options;
 
-    // ── Phase 1: SHA-256 pre-check (0–5%) (U8: Hash original first) ───────────
+    // ── Phase 1: Auth headers (0–5%) ─────────────────────────────────────────
     onProgress?.(0);
-    _onStatusUpdate(options.onStatusUpdate, "Computing checksum…");
 
-    const sha256 = await sha256File(file, (p) => {
-        // Map 0-100% hashing progress to 0-5% total progress
-        onProgress?.(Math.round(p * 0.05));
-    }, signal);
-    onProgress?.(5);
-
-    // Check if this exact file already exists (per-user or global CAS)
     const token = getAccessToken();
     const baseHeaders: Record<string, string> = {
         "X-Client-ID": getClientId(),
     };
     if (token) baseHeaders["Authorization"] = `Bearer ${token}`;
 
-    let existsResp: CheckExistsResponse = { exists: false };
-    try {
-        const r = await apiRequest("/upload/check-exists", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...baseHeaders },
-            body: JSON.stringify({ sha256, size: file.size }),
-            signal,
-        });
-        if (r.ok) {
-            existsResp = await r.json();
-        } else if (r.status === 401 || r.status === 403) {
-            // (U16) Propagate 401/403 to surface re-auth prompt
-            throw new ApiError(r.status, "Authentication required");
-        }
-    } catch (err) {
-        if (err instanceof ApiError) throw err;
-        // Network errors etc - assume not exists and proceed
-    }
-
     onProgress?.(5);
-
-    if (existsResp.exists && existsResp.file_key) {
-        // Fast path: file already exists in clean state — wait for processing SSE
-        _onStatusUpdate(options.onStatusUpdate, "File already processed");
-        onProgress?.(80);
-        const result = await _waitForUploadCompletion(existsResp.file_key, {
-            onProgress: (p) => onProgress?.(80 + Math.round(p * 19)),
-            onStatusUpdate: options.onStatusUpdate,
-            signal,
-        });
-        onProgress?.(100);
-        return {
-            file_key: result.file_key,
-            size: result.size,
-            original_size: result.original_size,
-            mime_type: result.mime_type,
-            correctedName: result.file_key.split("/").pop() ?? file.name,
-            wasCompressed: false,
-        };
-    }
 
     // ── Client-side image compression (U8: AFTER hashing original) ───────────
     const { file: fileToUpload, compressed } = await compressImageIfNeeded(file, options.skipCompression);
@@ -643,13 +604,14 @@ export async function uploadFile(
         size: result.size,
         original_size: result.original_size,
         mime_type: result.mime_type,
-        correctedName: result.file_key.split("/").pop() ?? file.name,
+        content_encoding: result.content_encoding ?? null,
+        correctedName: result.file_name ?? result.file_key.split("/").pop() ?? file.name,
         wasCompressed: compressed,
     };
 }
 
 function _onStatusUpdate(
-    cb: ((s: string) => void) | undefined,
+    cb: ((s: string, stageIndex?: number, stageTotal?: number) => void) | undefined,
     msg: string,
 ): void {
     cb?.(msg);
@@ -678,7 +640,7 @@ async function _waitForUploadCompletion(
     fileKey: string,
     options: {
         onProgress?: (p: number) => void;
-        onStatusUpdate?: (s: string) => void;
+        onStatusUpdate?: (s: string, stageIndex?: number, stageTotal?: number) => void;
         signal?: AbortSignal;
     } = {},
 ): Promise<NonNullable<UploadEventPayload["result"]>> {
@@ -802,7 +764,7 @@ function _handleUploadEvent(
     eventType: string,
     rawData: string,
     onProgress?: (p: number) => void,
-    onStatusUpdate?: (s: string) => void,
+    onStatusUpdate?: (s: string, stageIndex?: number, stageTotal?: number) => void,
 ): NonNullable<UploadEventPayload["result"]> | null {
     if (eventType === "ping" || rawData === "") return null;
 
@@ -814,7 +776,7 @@ function _handleUploadEvent(
     }
 
     if (payload.detail) {
-        onStatusUpdate?.(payload.detail);
+        onStatusUpdate?.(payload.detail, payload.stage_index, payload.stage_total);
     }
 
     // Use structured overall_percent (0.0–1.0) for smooth progress in 80–99 range.

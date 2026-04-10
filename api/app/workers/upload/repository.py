@@ -1,0 +1,190 @@
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any, TypeVar
+
+from sqlalchemy import select, update
+
+from app.core import redis as redis_core
+from app.models.dead_letter import DeadLetterJob
+from app.models.upload import Upload
+from app.workers.upload.context import WorkerContext
+
+logger = logging.getLogger("wikint")
+
+T = TypeVar("T")
+
+
+async def _retry_db[T](
+    operation: Callable[[], Awaitable[T]],
+    max_attempts: int = 3,
+    base_delay: float = 0.5,
+    context: str = "DB operation",
+) -> T:
+    """Helper to retry a database operation with exponential backoff."""
+    for attempt in range(max_attempts):
+        try:
+            return await operation()
+        except Exception as exc:
+            if attempt == max_attempts - 1:
+                logger.error("%s failed after %d attempts: %s", context, max_attempts, exc)
+                raise
+            delay = base_delay * (2**attempt)
+            logger.warning("%s retry %d/%d in %.1fs: %s", context, attempt + 1, max_attempts, delay, exc)
+            await asyncio.sleep(delay)
+    raise RuntimeError("Unreachable")
+
+
+class UploadWorkerRepository:
+    """Database-facing operations used by the upload worker pipeline."""
+
+    def __init__(self, ctx: WorkerContext) -> None:
+        self._ctx = ctx
+
+    def _session_factory(self) -> Any:
+        return self._ctx.db_sessionmaker
+
+    async def update_upload_status(
+        self,
+        upload_id: str,
+        status: str,
+        *,
+        sha256: str | None = None,
+        content_sha256: str | None = None,
+        final_key: str | None = None,
+        error_detail: str | None = None,
+        cas_key: str | None = None,
+        cas_ref_count: int | None = None,
+    ) -> None:
+        """Best-effort DB status update with retry for transient failures."""
+        session_factory = self._session_factory()
+        if session_factory is None:
+            return
+
+        async def _do_update() -> None:
+            async with session_factory() as session:
+                values: dict[str, Any] = {
+                    "status": status,
+                    "updated_at": datetime.now(UTC),
+                }
+                if sha256 is not None:
+                    values["sha256"] = sha256
+                if content_sha256 is not None:
+                    values["content_sha256"] = content_sha256
+                if final_key is not None:
+                    values["final_key"] = final_key
+                if error_detail is not None:
+                    values["error_detail"] = error_detail
+                if cas_key is not None:
+                    values["cas_key"] = cas_key
+                if cas_ref_count is not None:
+                    values["cas_ref_count"] = cas_ref_count
+
+                await session.execute(
+                    update(Upload).where(Upload.upload_id == upload_id).values(**values)
+                )
+                await session.commit()
+
+        try:
+            await _retry_db(_do_update, context=f"update_upload_status for {upload_id}")
+        except Exception:
+            pass  # Already logged in _retry_db
+
+    async def checkpoint_pipeline_stage(self, upload_id: str, stage: int) -> None:
+        """Persist a completed pipeline stage for resume-on-retry behavior."""
+        session_factory = self._session_factory()
+        if session_factory is None:
+            return
+
+        async def _do_checkpoint() -> None:
+            async with session_factory() as session:
+                await session.execute(
+                    update(Upload).where(Upload.upload_id == upload_id).values(pipeline_stage=stage)
+                )
+                await session.commit()
+
+        try:
+            await _retry_db(_do_checkpoint, context=f"checkpoint_pipeline_stage for {upload_id}")
+        except Exception:
+            pass
+
+    async def get_pipeline_stage(self, upload_id: str) -> int:
+        """Read the last completed pipeline stage from the DB."""
+        session_factory = self._session_factory()
+        if session_factory is None:
+            return 0
+
+        async def _do_get() -> int:
+            async with session_factory() as session:
+                row = await session.scalar(select(Upload).where(Upload.upload_id == upload_id))
+                return row.pipeline_stage if row else 0
+
+        try:
+            return await _retry_db(_do_get, context=f"get_pipeline_stage for {upload_id}")
+        except Exception:
+            return 0
+
+    async def insert_dead_letter(
+        self,
+        upload_id: str,
+        job_name: str,
+        payload: dict[str, Any],
+        error: str,
+        attempts: int,
+    ) -> None:
+        """Insert a failed worker job into dead_letter_jobs."""
+        session_factory = self._session_factory()
+        if session_factory is None:
+            logger.error(
+                "No DB session factory - cannot insert dead letter for upload %s",
+                upload_id,
+            )
+            return
+
+        async def _do_insert() -> None:
+            async with session_factory() as session:
+                dlj = DeadLetterJob(
+                    job_name=job_name,
+                    upload_id=upload_id,
+                    payload=payload,
+                    error_detail=error[:4000] if error else None,
+                    attempts=attempts,
+                )
+                session.add(dlj)
+                await session.commit()
+
+        try:
+            await _retry_db(_do_insert, context=f"insert_dead_letter for {upload_id}")
+            logger.info(
+                "Dead-lettered job %s for upload %s after %d attempts",
+                job_name,
+                upload_id,
+                attempts,
+            )
+        except Exception:
+            pass
+
+    async def maybe_dispatch_webhook(self, upload_id: str) -> None:
+        """Enqueue webhook dispatch if the upload row has a webhook_url."""
+        session_factory = self._session_factory()
+        if session_factory is None:
+            return
+
+        async def _check_webhook() -> str | None:
+            async with session_factory() as session:
+                row = await session.scalar(select(Upload).where(Upload.upload_id == upload_id))
+                return row.webhook_url if row else None
+
+        try:
+            webhook_url = await _retry_db(_check_webhook, context=f"maybe_dispatch_webhook for {upload_id}")
+            if not webhook_url:
+                return
+
+            if redis_core.arq_pool is None:
+                logger.warning("arq_pool unavailable - webhook for upload %s skipped", upload_id)
+                return
+
+            await redis_core.arq_pool.enqueue_job("dispatch_webhook", upload_id=upload_id)
+        except Exception as exc:
+            logger.warning("Failed to enqueue webhook for upload %s: %s", upload_id, exc)

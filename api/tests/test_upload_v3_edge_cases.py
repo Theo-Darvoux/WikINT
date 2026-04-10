@@ -11,7 +11,9 @@ from tests.test_tus import _create_user
 
 
 @pytest.mark.asyncio
-async def test_tus_checksum_missing_header(client: AsyncClient, db_session: AsyncSession, fake_redis_setup):
+async def test_tus_checksum_missing_header(
+    client: AsyncClient, db_session: AsyncSession, fake_redis_setup
+):
     """Test Phase 1.4: Checksum is optional, upload should succeed without it."""
     user = await _create_user(db_session)
     await db_session.commit()
@@ -28,7 +30,7 @@ async def test_tus_checksum_missing_header(client: AsyncClient, db_session: Asyn
         "s3_upload_id": "s3-id",
         "upload_id": "up-id",
         "filename": "f.txt",
-        "mime_type": "text/plain"
+        "mime_type": "text/plain",
     }
     await fake_redis_setup.hset(f"tus:state:{tus_id}", mapping=state)
 
@@ -41,6 +43,7 @@ async def test_tus_checksum_missing_header(client: AsyncClient, db_session: Asyn
 
     async def _stream():
         yield content
+
     mock_request.stream = _stream
 
     with (
@@ -50,13 +53,16 @@ async def test_tus_checksum_missing_header(client: AsyncClient, db_session: Asyn
     ):
         m_upload.return_value = "etag-123"
         import uuid
+
         response = await tus_patch(uuid.UUID(tus_id), mock_request, user, fake_redis_setup)
         assert response.status_code == 204
         assert response.headers["Upload-Offset"] == str(len(content))
 
 
 @pytest.mark.asyncio
-async def test_tus_concurrency_limit_hit(client: AsyncClient, db_session: AsyncSession, fake_redis_setup):
+async def test_tus_concurrency_limit_hit(
+    client: AsyncClient, db_session: AsyncSession, fake_redis_setup
+):
     """Test Phase 2.3: Per-user concurrency limit enforced."""
     user = await _create_user(db_session)
     await db_session.commit()
@@ -68,6 +74,7 @@ async def test_tus_concurrency_limit_hit(client: AsyncClient, db_session: AsyncS
         if "upload:inflight:" in key:
             return 9
         return 1
+
     fake_redis_setup.incr = mock_incr
 
     mock_request = MagicMock(spec=Request)
@@ -77,6 +84,7 @@ async def test_tus_concurrency_limit_hit(client: AsyncClient, db_session: AsyncS
     }
 
     import uuid
+
     response = await tus_patch(uuid.UUID(tus_id), mock_request, user, fake_redis_setup)
     assert response.status_code == 429
     assert response.headers["X-WikINT-Error"] == ERR_TUS_CONCURRENCY_LIMIT
@@ -99,7 +107,11 @@ async def test_reconcile_skips_malicious_or_clean(fake_redis_setup):
 
     initiated = datetime.now(UTC) - timedelta(hours=3)
     # Key format: quarantine/{user_id}/{upload_id}/{filename}
-    clean_part = {"UploadId": "s3-clean", "Key": "quarantine/u1/up-clean/f.txt", "Initiated": initiated}
+    clean_part = {
+        "UploadId": "s3-clean",
+        "Key": "quarantine/u1/up-clean/f.txt",
+        "Initiated": initiated,
+    }
 
     async def mock_list_multipart(prefix):
         yield clean_part
@@ -107,8 +119,13 @@ async def test_reconcile_skips_malicious_or_clean(fake_redis_setup):
     ctx = {"redis": mock_redis, "db_sessionmaker": mock_session_factory}
 
     with (
-        patch("app.workers.reconcile_multipart.list_multipart_uploads", side_effect=mock_list_multipart),
-        patch("app.workers.reconcile_multipart.abort_multipart_upload", new_callable=AsyncMock) as m_abort
+        patch(
+            "app.workers.reconcile_multipart.list_multipart_uploads",
+            side_effect=mock_list_multipart,
+        ),
+        patch(
+            "app.workers.reconcile_multipart.abort_multipart_upload", new_callable=AsyncMock
+        ) as m_abort,
     ):
         await reconcile_multipart_uploads(ctx)
 

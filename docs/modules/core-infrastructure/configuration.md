@@ -15,8 +15,9 @@ Centralizes all application configuration via Pydantic Settings. Environment var
 |---------|---------|---------|
 | `environment` | `development` | Literal `["development", "production", "test"]`. Controls dev-only features. |
 | `secret_key` | `SecretStr` | JWT signing key, HMAC derivation base (masked in logs). |
-| `gs_quality` | `/printer` | Literal `["/screen", "/ebook", "/printer", "/prepress"]`. Ghostscript PDF quality. |
-| `video_compression_profile` | `aggressive` | Literal `["none", "light", "medium", "aggressive", "heavy", "extreme"]`. FFmpeg compression profile. |
+| `pdf_quality` | `75` | Integer (0-100). PDF compression quality logic threshold. |
+| `pdf_compression_level` | `None` | Optional Ghostscript-style alias (e.g., `/screen`, `/ebook`) that maps to `pdf_quality`. |
+| `video_compression_profile` | `heavy` | Literal `["none", "light", "medium", "aggressive", "heavy", "extreme"]`. FFmpeg compression profile. |
 
 ### Database
 | Setting | Default | Purpose |
@@ -61,10 +62,18 @@ The per-category limits override the global limit. A 150 MiB video is allowed (u
 | `global_max_subprocesses` | 0 (auto: `os.cpu_count()`) | Max concurrent sandboxed subprocesses (ffmpeg, Ghostscript, exiftool) |
 | `max_concurrent_image_ops` | 0 (auto: `cpu_count // 2`) | Max concurrent Pillow image operations |
 
-### Upload Pipeline
+### Upload Pipeline & CAS
 | Setting | Default | Purpose |
 |---------|---------|---------|
 | `upload_pipeline_max_seconds` | 600 | Hard deadline for the entire worker pipeline |
+| `cas_max_age_seconds` | 604800 | 7-day TTL for CAS entries before re-scanning is mandatory |
+| `enable_presigned_multipart` | true | Enable AWS S3 multipart upload for large files |
+| `direct_upload_threshold_mb` | 10 | Files below this size use `POST /api/upload` (direct) |
+
+### Webhooks
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `webhook_secret` | "" | HMAC-SHA256 secret for signing upload-complete webhooks |
 
 ### TUS Resumable Upload
 | Setting | Default | Purpose |
@@ -110,6 +119,11 @@ The per-category limits override the global limit. A 150 MiB video is allowed (u
 | `jwt_access_token_expire_days` | 7 | Access token lifetime |
 | `jwt_refresh_token_expire_days` | 31 | Refresh token lifetime |
 | `frontend_url` | http://localhost:3000 | CORS origin, magic link base URL |
+
+### CORS
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `cors_allowed_headers` | (list) | Extended to include `X-Upload-ID`, `Upload-Checksum`, `Tus-Checksum-Algorithm` |
 
 ## Validation Rules
 

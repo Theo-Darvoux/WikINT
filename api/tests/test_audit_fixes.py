@@ -19,7 +19,6 @@ Covers:
 
 import io
 import json
-import time
 import zipfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -40,7 +39,6 @@ from app.core.file_security import (
 )
 from app.workers.process_upload import (
     _STAGES,
-    _is_cas_entry_stale,
     _overall,
 )
 
@@ -97,11 +95,12 @@ class TestCASRefCount:
     @pytest.fixture
     def fake_redis(self):
         from tests.conftest import FakeRedis
+
         return FakeRedis()
 
     async def test_incr_creates_new_entry_with_initial_data(self, fake_redis):
         """When key doesn't exist and ARGV[1] is provided, create with ref_count=1."""
-        from app.workers.process_upload import _LUA_CAS_INCR
+        from app.core.cas import _LUA_CAS_INCR
 
         initial = json.dumps({"final_key": "cas/abc", "size": 100})
         result = await fake_redis.eval(_LUA_CAS_INCR, 1, "upload:cas:abc", initial)
@@ -114,7 +113,7 @@ class TestCASRefCount:
 
     async def test_incr_increments_existing_entry(self, fake_redis):
         """When key exists, increment ref_count."""
-        from app.workers.process_upload import _LUA_CAS_INCR
+        from app.core.cas import _LUA_CAS_INCR
 
         await fake_redis.set("upload:cas:abc", json.dumps({"ref_count": 2, "final_key": "cas/abc"}))
         result = await fake_redis.eval(_LUA_CAS_INCR, 1, "upload:cas:abc")
@@ -122,14 +121,14 @@ class TestCASRefCount:
 
     async def test_incr_no_key_no_initial_data_returns_zero(self, fake_redis):
         """When key doesn't exist and no ARGV[1], return 0."""
-        from app.workers.process_upload import _LUA_CAS_INCR
+        from app.core.cas import _LUA_CAS_INCR
 
         result = await fake_redis.eval(_LUA_CAS_INCR, 1, "upload:cas:missing")
         assert result == 0
 
     async def test_decr_to_zero_deletes_key(self, fake_redis):
         """When ref_count reaches 0, key is deleted."""
-        from app.workers.process_upload import _LUA_CAS_DECR
+        from app.core.cas import _LUA_CAS_DECR
 
         await fake_redis.set("upload:cas:abc", json.dumps({"ref_count": 1, "final_key": "cas/abc"}))
         result = await fake_redis.eval(_LUA_CAS_DECR, 1, "upload:cas:abc")
@@ -138,68 +137,13 @@ class TestCASRefCount:
 
     async def test_decr_nonexistent_returns_zero(self, fake_redis):
         """DECR on nonexistent key returns 0."""
-        from app.workers.process_upload import _LUA_CAS_DECR
+        from app.core.cas import _LUA_CAS_DECR
 
         result = await fake_redis.eval(_LUA_CAS_DECR, 1, "upload:cas:missing")
         assert result == 0
 
 
 # =============================================================================
-# C3: CAS entry staleness
-# =============================================================================
-
-
-class TestCASEntryStale:
-    """Verify staleness checks for CAS cache entries."""
-
-    def test_fresh_entry_not_stale(self):
-        cas_data = {"scanned_at": time.time(), "final_key": "cas/abc"}
-        import typing
-        ctx: dict[str, typing.Any] = {}
-        assert _is_cas_entry_stale(cas_data, ctx) is False
-
-    def test_missing_scanned_at_is_stale(self):
-        """Legacy entries without scanned_at are always stale."""
-        cas_data = {"final_key": "cas/abc"}
-        import typing
-        ctx: dict[str, typing.Any] = {}
-        assert _is_cas_entry_stale(cas_data, ctx) is True
-
-    def test_old_entry_is_stale(self):
-        """Entries older than cas_max_age_seconds are stale."""
-        cas_data = {"scanned_at": time.time() - 8 * 24 * 3600, "final_key": "cas/abc"}
-        import typing
-        ctx: dict[str, typing.Any] = {}
-        with patch("app.workers.process_upload.settings") as mock_settings:
-            mock_settings.cas_max_age_seconds = 7 * 24 * 3600
-            assert _is_cas_entry_stale(cas_data, ctx) is True
-
-    def test_entry_before_yara_recompile_is_stale(self):
-        """Entries scanned before YARA rules were recompiled are stale."""
-        cas_data = {"scanned_at": time.time() - 3600, "final_key": "cas/abc"}
-        import typing
-        ctx: dict[str, typing.Any] = {"yara_compiled_at": time.time() - 1800}  # YARA compiled 30 min ago
-        with patch("app.workers.process_upload.settings") as mock_settings:
-            mock_settings.cas_max_age_seconds = 7 * 24 * 3600
-            assert _is_cas_entry_stale(cas_data, ctx) is True
-
-    def test_entry_after_yara_recompile_not_stale(self):
-        """Entries scanned after YARA rules were recompiled are fresh."""
-        cas_data = {"scanned_at": time.time() - 1800, "final_key": "cas/abc"}
-        import typing
-        ctx: dict[str, typing.Any] = {"yara_compiled_at": time.time() - 3600}  # YARA compiled 1h ago
-        with patch("app.workers.process_upload.settings") as mock_settings:
-            mock_settings.cas_max_age_seconds = 7 * 24 * 3600
-            assert _is_cas_entry_stale(cas_data, ctx) is False
-
-    def test_staleness_disabled_when_max_age_zero(self):
-        """When cas_max_age_seconds == 0, staleness checks are disabled."""
-        cas_data = {"final_key": "cas/abc"}  # no scanned_at
-        import typing
-        ctx: dict[str, typing.Any] = {}
-        with patch("app.workers.process_upload.settings") as mock_settings:
-            mock_settings.cas_max_age_seconds = 0
-            assert _is_cas_entry_stale(cas_data, ctx) is False
 
 
 # =============================================================================
@@ -355,6 +299,7 @@ class TestSSEEventLogCap:
     @pytest.fixture
     def fake_redis(self):
         from tests.conftest import FakeRedis
+
         return FakeRedis()
 
     async def test_ltrim_called_when_list_exceeds_200(self, fake_redis):
@@ -666,6 +611,7 @@ class TestFakeRedis:
     @pytest.fixture
     def redis(self):
         from tests.conftest import FakeRedis
+
         return FakeRedis()
 
     async def test_set_nx_creates_new(self, redis):

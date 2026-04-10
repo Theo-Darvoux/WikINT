@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { DirectoryLineItem } from "@/components/browse/directory-line-item";
 import { MaterialLineItem } from "@/components/browse/material-line-item";
 import { Breadcrumbs } from "@/components/browse/breadcrumbs";
@@ -11,6 +12,15 @@ import { DirectoryOpenPRs } from "@/components/browse/directory-open-prs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { submitDirectOperations } from "@/lib/pr-client";
 import {
     Plus,
     Upload,
@@ -25,6 +35,8 @@ import {
     Trash2,
     Scissors,
     ClipboardPaste,
+    Loader2,
+    Send,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useStagingStore } from "@/lib/staging-store";
@@ -135,6 +147,7 @@ export function DirectoryListing({
     isAttachmentListing = false,
     parentMaterial = null,
 }: DirectoryListingProps) {
+    const router = useRouter();
     const [uploadOpen, setUploadOpen] = useState(false);
     const [newFolderOpen, setNewFolderOpen] = useState(false);
     const [showActions, setShowActions] = useState(false);
@@ -252,13 +265,11 @@ export function DirectoryListing({
         allSelectableItems.length > 0 &&
         allSelectableItems.every((item) => selected.has(item.id));
 
-    const handleBatchDelete = () => {
-        const count = selected.size;
-        if (count > 1) {
-            const confirmed = window.confirm(`Are you sure you want to delete ${count} selected items?`);
-            if (!confirmed) return;
-        }
+    const [batchDeleteOps, setBatchDeleteOps] = useState<Operation[] | null>(null);
+    const [batchPasteOps, setBatchPasteOps] = useState<Operation[] | null>(null);
+    const [submittingBatch, setSubmittingBatch] = useState(false);
 
+    const handleBatchDelete = () => {
         const ops: Operation[] = [];
         let skipped = 0;
         for (const item of selected.values()) {
@@ -279,13 +290,7 @@ export function DirectoryListing({
             setSelectMode(false);
             return;
         }
-        addOperations(ops);
-        const stagedCount = ops.length;
-        toast.success(
-            `Deletion of ${stagedCount} item${stagedCount !== 1 ? "s" : ""} staged` +
-            (skipped > 0 ? ` (${skipped} already staged)` : ""),
-        );
-        setSelectMode(false);
+        setBatchDeleteOps(ops);
     };
 
     const handleCut = () => {
@@ -320,7 +325,6 @@ export function DirectoryListing({
             if (item.parentId === targetParent) return false;
             return true;
         });
-        const skipped = clipboard.length - safe.length;
 
         if (safe.length === 0) {
             const allSameParent = clipboard.every((i) => i.parentId === targetParent);
@@ -338,13 +342,7 @@ export function DirectoryListing({
             target_id: item.id,
             new_parent_id: targetParent,
         }));
-        addOperations(ops);
-        const count = ops.length;
-        toast.success(
-            `Move of ${count} item${count !== 1 ? "s" : ""} staged` +
-            (skipped > 0 ? ` (${skipped} skipped)` : ""),
-        );
-        clearClipboard();
+        setBatchPasteOps(ops);
     };
 
     return (
@@ -652,7 +650,7 @@ export function DirectoryListing({
                         </div>
                         <p className="text-lg font-medium text-muted-foreground">No attachments yet</p>
                         <p className="text-sm text-muted-foreground/70 mt-1 max-w-xs">
-                            Attachments are supplementary files linked to this material. They can be added via pull requests.
+                            Attachments are supplementary files linked to this material. They can be added via contributions.
                         </p>
                     </div>
                 ) : (
@@ -841,6 +839,95 @@ export function DirectoryListing({
                 parentId={dirId || null}
                 parentName={dirName}
             />
+            {/* Batch Delete Dialog */}
+            <Dialog open={batchDeleteOps !== null} onOpenChange={(open) => !open && setBatchDeleteOps(null)}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-destructive">
+                            <Trash2 className="h-5 w-5" />
+                            Supprimer {batchDeleteOps?.length} élément{batchDeleteOps?.length !== 1 ? "s" : ""}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Voulez-vous supprimer ces éléments ? Vous pouvez proposer la suppression immédiatement ou l'ajouter à votre brouillon.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 sm:gap-0 mt-4">
+                        <Button variant="ghost" onClick={() => setBatchDeleteOps(null)} disabled={submittingBatch} className="sm:mr-auto">
+                            Annuler
+                        </Button>
+                        <Button variant="outline" disabled={submittingBatch} onClick={() => {
+                            if (batchDeleteOps) {
+                                addOperations(batchDeleteOps);
+                                toast.success(`${batchDeleteOps.length} élément${batchDeleteOps.length !== 1 ? "s" : ""} ajouté${batchDeleteOps.length !== 1 ? "s" : ""} au brouillon`);
+                                setBatchDeleteOps(null);
+                                setSelectMode(false);
+                            }
+                        }} className="gap-2 border-dashed border-destructive/50 text-destructive hover:bg-destructive/10">
+                            <Plus className="h-4 w-4" /> Brouillon
+                        </Button>
+                        <Button variant="destructive" disabled={submittingBatch} onClick={async () => {
+                            if (batchDeleteOps) {
+                                setSubmittingBatch(true);
+                                const result = await submitDirectOperations(batchDeleteOps);
+                                setSubmittingBatch(false);
+                                setBatchDeleteOps(null);
+                                setSelectMode(false);
+                                if (result?.status === "approved") {
+                                    router.refresh();
+                                }
+                            }
+                        }} className="gap-2">
+                            {submittingBatch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Supprimer
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Batch Paste/Move Dialog */}
+            <Dialog open={batchPasteOps !== null} onOpenChange={(open) => !open && setBatchPasteOps(null)}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-amber-600">
+                            <ClipboardPaste className="h-5 w-5" />
+                            Déplacer {batchPasteOps?.length} élément{batchPasteOps?.length !== 1 ? "s" : ""}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Voulez-vous les déplacer ici ? Vous pouvez effectuer l'action immédiatement ou l'ajouter à votre brouillon.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 sm:gap-0 mt-4">
+                        <Button variant="ghost" onClick={() => setBatchPasteOps(null)} disabled={submittingBatch} className="sm:mr-auto">
+                            Annuler
+                        </Button>
+                        <Button variant="outline" disabled={submittingBatch} onClick={() => {
+                            if (batchPasteOps) {
+                                addOperations(batchPasteOps);
+                                toast.success(`${batchPasteOps.length} élément${batchPasteOps.length !== 1 ? "s" : ""} ajouté${batchPasteOps.length !== 1 ? "s" : ""} au brouillon`);
+                                setBatchPasteOps(null);
+                                clearClipboard();
+                            }
+                        }} className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5">
+                            <Plus className="h-4 w-4" /> Brouillon
+                        </Button>
+                        {!dirId?.startsWith("$") && (
+                            <Button disabled={submittingBatch} onClick={async () => {
+                                if (batchPasteOps) {
+                                    setSubmittingBatch(true);
+                                    const result = await submitDirectOperations(batchPasteOps);
+                                    setSubmittingBatch(false);
+                                    setBatchPasteOps(null);
+                                    clearClipboard();
+                                    if (result?.status === "approved") {
+                                        router.refresh();
+                                    }
+                                }
+                            }} className="gap-2">
+                                {submittingBatch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Déplacer direct
+                            </Button>
+                        )}
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

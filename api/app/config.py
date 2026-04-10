@@ -8,7 +8,9 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
     environment: Literal["development", "production", "test"] = "development"
-    secret_key: SecretStr = SecretStr("change-this-to-a-secure-random-string-with-at-least-32-bytes")
+    secret_key: SecretStr = SecretStr(
+        "change-this-to-a-secure-random-string-with-at-least-32-bytes"
+    )
 
     database_url: str = "postgresql+asyncpg://wikint:wikint@localhost:5432/wikint"
 
@@ -35,7 +37,7 @@ class Settings(BaseSettings):
     max_video_size_mb: int = 500
     max_document_size_mb: int = 200
     max_office_size_mb: int = 100
-    max_text_size_mb: int = 10
+    max_text_size_mb: int = 20
 
     # Upload pipeline settings
     upload_pipeline_max_seconds: int = 600  # hard deadline for the entire worker pipeline
@@ -84,11 +86,33 @@ class Settings(BaseSettings):
     max_concurrent_image_ops: int = 0  # 0 = auto (cpu_count // 2)
 
     # Video compression profile (controls ffmpeg resolution capping and CRF limits)
-    video_compression_profile: Literal["none", "light", "medium", "aggressive", "heavy", "extreme"] = "aggressive"
+    video_compression_profile: Literal[
+        "none", "light", "medium", "aggressive", "heavy", "extreme"
+    ] = "medium"
 
-    # Ghostscript PDF compression quality level (4.6).
-    # One of: /screen (lowest quality, smallest), /ebook, /printer, /prepress (highest quality)
-    gs_quality: Literal["/screen", "/ebook", "/printer", "/prepress"] = "/printer"
+    # PDF compression quality level (0-100).
+    # Can be set via PDF_QUALITY (int) or PDF_COMPRESSION_LEVEL (Ghostscript alias).
+    pdf_quality: int = 75
+    pdf_compression_level: str | None = None
+
+    @model_validator(mode="after")
+    def _map_pdf_quality(self) -> "Settings":
+        if self.pdf_compression_level:
+            # Map Ghostscript levels to quality integers
+            mapping = {
+                "/screen": 50,
+                "/ebook": 70,
+                "/printer": 85,
+                "/prepress": 95,
+                "screen": 50,
+                "ebook": 70,
+                "printer": 85,
+                "prepress": 95,
+            }
+            val = self.pdf_compression_level.lower()
+            if val in mapping:
+                self.pdf_quality = mapping[val]
+        return self
 
     # Webhook signing secret (HMAC-SHA256).  Defaults to a derivative of secret_key.
     # Set explicitly to rotate independently of the JWT secret.

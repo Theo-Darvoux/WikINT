@@ -4,6 +4,7 @@ Parses SVG as XML (via defusedxml) and walks every element/attribute looking
 for dangerous active content: script elements, event handlers, javascript: URIs,
 external URLs, and CSS injection vectors.
 """
+
 import io
 import logging
 import re
@@ -79,7 +80,9 @@ def check_svg_safety_stream(file_obj: io.IOBase, filename: str = "") -> None:
 
                 if local_lower in _SVG_BLOCKED_ELEMENTS:
                     logger.warning("SVG blocked element <%s> in %s", local, filename)
-                    raise SvgSecurityError(f"SVG files containing <{local}> elements are not allowed.")
+                    raise SvgSecurityError(
+                        f"SVG files containing <{local}> elements are not allowed."
+                    )
 
                 for attr_name, attr_value in element.attrib.items():
                     bare_attr = attr_name
@@ -108,7 +111,9 @@ def check_svg_safety_stream(file_obj: io.IOBase, filename: str = "") -> None:
                         )
 
                     if _SVG_DATA_SVG_RE.search(attr_value):
-                        logger.warning("SVG data:image/svg+xml in attr %s of %s", bare_attr, filename)
+                        logger.warning(
+                            "SVG data:image/svg+xml in attr %s of %s", bare_attr, filename
+                        )
                         raise SvgSecurityError(
                             "SVG files referencing nested SVG content via data URIs are not allowed."
                         )
@@ -121,9 +126,13 @@ def check_svg_safety_stream(file_obj: io.IOBase, filename: str = "") -> None:
                             )
             elif event == "end":
                 if element.text and "<script" in element.text.lower():
-                    raise SvgSecurityError("SVG files containing encoded <script> tags are not allowed.")
+                    raise SvgSecurityError(
+                        "SVG files containing encoded <script> tags are not allowed."
+                    )
                 if element.tail and "<script" in element.tail.lower():
-                    raise SvgSecurityError("SVG files containing encoded <script> tags are not allowed.")
+                    raise SvgSecurityError(
+                        "SVG files containing encoded <script> tags are not allowed."
+                    )
 
                 element.clear()
 

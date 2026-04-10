@@ -114,7 +114,7 @@ async def get_or_create_user(db: AsyncSession, email: str) -> tuple[User, bool]:
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
-    if user:
+    if user is not None:
         if user.deleted_at is not None:
             user.deleted_at = None
             user.onboarded = False

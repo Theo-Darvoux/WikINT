@@ -32,21 +32,19 @@ To ensure the storage remains efficient and free of orphaned or abandoned files,
 *   **Expiration:** 1 day (24 hours) after creation.
 *   **Rationale:** The `quarantine/` folder is a temporary landing zone for scanning. If a file persists for 24 hours, the upload was either abandoned or the worker job failed.
 
-### 2. Expire Staged Uploads
+### 2. Expire Legacy Staged Uploads (V1 — can be removed post-migration)
 *   **Prefix:** `uploads/`
 *   **Expiration:** 7 days after creation.
-*   **Rationale:** The `uploads/` folder stores files for active Pull Requests. If a PR is not committed or merged within 7 days, the staging file is considered abandoned. Once merged, files are moved to `materials/`, which is permanent.
+*   **Rationale:** Legacy V1 staging area. New uploads go directly to `cas/`. This rule cleans up any remaining V1 objects.
 
 ### 3. Abort Incomplete Multipart Uploads
 *   **Action:** Abort incomplete multipart uploads.
 *   **Expiration:** 7 days after initiation.
 *   **Rationale:** Large file uploads (S3 Multipart) can be interrupted. This rule ensures partial chunks do not consume storage space indefinitely.
 
-### 4. Permanent Prefixes (NO Lifecycle Rules)
-*   **Prefixes:** `materials/`, `cas/`
-*   **Policy:** These prefixes MUST NOT have automated expiration rules. 
-    *   `materials/` contains published course content.
-    *   `cas/` contains the master copies for deduplication (CAS), managed via server-side reference counting.
+### 4. Permanent Prefix (NO Lifecycle Rules)
+*   **Prefix:** `cas/`
+*   **Policy:** This prefix MUST NOT have automated expiration rules. CAS contains the single source of truth for all file content, managed via server-side reference counting.
 
 ## Key Operations
 
@@ -61,6 +59,8 @@ To ensure the storage remains efficient and free of orphaned or abandoned files,
 4. `abort_multipart_upload()` - Cleans up on failure (best-effort, swallows exceptions)
 
 The `upload_file_multipart` function automatically selects single-put vs multipart based on file size, reads the file in chunks via `asyncio.to_thread` to avoid blocking the event loop, and properly aborts the multipart upload if any part fails.
+
+> **Note:** `create_multipart_upload` does not currently propagate `content_encoding` to the S3 `CreateMultipartUpload` call. In practice this is benign because all gzip-compressed files (text/*, SVG) are well below the 5 MiB multipart threshold after compression and always go through the single `upload_file` path where `ContentEncoding` is set correctly.
 
 ### Presigned URLs
 
@@ -89,7 +89,7 @@ Presigned URLs generated against MinIO point to the internal Docker hostname. In
 ### Object Management
 
 - `move_object()` - Copy + delete (no native S3 move)
-- `copy_object()` - Used during PR approval to copy files from `uploads/` to `materials/`
+- `copy_object()` - Used for legacy V1 migration (materials/ to cas/) and edge cases
 - `delete_object()` - Deletes the S3 object AND cleans up the Redis quota sorted set entry.
 - `cas_object_exists(sha256)` - Check if a file already exists in the `cas/` prefix.
 - `object_exists()` - HEAD request, returns boolean
@@ -104,21 +104,37 @@ Presigned URLs generated against MinIO point to the internal Docker hostname. In
 - `list_multipart_uploads()` - Paginated listing of in-progress multipart uploads (used by the reconciliation worker)
 - `generate_presigned_upload_part()` - Presigned URL for a single part of a multipart upload (client-side multipart)
 
-## Bucket Key Schema
+## Bucket Key Schema (CAS V2)
 
 ```
 wikint/
 ├── quarantine/{user_id}/{upload_id}/{filename}    # Unscanned, never served (TTL 24h)
-├── uploads/{user_id}/{upload_id}/{filename}       # Processed, awaiting PR (TTL 7d)
-├── cas/{hmac_sha256}                              # Deduplication master copies (Permanent)
-└── materials/{user_id}/{upload_id}/{filename}     # Published via approved PR (Permanent)
+└── cas/{hmac_sha256}                              # Single source of truth (Permanent)
 ```
 
-The key includes `user_id` and `upload_id` segments for traceability and to prevent collisions. File progression through the pipeline is:
+**Retired prefixes** (V1 legacy, cleaned up by the migration and cleanup worker):
+- `uploads/` — Processed staging copies (replaced by direct CAS references)
+- `materials/` — Published copies (replaced by direct CAS references)
+
+File progression through the pipeline:
 
 1. File uploaded to `quarantine/` (or directly via presigned URL)
-2. Worker processes and moves to `uploads/`
-3. PR approved, file copied to `materials/`, staging file eventually deleted
+2. Worker processes and writes directly to `cas/` (single upload, no copy)
+3. `Upload.final_key` = `cas/{hmac}` (no intermediate staging object)
+4. PR approved: `MaterialVersion.file_key` = `cas/{hmac}` (no copy needed)
+5. Downloads reconstruct filenames via `ResponseContentDisposition` from DB metadata
+
+### CAS Reference Counting
+
+Each `cas/` object is protected by an atomic Redis ref count (`upload:cas:{hmac}`):
+
+| Event | Action |
+|-------|--------|
+| Upload finalize | `increment_cas_ref` (staging window); S3 object always overwritten with freshly-processed file |
+| PR approval (MaterialVersion created) | `increment_cas_ref` (publication) |
+| Upload expires/cancelled | `decrement_cas_ref` |
+| MaterialVersion deleted | `decrement_cas_ref` |
+| ref_count reaches 0 | S3 object + Redis key deleted |
 
 ## Dependencies
 

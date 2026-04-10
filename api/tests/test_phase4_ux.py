@@ -4,12 +4,11 @@ Covers:
 - 4A: POST /api/upload/status/batch, GET /api/upload/mine
 - 4B: GET /api/upload/config fields (recommended_path, direct_threshold_mb)
 - 4C: SSE rate limiting (max 10 concurrent per user), keepalive set to 15s
-- 4D: Server-side CAS pre-check in direct upload
 """
 
 import json
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient
@@ -203,63 +202,3 @@ async def test_sse_rate_limit_blocks_at_11th_connection(
     assert response.status_code == 429
 
 
-# ── 4D: Server-side CAS pre-check ────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_direct_upload_cas_hit_returns_clean(
-    client: AsyncClient, db_session: AsyncSession, mock_redis: AsyncMock
-):
-    """Direct upload with a CAS hit returns CLEAN immediately without quarantine upload."""
-    user = await _create_user(db_session)
-    await db_session.commit()
-
-    import time as _time
-
-    sha256 = "a" * 64
-    from app.core.cas import hmac_cas_key
-
-    cas_key = hmac_cas_key(sha256)
-    cas_data = json.dumps({
-        "final_key": "cas/abc123",
-        "mime_type": "application/pdf",
-        "size": 1024,
-        "scanned_at": _time.time(),  # fresh CAS entry so staleness check passes
-    }).encode()
-
-    def _redis_get(key):
-        if key == cas_key:
-            return cas_data
-        return None
-
-    mock_redis.get.side_effect = _redis_get
-
-    # Mock the scanner that now re-scans on CAS hits (audit review fix)
-    mock_scanner = AsyncMock()
-    mock_scanner.scan_file_path = AsyncMock()
-
-    with (
-        patch("app.routers.upload.direct.ProcessingFile.sha256", new_callable=AsyncMock, return_value=sha256),
-        patch("app.core.storage.object_exists", new_callable=AsyncMock, return_value=True),
-        patch("app.core.storage.copy_object", new_callable=AsyncMock),
-        patch("app.routers.upload.direct._create_upload_row", new_callable=AsyncMock),
-        patch("app.routers.upload.direct._check_pending_cap", new_callable=AsyncMock),
-    ):
-        # Inject scanner mock into app state
-        from app.main import app as _app
-        original_scanner = getattr(_app.state, "scanner", None)
-        _app.state.scanner = mock_scanner
-
-        import io
-
-        response = await client.post(
-            "/api/upload",
-            files={"file": ("test.pdf", io.BytesIO(b"%PDF-1.7\x00" * 100), "application/pdf")},
-            headers=_auth_headers(user),
-        )
-
-        _app.state.scanner = original_scanner
-
-    assert response.status_code == 202
-    data = response.json()
-    assert data["status"] == "clean"

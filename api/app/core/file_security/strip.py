@@ -7,6 +7,7 @@ Helper functions are resolved through the ``app.core.file_security`` package
 namespace at call time so existing test patches targeting that namespace
 are correctly intercepted.
 """
+
 import asyncio
 import logging
 from pathlib import Path
@@ -33,17 +34,17 @@ async def strip_metadata_file(file_path: Path, mime_type: str) -> Path:
     try:
         if mime_type.startswith("image/"):
             async with _get_concurrency_guard("image"):
-                return await asyncio.to_thread(_strip_image_from_path, file_path)  # type: ignore[arg-type]
+                return await asyncio.to_thread(_strip_image_from_path, file_path)  # type: ignore
         elif mime_type == "application/pdf":
-            return await asyncio.to_thread(_strip_pdf_from_path, file_path)  # type: ignore[arg-type]
+            return await asyncio.to_thread(_strip_pdf_from_path, file_path)  # type: ignore
         elif mime_type.startswith("video/"):
-            return await _strip_video_from_path(file_path, mime_type)  # type: ignore[operator]
+            return await _strip_video_from_path(file_path, mime_type)  # type: ignore
         elif mime_type.startswith("audio/"):
-            return await asyncio.to_thread(_strip_audio_from_path, file_path, mime_type)  # type: ignore[arg-type]
+            return await asyncio.to_thread(_strip_audio_from_path, file_path, mime_type)  # type: ignore
         elif mime_type in OLE2_MIME_TYPES:
-            return await _strip_ole2_from_path(file_path)  # type: ignore[operator]
+            return await _strip_ole2_from_path(file_path)  # type: ignore
         elif mime_type in ZIP_MIME_TYPES:
-            return await _strip_ooxml_from_path(file_path)  # type: ignore[operator]
+            return await _strip_ooxml_from_path(file_path)  # type: ignore
     except ValueError:
         # Propagation: macro detection or deliberate security rejections
         raise

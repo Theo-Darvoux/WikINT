@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -37,8 +37,8 @@ class UploadConfigOut(BaseModel):
     allowed_extensions: list[str]
     allowed_mimetypes: list[str]
     max_file_size_mb: int
-    recommended_path: str       # "direct" | "tus"
-    direct_threshold_mb: int    # files below this size → use direct path
+    recommended_path: str  # "direct" | "tus"
+    direct_threshold_mb: int  # files below this size → use direct path
 
 
 @router.get("/config", response_model=UploadConfigOut)
@@ -83,23 +83,45 @@ async def cancel_upload(
 
     quota_key = f"{_QUOTA_KEY_PREFIX}{user_id}"
     quarantine_prefix = f"quarantine/{user_id}/{upload_id}/"
-    uploads_prefix = f"uploads/{user_id}/{upload_id}/"  # audit fix #6
+    uploads_prefix = f"uploads/{user_id}/{upload_id}/"  # legacy V1 keys
+    staging_key = f"staging:{user_id}:{upload_id}"  # V2 synthetic quota key
 
     members: list[bytes] = await redis.zrange(quota_key, 0, -1)
     target_key: str | None = None
     for raw in members:
-        key = raw.decode() if isinstance(raw, bytes) else str(raw)
+        key = raw.decode() if isinstance(raw, bytes) else str(raw)  # type: ignore
         if key.startswith(quarantine_prefix) or key.startswith(uploads_prefix):
+            target_key = key
+            break
+        if key == staging_key:
             target_key = key
             break
 
     if target_key is None:
         return
 
-    try:
-        await delete_object(target_key)
-    except Exception:
-        pass
+    # For S3-backed keys (quarantine/, uploads/), delete the object.
+    # For synthetic staging keys, decrement the CAS ref instead.
+    if target_key.startswith("staging:"):
+        from app.core.cas import decrement_cas_ref
+
+        # Look up the upload's SHA-256 to decrement the correct CAS ref
+        from app.core.database import async_session_factory
+        from app.models.upload import Upload
+
+        async with async_session_factory() as session:
+            from sqlalchemy import select
+
+            row = await session.scalar(
+                select(Upload).where(Upload.upload_id == upload_id)
+            )
+            if row and row.sha256:
+                await decrement_cas_ref(redis, row.sha256)
+    else:
+        try:
+            await delete_object(target_key)
+        except Exception:
+            pass
 
     await redis.zrem(quota_key, target_key)
 
@@ -130,6 +152,7 @@ async def check_file_exists(
     # internal storage paths.  The upload flow's CAS-hit path will handle
     # the actual copy from CAS to the per-user prefix.
     from app.core.cas import hmac_cas_key
+
     cas_key = hmac_cas_key(data.sha256)
     cas_raw = await redis.get(cas_key)
     if cas_raw:
@@ -159,15 +182,35 @@ async def batch_upload_status(
     """Poll the processing status for up to 50 file keys in a single request."""
     user_id_str = str(user.id)
 
-    # Filter keys to only those belonging to the user (prefix match, NOT substring)
+    # Filter keys to only those belonging to the user.
+    # V1 keys: quarantine/{user_id}/... or uploads/{user_id}/...
+    # V2 keys: cas/{hmac} (ownership verified via Upload table below)
     owned_keys: list[str] = []
+    cas_keys_to_verify: list[str] = []
     for fk in data.file_keys:
         fk_str = str(fk)
-        if (
-            fk_str.startswith(f"quarantine/{user_id_str}/")
-            or fk_str.startswith(f"uploads/{user_id_str}/")
+        if fk_str.startswith(f"quarantine/{user_id_str}/") or fk_str.startswith(
+            f"uploads/{user_id_str}/"
         ):
             owned_keys.append(fk_str)
+        elif fk_str.startswith("cas/"):
+            cas_keys_to_verify.append(fk_str)
+
+    # Verify CAS key ownership via Upload table
+    if cas_keys_to_verify:
+        from sqlalchemy import select as _sel
+
+        from app.core.database import async_session_factory
+        from app.models.upload import Upload
+
+        async with async_session_factory() as _db:
+            verified = set(await _db.scalars(
+                _sel(Upload.final_key).where(
+                    Upload.final_key.in_(cas_keys_to_verify),
+                    Upload.user_id == user.id,
+                )
+            ))
+        owned_keys.extend(k for k in cas_keys_to_verify if k in verified)
 
     results: dict[str, dict] = {}
     if not owned_keys:
@@ -177,17 +220,75 @@ async def batch_upload_status(
     cache_keys = [f"{_STATUS_CACHE_PREFIX}{k}" for k in owned_keys]
     values = await redis.mget(*cache_keys)
 
+    # Secondary lookup for data if missing from cache (e.g. for CAS hits or older entries)
+    missing_keys = [k for k, v in zip(owned_keys, values) if not v]
+
+    # Also include keys that have a result but are missing file_name or original_size
+    fallback_data: dict[str, dict[str, Any]] = {}
+
+    keys_needing_fallback = set(missing_keys)
     for file_key, cached in zip(owned_keys, values):
         if cached:
             try:
-                results[file_key] = json.loads(cached)
+                d = json.loads(cached)
+                if d.get("status") == "clean" and d.get("result"):
+                    if not d["result"].get("file_name") or not d["result"].get("original_size"):
+                        keys_needing_fallback.add(file_key)
             except Exception:
-                results[file_key] = {"file_key": file_key, "status": UploadStatus.PENDING}
+                keys_needing_fallback.add(file_key)
+
+    if keys_needing_fallback:
+        from sqlalchemy import select as _sel
+
+        from app.core.database import async_session_factory
+        from app.models.upload import Upload
+
+        async with async_session_factory() as _db:
+            db_res = await _db.execute(
+                _sel(Upload)
+                .where(
+                    Upload.final_key.in_(list(keys_needing_fallback)),
+                    Upload.user_id == user.id
+                )
+                .order_by(Upload.created_at.desc())
+            )
+            for row in db_res.scalars().all():
+                if row.final_key and row.status in ("clean", "failed", "malicious"):
+                    fallback_data[row.final_key] = {
+                        "upload_id": row.upload_id,
+                        "file_key": row.final_key,
+                        "status": row.status,
+                        "detail": row.error_detail or ("Success" if row.status == "clean" else "Failed"),
+                        "result": {
+                            "file_key": row.final_key,
+                            "size": row.size_bytes,
+                            "original_size": row.size_bytes,
+                            "mime_type": row.mime_type,
+                            "file_name": row.filename,
+                        } if row.status == "clean" else None,
+                        "overall_percent": 1.0
+                    }
+
+    for file_key, cached in zip(owned_keys, values):
+        if cached:
+            try:
+                cached_data = json.loads(cached)
+                # Apply fallback fields if needed
+                if cached_data.get("status") == "clean" and cached_data.get("result"):
+                    if not cached_data["result"].get("file_name") or not cached_data["result"].get("original_size"):
+                        if file_key in fallback_data:
+                            fb = fallback_data[file_key]["result"]
+                            if not cached_data["result"].get("file_name"):
+                                cached_data["result"]["file_name"] = fb["file_name"]
+                            if not cached_data["result"].get("original_size"):
+                                cached_data["result"]["original_size"] = fb["original_size"]
+                results[file_key] = cached_data
+            except Exception:
+                results[file_key] = fallback_data.get(file_key) or {"file_key": file_key, "status": UploadStatus.PENDING}
         else:
-            results[file_key] = {"file_key": file_key, "status": UploadStatus.PENDING}
+            results[file_key] = fallback_data.get(file_key) or {"file_key": file_key, "status": UploadStatus.PENDING}
 
     return {"statuses": results}
-
 
 # ── GET /api/upload/mine ─────────────────────────────────────────────────────
 
@@ -208,9 +309,10 @@ async def list_my_uploads(
 
     from app.models.upload import Upload
 
-    total = await db.scalar(
-        select(func.count()).select_from(Upload).where(Upload.user_id == user.id)
-    ) or 0
+    total = (
+        await db.scalar(select(func.count()).select_from(Upload).where(Upload.user_id == user.id))
+        or 0
+    )
 
     result = await db.execute(
         select(Upload)

@@ -72,6 +72,7 @@ async def test_tus_patch_valid_checksum():
         m_upload.return_value = "etag-123"
 
         import uuid
+
         response = await tus_patch(uuid.UUID(tus_id), mock_request, mock_user, mock_redis)
         assert response.status_code == 204
         assert response.headers["Upload-Offset"] == str(len(content))
@@ -103,5 +104,6 @@ async def test_tus_patch_wrong_checksum():
 
         with pytest.raises(AppError) as exc:
             import uuid
+
             await tus_patch(uuid.UUID(tus_id), mock_request, mock_user, mock_redis)
         assert exc.value.status_code == 460

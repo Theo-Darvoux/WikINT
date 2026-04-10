@@ -92,7 +92,7 @@ export default function SettingsPage() {
                     </CardTitle>
                     <CardDescription>
                         Download a JSON archive of all your personal data including your profile,
-                        pull requests, annotations, votes, comments, and reports.
+                        contributions, annotations, votes, comments, and reports.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>

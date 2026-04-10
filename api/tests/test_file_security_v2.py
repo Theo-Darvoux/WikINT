@@ -44,10 +44,18 @@ class TestCheckPdfSafety:
         pdf_path = _make_pdf(tmp_path)
         check_pdf_safety(pdf_path)  # Should not raise
 
-    @pytest.mark.parametrize("action_key", [
-        "/OpenAction", "/AA", "/Launch", "/GoToR",
-        "/URI", "/SubmitForm", "/ImportData",
-    ])
+    @pytest.mark.parametrize(
+        "action_key",
+        [
+            "/OpenAction",
+            "/AA",
+            "/Launch",
+            "/GoToR",
+            "/URI",
+            "/SubmitForm",
+            "/ImportData",
+        ],
+    )
     def test_catalog_action_detected(self, tmp_path, action_key):
         pdf_path = _make_pdf(tmp_path, **{action_key: pikepdf.String("malicious")})
         with pytest.raises(ValueError, match="auto-executing action"):

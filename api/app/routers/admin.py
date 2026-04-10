@@ -79,7 +79,7 @@ async def admin_list_users(
                 "display_name": u.display_name,
                 "role": u.role.value if u.role else None,
                 "onboarded": u.onboarded,
-                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "created_at": u.created_at.isoformat() if u.created_at is not None else None,
             }
             for u in users
         ],
@@ -164,9 +164,7 @@ async def list_dead_letter_jobs(
     total = count_result.scalar_one()
 
     result = await db.execute(
-        base.order_by(DeadLetterJob.created_at.desc())
-        .offset((page - 1) * limit)
-        .limit(limit)
+        base.order_by(DeadLetterJob.created_at.desc()).offset((page - 1) * limit).limit(limit)
     )
     jobs = result.scalars().all()
     return {
@@ -178,7 +176,7 @@ async def list_dead_letter_jobs(
                 "payload": j.payload,
                 "error_detail": j.error_detail,
                 "attempts": j.attempts,
-                "created_at": j.created_at.isoformat() if j.created_at else None,
+                "created_at": j.created_at.isoformat() if j.created_at is not None else None,
                 "resolved_at": j.resolved_at.isoformat() if j.resolved_at else None,
             }
             for j in jobs

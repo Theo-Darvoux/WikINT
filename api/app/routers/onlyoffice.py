@@ -7,12 +7,10 @@ from typing import Annotated
 import jwt
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response, StreamingResponse
-from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.database import get_db
-from app.core.redis import get_redis
 from app.dependencies.auth import CurrentUser
 
 router = APIRouter(prefix="/api/onlyoffice", tags=["onlyoffice"])
@@ -32,46 +30,28 @@ _EXT_TO_DOCTYPE: dict[str, str] = {
 _ALGORITHM = "HS256"
 
 
-async def _create_file_token_async(material_id: str, redis: Redis) -> str:
+def _create_file_token(material_id: str) -> str:
     """Create a short-lived JWT for ONLYOFFICE to fetch a specific file."""
     expire = datetime.now(UTC) + timedelta(seconds=settings.onlyoffice_file_token_ttl)
-    jti = secrets.token_hex(16)
     payload = {
         "sub": material_id,
         "type": "onlyoffice_file",
         "exp": expire,
-        "jti": jti,
     }
-    await redis.set(f"onlyoffice:jti:{jti}", "1", ex=settings.onlyoffice_file_token_ttl)
     return jwt.encode(payload, settings.onlyoffice_file_token_secret, algorithm=_ALGORITHM)
 
 
-def _verify_file_token_claims(token: str, material_id: str) -> str | None:
-    """Validate JWT signature and claims. Returns jti on success, None on failure."""
+def _verify_file_token(token: str, material_id: str) -> bool:
+    """Validate a file-access JWT signature and claims."""
     try:
         payload = jwt.decode(
             token,
             settings.onlyoffice_file_token_secret,
             algorithms=[_ALGORITHM],
         )
-        jti = payload.get("jti")
-        if not jti:
-            return None
-        if payload.get("sub") != material_id or payload.get("type") != "onlyoffice_file":
-            return None
-        return jti
+        return payload.get("sub") == material_id and payload.get("type") == "onlyoffice_file"
     except jwt.PyJWTError:
-        return None
-
-
-async def _verify_file_token_async(token: str, material_id: str, redis: Redis) -> bool:
-    """Validate a file-access JWT and consume the single-use JTI via Redis."""
-    jti = _verify_file_token_claims(token, material_id)
-    if not jti:
         return False
-    # Atomically delete the token. If it returns 0, it was already consumed or expired.
-    deleted = await redis.delete(f"onlyoffice:jti:{jti}")
-    return bool(deleted)
 
 
 @router.get("/config/{material_id}")
@@ -79,7 +59,6 @@ async def get_onlyoffice_config(
     material_id: uuid.UUID,
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-    redis: Annotated[Redis, Depends(get_redis)],
 ) -> dict:
     """
     Return a signed ONLYOFFICE editor configuration for the given material.
@@ -91,10 +70,10 @@ async def get_onlyoffice_config(
     material_id_str = str(material_id)
     data = await get_material_with_version(db, material_id_str)
     material_obj = data.get("material")
-    if material_obj and user:
+    if material_obj is not None and user is not None:
         check_material_access(user.id, material_obj)
     version = data.get("current_version_info")
-    if not version or not version.file_key:
+    if version is None or version.file_key is None:
         raise NotFoundError("No file available for preview")
 
     file_name: str = version.file_name or ""
@@ -105,7 +84,7 @@ async def get_onlyoffice_config(
     # Embedded in the query string because ONLYOFFICE's file downloader does not
     # forward custom requestHeaders — it only sends its own JWT.  This is an
     # internal container-to-container URL, never exposed to the browser.
-    file_token = await _create_file_token_async(material_id_str, redis)
+    file_token = _create_file_token(material_id_str)
     file_url = f"{settings.onlyoffice_internal_api_base_url}/api/onlyoffice/file/{material_id_str}?token={file_token}"
 
     # Cache key: version_number invalidates on new uploads.
@@ -165,7 +144,6 @@ async def serve_file_to_onlyoffice(
     request: Request,
     material_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    redis: Annotated[Redis, Depends(get_redis)],
 ) -> Response:
     """
     Serve the raw file bytes to ONLYOFFICE Document Server.
@@ -173,8 +151,9 @@ async def serve_file_to_onlyoffice(
     Authenticated via a short-lived scoped JWT passed as ?token= query param
     (fallback: X-OO-File-Token header).
 
-    ONLYOFFICE probes the URL with HEAD before downloading — both methods
-    must return 2xx or it reports errorCode: -4 "Download failed".
+    ONLYOFFICE probes the URL with HEAD before downloading and retries failed
+    GETs with the same token — both methods must return 2xx.  We rely on the
+    JWT expiry (60 s) rather than single-use JTI enforcement so retries work.
     """
     from app.core.exceptions import NotFoundError, UnauthorizedError
     from app.services.material import get_material_file_info
@@ -184,18 +163,11 @@ async def serve_file_to_onlyoffice(
     if not token:
         raise UnauthorizedError()
 
-    if request.method == "HEAD":
-        # HEAD is ONLYOFFICE's preflight probe — verify the token is valid but do NOT
-        # consume the JTI. The subsequent GET will consume it.
-        if not _verify_file_token_claims(token, material_id_str):
-            raise UnauthorizedError()
-    else:
-        # GET: validate and consume the JTI atomically (single-use enforcement).
-        if not await _verify_file_token_async(token, material_id_str, redis):
-            raise UnauthorizedError()
+    if not _verify_file_token(token, material_id_str):
+        raise UnauthorizedError()
 
     version = await get_material_file_info(db, material_id)
-    if not version or not version.file_key:
+    if version is None or version.file_key is None:
         raise NotFoundError("No file available")
 
     file_name: str = version.file_name or "document"
@@ -212,15 +184,12 @@ async def serve_file_to_onlyoffice(
     )
     encoded = quote(file_name, safe="")
 
+    if request.method == "HEAD":
+        return Response(media_type=mime_type)
+
     headers = {
         "Content-Disposition": f"attachment; filename=\"{ascii_safe}\"; filename*=UTF-8''{encoded}",
-        "Content-Length": str(version.file_size or 0),
     }
-
-    if request.method == "HEAD":
-        # Content-Length intentionally omitted: HEAD is only used by OO to verify
-        # URL reachability. A stale DB value would cause errorCode: -4.
-        return Response(media_type=mime_type)
 
     from app.core.storage import stream_object
 
@@ -231,7 +200,4 @@ async def serve_file_to_onlyoffice(
                 yield chunk
                 chunk = await body.read(65536)
 
-    # Content-Length is included: file_size is set at upload time and is
-    # immutable, so it is always accurate.  Having it lets nginx buffer the
-    # transfer efficiently and ONLYOFFICE detect download completion.
     return StreamingResponse(_iter_file(version.file_key), media_type=mime_type, headers=headers)

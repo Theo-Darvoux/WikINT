@@ -33,7 +33,7 @@ export default function AdminPRQueuePage() {
             const data = await apiFetch<PRItem[]>("/pull-requests?status=open&limit=50");
             setPrs(data ?? []);
         } catch {
-            toast.error("Failed to load PR moderation queue");
+            toast.error("Failed to load contribution moderation queue");
         } finally {
             setLoading(false);
         }
@@ -52,7 +52,7 @@ export default function AdminPRQueuePage() {
             <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                    placeholder="Search PR queue..."
+                    placeholder="Search contribution queue..."
                     className="max-w-md pl-9"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -74,7 +74,7 @@ export default function AdminPRQueuePage() {
                         {loading && prs.length === 0 && (
                             <tr>
                                 <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                                    Loading open pull requests...
+                                    Loading open contributions...
                                 </td>
                             </tr>
                         )}

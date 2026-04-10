@@ -149,7 +149,7 @@ async def get_material_version(
 ) -> MaterialVersion:
     import uuid as _uuid
 
-    uid = _uuid.UUID(material_id) if isinstance(material_id, str) else material_id
+    uid = _uuid.UUID(str(material_id))
     await get_material_by_id(db, material_id)
     result = await db.execute(
         select(MaterialVersion).where(
@@ -203,20 +203,21 @@ async def increment_download_count(db: AsyncSession, material_id: str | uuid.UUI
 
 
 async def record_view(db: AsyncSession, user_id: str, material_id: str) -> None:
-    import uuid as _uuid
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-    uid = _uuid.UUID(user_id) if isinstance(user_id, str) else user_id
-    mid = _uuid.UUID(material_id) if isinstance(material_id, str) else material_id
+    uid = uuid.UUID(str(user_id))
+    mid = uuid.UUID(str(material_id))
     await get_material_by_id(db, mid)
-    result = await db.execute(
-        select(ViewHistory).where(
-            ViewHistory.user_id == uid,
-            ViewHistory.material_id == mid,
-        )
+
+    stmt = pg_insert(ViewHistory).values(
+        id=uuid.uuid4(),
+        user_id=uid,
+        material_id=mid,
+        viewed_at=datetime.now(UTC),
     )
-    existing = result.scalar_one_or_none()
-    if existing:
-        existing.viewed_at = datetime.now(UTC)
-    else:
-        db.add(ViewHistory(user_id=uid, material_id=mid))
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_view_history_user_material",
+        set_={"viewed_at": stmt.excluded.viewed_at},
+    )
+    await db.execute(stmt)
     await db.flush()

@@ -2,19 +2,18 @@
 
 cd "$(dirname "$0")"
 
-PROFILES="--profile onlyoffice"
 
 if [ "$1" = "--prod" ]; then
     echo "Pulling latest images..."
-    docker compose -f docker-compose.yml $PROFILES pull
-    docker compose -f docker-compose.yml $PROFILES down
+    docker compose -f docker-compose.yml pull
+    docker compose -f docker-compose.yml down
     echo "Starting production environment..."
-    docker compose -f docker-compose.yml $PROFILES up -d
+    docker compose -f docker-compose.yml up -d
 elif [ "$1" = "--dev" ]; then
     echo "Starting development environment with hot-reloading..."
     # The dev override uses bind mounts and specific dev commands (uvicorn --reload, pnpm dev)
     # to automatically update when files are modified locally.
-    docker compose -f docker-compose.yml -f docker-compose.dev.yml $PROFILES up --build
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 else
     echo "Usage: ./run.sh [--prod|--dev]"
     echo ""

@@ -608,7 +608,7 @@ export function ProfileView({
                     <Tabs value={activeTab} onValueChange={setActiveTab}>
                         <TabsList className="w-full justify-start rounded-xl p-1 h-auto bg-muted/60 dark:bg-muted/30">
                             <TabsTrigger value="prs" className={tabTrigger}>
-                                Pull Requests
+                                Contributions
                             </TabsTrigger>
                             <TabsTrigger value="materials" className={tabTrigger}>
                                 Materials

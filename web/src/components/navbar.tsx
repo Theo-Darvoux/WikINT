@@ -143,7 +143,7 @@ export function Navbar() {
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    title="Pull Requests"
+                                    title="Contributions"
                                     className={`rounded-full ${pathname.startsWith("/pull-requests") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
                                 >
                                     <GitPullRequest className="h-4 w-4" />

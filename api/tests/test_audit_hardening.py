@@ -31,25 +31,40 @@ async def _create_user(db: AsyncSession, role: UserRole = UserRole.STUDENT) -> U
     await db.flush()
     return user
 
+
 def _auth_headers(user: User) -> dict[str, str]:
     token, _ = create_access_token(str(user.id), user.role.value, user.email)
     return {"Authorization": f"Bearer {token}"}
 
+
 @pytest.fixture
 def mock_storage_audit():
     with (
-        patch("app.routers.upload.presigned.complete_multipart_upload", new_callable=AsyncMock) as m_complete,
+        patch(
+            "app.routers.upload.presigned.complete_multipart_upload", new_callable=AsyncMock
+        ) as m_complete,
         patch("app.core.storage.read_object_bytes", new_callable=AsyncMock) as m_read,
         patch("app.core.storage.delete_object", new_callable=AsyncMock) as m_delete,
         patch("app.routers.upload.status.delete_object", new_callable=AsyncMock) as m_delete_status,
         patch("app.routers.upload.presigned.get_object_info", new_callable=AsyncMock) as m_info,
     ):
         m_info.return_value = {"size": 1024, "content_type": "application/octet-stream"}
-        yield {"complete": m_complete, "read": m_read, "delete": m_delete, "delete_status": m_delete_status, "info": m_info}
+        yield {
+            "complete": m_complete,
+            "read": m_read,
+            "delete": m_delete,
+            "delete_status": m_delete_status,
+            "info": m_info,
+        }
+
 
 @pytest.mark.asyncio
 async def test_presigned_multipart_complete_mime_revalidation(
-    client: AsyncClient, db_session: AsyncSession, fake_redis_setup, mock_storage_audit, mock_arq_pool
+    client: AsyncClient,
+    db_session: AsyncSession,
+    fake_redis_setup,
+    mock_storage_audit,
+    mock_arq_pool,
 ):
     user = await _create_user(db_session)
     await db_session.commit()
@@ -75,12 +90,15 @@ async def test_presigned_multipart_complete_mime_revalidation(
     response = await client.post(
         "/api/upload/presigned-multipart/complete",
         headers=headers,
-        json={"upload_id": upload_id, "parts": [{"PartNumber": 1, "ETag": "test"}]}
+        json={"upload_id": upload_id, "parts": [{"PartNumber": 1, "ETag": "test"}]},
     )
 
     assert response.status_code == 202
-    assert response.json()["mime_type"] == "application/pdf" # Assuming guess_mime_from_bytes returns this
+    assert (
+        response.json()["mime_type"] == "application/pdf"
+    )  # Assuming guess_mime_from_bytes returns this
     mock_storage_audit["read"].assert_called_once_with(quarantine_key, byte_count=2048)
+
 
 @pytest.mark.asyncio
 async def test_presigned_multipart_abort_cleans_db_and_quota(
@@ -109,14 +127,18 @@ async def test_presigned_multipart_abort_cleans_db_and_quota(
         filename="test.txt",
         mime_type="text/plain",
         size_bytes=1024,
-        status="pending"
+        status="pending",
     )
     db_session.add(up)
     await db_session.commit()
 
-    with patch("app.routers.upload.presigned.abort_multipart_upload", new_callable=AsyncMock) as m_abort:
+    with patch(
+        "app.routers.upload.presigned.abort_multipart_upload", new_callable=AsyncMock
+    ) as m_abort:
         headers = _auth_headers(user)
-        response = await client.delete(f"/api/upload/presigned-multipart/{upload_id}", headers=headers)
+        response = await client.delete(
+            f"/api/upload/presigned-multipart/{upload_id}", headers=headers
+        )
         assert response.status_code == 204
         m_abort.assert_called_once()
 
@@ -127,6 +149,7 @@ async def test_presigned_multipart_abort_cleans_db_and_quota(
     # Check DB status is cancelled
     await db_session.refresh(up)
     assert up.status == "cancelled"
+
 
 @pytest.mark.asyncio
 async def test_cancel_upload_finds_uploads_prefix(
@@ -148,6 +171,7 @@ async def test_cancel_upload_finds_uploads_prefix(
     quota_len = await fake_redis_setup.zcard(f"{_QUOTA_KEY_PREFIX}{user.id}")
     assert quota_len == 0
 
+
 @pytest.mark.asyncio
 async def test_batch_upload_status_multiple_keys(
     client: AsyncClient, db_session: AsyncSession, fake_redis_setup
@@ -157,13 +181,19 @@ async def test_batch_upload_status_multiple_keys(
 
     k1 = f"uploads/{user.id}/1/a.txt"
     k2 = f"quarantine/{user.id}/2/b.txt"
-    k3 = f"uploads/{user.id}/3/c.txt" # Not found
+    k3 = f"uploads/{user.id}/3/c.txt"  # Not found
 
-    await fake_redis_setup.set(f"{_STATUS_CACHE_PREFIX}{k1}", json.dumps({"status": "clean", "file_key": k1}))
-    await fake_redis_setup.set(f"{_STATUS_CACHE_PREFIX}{k2}", json.dumps({"status": "processing", "file_key": k2}))
+    await fake_redis_setup.set(
+        f"{_STATUS_CACHE_PREFIX}{k1}", json.dumps({"status": "clean", "file_key": k1})
+    )
+    await fake_redis_setup.set(
+        f"{_STATUS_CACHE_PREFIX}{k2}", json.dumps({"status": "processing", "file_key": k2})
+    )
 
     headers = _auth_headers(user)
-    response = await client.post("/api/upload/status/batch", headers=headers, json={"file_keys": [k1, k2, k3, "invalid/key"]})
+    response = await client.post(
+        "/api/upload/status/batch", headers=headers, json={"file_keys": [k1, k2, k3, "invalid/key"]}
+    )
     assert response.status_code == 200
 
     data = response.json()["statuses"]
@@ -174,6 +204,7 @@ async def test_batch_upload_status_multiple_keys(
     assert k3 in data
     assert data[k3]["status"] == "pending"
     assert "invalid/key" not in data
+
 
 @pytest.mark.asyncio
 async def test_stale_pending_upload_cleanup(db_session: AsyncSession, fake_redis_setup):
@@ -204,6 +235,7 @@ async def test_stale_pending_upload_cleanup(db_session: AsyncSession, fake_redis
     await db_session.commit()
 
     from app.workers.cleanup_uploads import cleanup_uploads
+
     mock_s3 = AsyncMock()
     mock_cm = MagicMock()
     mock_cm.__aenter__ = AsyncMock(return_value=mock_s3)

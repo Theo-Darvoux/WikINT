@@ -40,6 +40,7 @@ ALLOWED_EXTENSIONS: Final[frozenset[str]] = frozenset(
         ".ppt",
         ".odt",
         ".ods",
+        ".odp",
         # Text / code
         ".md",
         ".markdown",
@@ -117,6 +118,9 @@ EXTENSION_MAPPING: Final[dict[str, list[str]]] = {
     ".doc": ["application/msword"],
     ".xls": ["application/vnd.ms-excel"],
     ".ppt": ["application/vnd.ms-powerpoint"],
+    ".odt": ["application/vnd.oasis.opendocument.text"],
+    ".ods": ["application/vnd.oasis.opendocument.spreadsheet"],
+    ".odp": ["application/vnd.oasis.opendocument.presentation"],
 }
 
 # Reverse mapping: MIME type -> canonical extension
@@ -143,6 +147,9 @@ MIME_TO_EXTENSION: Final[dict[str, str]] = {
     "application/msword": ".doc",
     "application/vnd.ms-excel": ".xls",
     "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.oasis.opendocument.text": ".odt",
+    "application/vnd.oasis.opendocument.spreadsheet": ".ods",
+    "application/vnd.oasis.opendocument.presentation": ".odp",
 }
 
 # MIME types safe for gzip with Content-Encoding header
@@ -164,6 +171,7 @@ ZIP_MIME_TYPES: Final[frozenset[str]] = frozenset(
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "application/vnd.oasis.opendocument.text",
         "application/vnd.oasis.opendocument.spreadsheet",
+        "application/vnd.oasis.opendocument.presentation",
         "application/epub+zip",
     }
 )
@@ -231,9 +239,7 @@ def guess_mime_from_bytes(data: bytes, default: str = "application/octet-stream"
     # SVG — must appear near the document start (after optional BOM / XML declaration)
     _stripped = data[:500].lstrip()
     _lower = _stripped.lower()
-    if _lower.startswith(b"<svg") or (
-        _lower.startswith(b"<?xml") and b"<svg" in _lower
-    ):
+    if _lower.startswith(b"<svg") or (_lower.startswith(b"<?xml") and b"<svg" in _lower):
         return "image/svg+xml"
 
     # DjVu

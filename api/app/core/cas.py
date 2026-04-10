@@ -1,10 +1,14 @@
 import hashlib
 import hmac as _hmac
+import json
+import logging
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.config import settings
+
+logger = logging.getLogger("wikint.cas")
 
 _CAS_INFO = b"wikint-cas-v1"
 
@@ -32,3 +36,81 @@ def hmac_cas_key(sha256: str) -> str:
         _cas_signing_key = _derive_cas_signing_key()
     digest = _hmac.new(_cas_signing_key, sha256.encode(), hashlib.sha256).hexdigest()
     return f"upload:cas:{digest}"
+
+
+_LUA_CAS_INCR = """
+local raw = redis.call('GET', KEYS[1])
+local data
+if not raw then
+  if ARGV[1] then
+    data = cjson.decode(ARGV[1])
+    data['ref_count'] = 1
+  else
+    return 0
+  end
+else
+  local ok, decoded = pcall(cjson.decode, raw)
+  if not ok then return 0 end
+  data = decoded
+  data['ref_count'] = (data['ref_count'] or 1) + 1
+  if ARGV[1] then
+    local arg_data = cjson.decode(ARGV[1])
+    if arg_data['scanned_at'] then
+      data['scanned_at'] = arg_data['scanned_at']
+    end
+    -- Keep original file_name if present, or update if missing
+    if arg_data['file_name'] and not data['file_name'] then
+      data['file_name'] = arg_data['file_name']
+    end
+    -- Also sync mime_type and size if they were missing
+    if arg_data['mime_type'] and not data['mime_type'] then
+      data['mime_type'] = arg_data['mime_type']
+    end
+    if arg_data['size'] and not data['size'] then
+      data['size'] = arg_data['size']
+    end
+  end
+end
+redis.call('SET', KEYS[1], cjson.encode(data))
+return data['ref_count']
+"""
+
+_LUA_CAS_DECR = """
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local ok, data = pcall(cjson.decode, raw)
+if not ok then return 0 end
+local count = (data['ref_count'] or 1) - 1
+if count <= 0 then
+  redis.call('DEL', KEYS[1])
+  return 0
+end
+data['ref_count'] = count
+redis.call('SET', KEYS[1], cjson.encode(data))
+return count
+"""
+
+
+async def increment_cas_ref(redis, sha256: str, initial_data: dict | None = None) -> int:
+    """Atomically increment the CAS ref count. Returns the new count, or 0 on error."""
+    cas_key = hmac_cas_key(sha256)
+    try:
+        if initial_data:
+            count = await redis.eval(_LUA_CAS_INCR, 1, cas_key, json.dumps(initial_data))
+        else:
+            count = await redis.eval(_LUA_CAS_INCR, 1, cas_key)
+        return int(count) if count is not None else 1
+    except Exception as exc:
+        logger.warning("CAS ref increment failed for %s: %s", sha256, exc)
+        return 0
+
+
+async def decrement_cas_ref(redis, sha256: str) -> None:
+    cas_key = hmac_cas_key(sha256)
+    try:
+        await redis.eval(_LUA_CAS_DECR, 1, cas_key)
+    except Exception as exc:
+        logger.warning("CAS ref decrement failed for %s: %s", sha256, exc)
+
+
+

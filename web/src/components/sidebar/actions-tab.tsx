@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
     Download,
     Edit,
@@ -12,6 +13,8 @@ import {
     Trash2,
     Settings,
     Printer,
+    Send,
+    Plus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,9 +22,18 @@ import { FlagButton } from "@/components/flags/flag-button";
 import { EditItemDialog } from "@/components/pr/edit-item-dialog";
 import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
-import { useStagingStore } from "@/lib/staging-store";
+import { useStagingStore, type Operation } from "@/lib/staging-store";
+import { submitDirectOperations } from "@/lib/pr-client";
 import { useDownload } from "@/hooks/use-download";
 import { usePrint } from "@/hooks/use-print";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 
 interface SidebarTarget {
     type: "directory" | "material";
@@ -214,8 +226,13 @@ interface ActionsTabProps {
 }
 
 export function ActionsTab({ target }: ActionsTabProps) {
+    const router = useRouter();
     const addOperation = useStagingStore((s) => s.addOperation);
     const [editDialogOpen, setEditDialogOpen] = useState(false);
+    
+    // Delete Confirmation State
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     const { downloadMaterial, isDownloading } = useDownload();
     
@@ -245,42 +262,46 @@ export function ActionsTab({ target }: ActionsTabProps) {
         );
     }
 
+    const title = String(isMaterial ? target.data.title ?? "item" : target.data.name ?? "folder");
+
+    const getDeleteOp = (): Operation => {
+        if (isMaterial) {
+            return { op: "delete_material", material_id: target.id };
+        } else {
+            return { op: "delete_directory", directory_id: target.id };
+        }
+    };
+
     const handleShare = () => {
         navigator.clipboard.writeText(window.location.href).then(() => {
             toast.success("Link copied to clipboard");
         });
     };
 
+    const handleDraftDelete = () => {
+        addOperation(getDeleteOp());
+        toast.success(`Suppression de "${title}" ajoutée au brouillon`);
+        setDeleteDialogOpen(false);
+    };
 
-
-    const handleDelete = () => {
-        if (isMaterial) {
-            addOperation({
-                op: "delete_material",
-                material_id: target.id,
-            });
-            toast.success(
-                `Deletion of "${String(target.data.title ?? "item")}" staged`
-            );
-        } else {
-            addOperation({
-                op: "delete_directory",
-                directory_id: target.id,
-            });
-            toast.success(
-                `Deletion of folder "${String(target.data.name ?? "folder")}" staged`
-            );
+    const handleDirectDelete = async () => {
+        setDeleting(true);
+        const result = await submitDirectOperations([getDeleteOp()]);
+        setDeleting(false);
+        setDeleteDialogOpen(false);
+        if (result?.status === "approved") {
+            router.refresh();
         }
     };
 
     return (
         <div className="space-y-4">
             {/* Quick actions */}
-            <ActionGroup label="Quick Actions">
+            <ActionGroup label="Actions Rapides">
                 {isMaterial && materialId && (
                     <ActionRow
                         icon={isDownloading ? Loader2 : Download}
-                        label="Download"
+                        label="Télécharger"
                         onClick={() => downloadMaterial(materialId)}
                         iconClassName={isDownloading ? "animate-spin" : ""}
                     />
@@ -288,35 +309,35 @@ export function ActionsTab({ target }: ActionsTabProps) {
                 {isMaterial && canPrint && (
                     <ActionRow
                         icon={isPrinting ? Loader2 : Printer}
-                        label="Print"
+                        label="Imprimer"
                         onClick={print}
                         iconClassName={isPrinting ? "animate-spin" : ""}
                     />
                 )}
                 <ActionRow
                     icon={Share2}
-                    label="Copy link"
+                    label="Copier le lien"
                     onClick={handleShare}
                 />
             </ActionGroup>
 
             {/* Editing */}
-            <ActionGroup label="Editing">
+            <ActionGroup label="Organisation">
                 <ActionRow
                     icon={Edit}
-                    label="Edit (stage change)"
+                    label="Modifier les détails"
                     onClick={() => setEditDialogOpen(true)}
                 />
                 <ActionRow
                     icon={Trash2}
-                    label="Delete (stage)"
-                    onClick={handleDelete}
+                    label="Supprimer"
+                    onClick={() => setDeleteDialogOpen(true)}
                     destructive
                 />
             </ActionGroup>
 
             {/* Moderation */}
-            <ActionGroup label="Moderation">
+            <ActionGroup label="Modération">
                 <FlagButton
                     targetType={isMaterial ? "material" : "comment"}
                     targetId={target.id}
@@ -330,7 +351,7 @@ export function ActionsTab({ target }: ActionsTabProps) {
             {isMaterial && materialId && (
                 <div className="space-y-1.5">
                     <span className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-0.5">
-                        Version History
+                        Historique
                     </span>
                     <VersionHistoryList materialId={materialId} />
                 </div>
@@ -341,6 +362,54 @@ export function ActionsTab({ target }: ActionsTabProps) {
                 onOpenChange={setEditDialogOpen}
                 target={target}
             />
+
+            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-destructive">
+                            <Trash2 className="h-5 w-5" />
+                            Supprimer {isMaterial ? "le document" : "le dossier"}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Voulez-vous supprimer définitivement{" "}
+                            <span className="font-medium text-foreground">{title}</span> ?
+                            Vous pouvez proposer cette suppression immédiatement ou l'ajouter à votre brouillon global.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 sm:gap-0 mt-4">
+                        <Button
+                            variant="ghost"
+                            onClick={() => setDeleteDialogOpen(false)}
+                            disabled={deleting}
+                            className="sm:mr-auto"
+                        >
+                            Annuler
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={handleDraftDelete}
+                            disabled={deleting}
+                            className="gap-2 border-dashed border-destructive/50 text-destructive hover:bg-destructive/10"
+                        >
+                            <Plus className="h-4 w-4" />
+                            Brouillon
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleDirectDelete}
+                            disabled={deleting}
+                            className="gap-2"
+                        >
+                            {deleting ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Send className="h-4 w-4" />
+                            )}
+                            Supprimer
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

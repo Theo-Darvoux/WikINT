@@ -75,94 +75,72 @@ DB: uploads row (status=pending)
 ARQ: process_upload job enqueued
 ```
 
-## Phase 3: Background Processing
+### Step 2.2: TUS Resumable Upload (Large files)
+**Location:** `web/src/lib/upload-client.ts` → `api/app/routers/upload.py:patch_upload_chunk()`
 
-**Location:** `api/app/workers/process_upload.py:process_upload()`
+1. **Initialization (`POST /api/upload/resumable`)**: Client declares total size and metadata. Server reserves quota and returns `Location` (TUS ID).
+2. **Chunking (`PATCH /resumable/{id}`)**: Client sends chunks with `Upload-Offset`.
+3. **Resiliency**:
+    - **Atomic Lock**: A Redis lock (`tus:{id}`) ensures chunks are processed sequentially.
+    - **Streaming to Disk**: Chunks are spooled directly to disk via `ProcessingFile` to avoid memory spikes.
+    - **Early Checksum**: If `Upload-Checksum` is provided, the server verifies the chunk's SHA-1/MD5/SHA-256 while streaming. Incorrect checksums trigger immediate `460 Checksum Mismatch` rejection.
+4. **Completion**: Once `Upload-Offset == Upload-Length`, the server finalizes the S3 multipart upload and enqueues the `process_upload` job.
+
+---
+
+### Step 2.3: Size and MIME Validation (Security Gate)
+Regardless of the transfer method, the server performs a final validation after the file is assembled but **before** the worker starts:
+- Fetch actual S3 size via `HEAD`.
+- Verify per-category limits (e.g., 500 MiB for video).
+- Correct MIME type via magic bytes (Range GET of first 2048 bytes).
+
+**Location:** `api/app/workers/process_upload.py` (`process_upload()` entrypoint), `api/app/workers/upload/pipeline.py` (`UploadPipeline`), and `api/app/workers/upload/stages/`.
 
 ### Step 3.0: Setup
-1. Extract and restore OpenTelemetry trace context
-2. Set up Redis status/event publishing functions
-3. Emit initial status: `PROCESSING, "Scanning for malware", stage=0`
+1. Extract and restore OpenTelemetry trace context.
+2. Initialize `UploadWorkerRepository` (DB) and `UploadCacheRepository` (Redis).
+3. Emit initial status: `PROCESSING, "Scanning for malware", stage_name="scan_strip"`.
 
-### Step 3.1: Download & Hash
-1. Check available disk space (require 1.5x file size free)
-2. `download_file_with_hash()` — Download from quarantine + compute SHA-256 in one pass
-3. Create `ProcessingFile` wrapper around temp file
+### Step 3.1: Download & Validate
+1. Check available disk space (require 2.0x file size free).
+2. `run_download_and_validate()`: Download from quarantine + compute SHA-256 + validate MIME and size limits.
+3. Create `ProcessingFile` wrapper around temp file.
 
 ### Step 3.2: CAS Check (Cross-User)
-1. Compute HMAC CAS key from SHA-256
-2. Check Redis for existing CAS entry
-3. **If hit:** 
-   - Check if the S3 master object exists in `cas/` prefix.
-   - If yes: Copy the master file to user's `uploads/`, increment Redis `ref_count`, and skip to finalization.
-   - If no: Log warning and continue to full processing.
-4. **If miss:** Continue
+1. Compute HMAC CAS key from SHA-256.
+2. `try_cas_short_circuit()`: Check Redis for existing CAS entry.
+3. **If hit (and NOT stale):**
+   - **Skip Malware Scan:** If the system has a valid CAS record, the file is trusted.
+   - Increment Redis `ref_count` for the user's staging window.
+   - Point the `Upload` row's `final_key` directly to `cas/{hmac}`.
+   - Skip directly to clean status.
+4. **If miss (or stale):** Continue to full processing.
 
-### Step 3.3: Malware Scan (Stage 0, weight 40%)
-1. YARA scan (in thread executor, timeout: yara_scan_timeout + 5s)
-2. MalwareBazaar API check (concurrent with YARA)
-3. Both results checked:
-   - Exception → `FAILED` (fail-closed)
-   - Detection → `MALICIOUS`
-   - Clean → continue
-4. For PDFs: `check_pdf_safety()` — /OpenAction, /AA, /JavaScript
-5. Emit: stage 0 complete (40% overall)
+### Step 3.3: Malware Scanning & Metadata Stripping (Stages 0-1, wt 65%)
+1. `run_scan_and_strip()`: Dispatches both tasks concurrently via `asyncio.gather`.
+2. **Malware Scan:** YARA + MalwareBazaar + PDF safety checks.
+3. **Metadata Stripping:** Format-specific stripping (Images, PDF, Video, Audio, OOXML).
+4. **Concurrency Logic:** If both fail, both are logged, but scan results (Detection/Malicious) always take precedence for the upload status.
+5. If the pipeline resumes from a checkpoint where only the scan was finished, `run_strip_only()` is used.
 
-### Step 3.4: Metadata Stripping (Stage 1, weight 25%)
-1. `strip_metadata_file(path, mime_type)` — Dispatches to format-specific handler:
-   - Images: Pillow re-save (strip EXIF)
-   - PDF: pikepdf (strip /Info, XMP, active content)
-   - Video: ffmpeg `-map_metadata -1` (sandboxed)
-   - Audio: mutagen tag deletion
-   - OLE2: oletools macro check + exiftool (sandboxed)
-   - OOXML: ZIP reconstruction without docProps/
-2. If handler produces new file: `pf.replace_with(new_path)`
-3. Emit: stage 1 complete (65% overall)
+### Step 3.4: Compression (Stage 2, weight 25%)
+1. `run_compress_stage()`: Applies category-specific compression (WEBP for images, Ghostscript for PDF, FFmpeg for A/V).
+2. **Fail-open:** If compression fails or times out, the uncompressed file is used.
 
-### Step 3.5: Compression (Stage 2, weight 25%)
-1. `compress_file_path(path, mime_type, filename)`:
-   - Images: Resize to max 2048px (2K) and heavily compress to WEBP format (animated GIFs bypass format conversion)
-   - Video: FFmpeg configurable re-encode governed by `video_compression_profile` setting (default 'heavy')
-   - PDF: Ghostscript with /prepress quality (configurable, sandboxed)
-   - Audio: FFmpeg conversion to Opus (lossy)
-   - SVG: scour optimization
-   - Text/JSON/XML: gzip compression
-   - ZIP formats: re-deflate
-   - Already-compressed formats: skip
-2. Per-category timeout (15s text, 1200s video)
-3. **On failure: fail-open** — proceed with uncompressed file
-4. Track final MIME type and content encoding
-5. Emit: stage 2 complete (90% overall)
-
-### Step 3.6: CAS Promotion (Stage 3, weight 5%)
-1. Compute content SHA-256 of processed file.
-2. Construct CAS S3 key: `cas/{hmac_cas_key_suffix}`.
-3. Acquire a distributed Redis lock to prevent concurrent workers from uploading the exact same file.
-4. If lock acquired, check if CAS master exists in S3. If not: `upload_file_multipart` processed file to `cas/` prefix.
-5. If lock NOT acquired, wait up to 60s for the lock holder to finish. If the lock holder fails, gracefully fail open (skip global CAS promotion) and use the user's personal final_key to prevent concurrent S3 multipart corruption.
-
-### Step 3.7: Finalization (Stage 3, weight 5%)
-1. Determine canonical extension from final MIME type.
-2. Construct final user key: `uploads/{user_id}/{upload_id}/{safe_name}`.
-3. `upload_file_multipart` processed file to user's prefix (for PR compatibility).
-4. Set Redis caches:
-   - `upload:scanned:{final_key}` → "CLEAN" (24h TTL)
-   - `upload:sha256:{user_id}:{sha256}` → final_key (24h TTL)
-   - `upload:cas:{hmac}` → JSON entry pointing to `cas/` key, `ref_count: 1` (permanent)
-   - `quota:uploads:{user_id}` → {final_key: timestamp}
-5. Emit: `CLEAN` with result `{ file_key, size, original_size, mime_type }`
-6. Update DB: upload status=clean, sha256, final_key
-7. Delete quarantine object from S3
-8. Record Prometheus metrics
+### Step 3.5: Finalization (Stage 3, weight 10%)
+1. `run_finalize_storage()`: Uploads the processed file directly to `cas/{hmac}` (protected by a distributed Redis lock). **No uploads/ copy is created** (CAS V2).
+2. Set Redis caches (Scan results, SHA-256 map, CAS entries, Quota).
+3. Update DB via `UploadWorkerRepository`: set status=`clean`, final_key=`cas/{hmac}`, and content_sha256.
+4. Delete quarantine object and dispatch optional webhooks.
 
 **Data at this point:**
 ```
-S3: cas/{hmac} (master copy)
-S3: uploads/{user_id}/{upload_id}/{filename} (processed, clean)
+S3: cas/{hmac} (single source of truth)
 S3: quarantine/... DELETED
-Redis: upload:scanned:{key} = "CLEAN"
+Redis: upload:scanned:{cas_key} = "CLEAN"
 Redis: upload:cas:{hmac} = { final_key: "cas/...", mime_type, size, ref_count: 1 }
-DB: uploads row (status=clean, sha256, final_key)
+Redis: quota:uploads:{user_id} -> {staging:{user_id}:{upload_id}: timestamp}
+DB: uploads row (status=clean, sha256, final_key=cas/{hmac})
 ```
 
 ## Phase 4: SSE Progress Tracking (Concurrent with Phase 3)
@@ -180,7 +158,7 @@ DB: uploads row (status=clean, sha256, final_key)
 
    data: {"status":"processing","detail":"Removing private metadata","overall_percent":0.65}
 
-   data: {"status":"clean","result":{"file_key":"uploads/...","size":12345}}
+   data: {"status":"clean","result":{"file_key":"cas/...","file_name":"notes.pdf","size":12345,"original_size":13000,"mime_type":"application/pdf","content_encoding":null}}
    ```
 7. Client updates progress bar and status text
 8. On terminal event: close SSE connection
@@ -196,9 +174,9 @@ DB: uploads row (status=clean, sha256, final_key)
      "title": "Lecture Notes",
      "directory_id": "uuid",
      "type": "pdf",
-     "file_key": "uploads/{user_id}/{upload_id}/notes.pdf",
+     "file_key": "cas/a03472e2061bc730e65ee763c886002eb1c93f37d69983f322cd79ecd5ce1464",
      "file_name": "notes.pdf",
-     "file_size": 12345,
+     "file_size": 13000,
      "file_mime_type": "application/pdf"
    }
    ```
@@ -217,22 +195,20 @@ DB: uploads row (status=clean, sha256, final_key)
 3. `apply_pr(db, pr, user_id)`:
    - Topological sort of operations
    - For each `create_material` with `file_key`:
-     - `copy_object(uploads/..., materials/...)` — Copy to permanent prefix
-     - Schedule post-commit delete of `uploads/...` copy
-     - Create `MaterialVersion` row
+     - **No S3 copy needed** — `file_key` is already `cas/{hmac}` (CAS V2)
+     - `increment_cas_ref` for the new MaterialVersion
+     - Create `MaterialVersion` row with `file_key=cas/{hmac}`, `cas_sha256`
    - Create `Material` row with slug, tags, metadata
 4. Transaction commits
 5. Post-commit: ARQ jobs fire:
    - `index_material` — Add to MeiliSearch
-   - `delete_storage_objects` — Remove staging files (CAS-aware: decrements `ref_count` if key is in `cas/` prefix; only deletes S3 object if count hits 0).
+   - Staging upload cleanup (decrement CAS ref for the staging window)
 
 **Final data state:**
 ```
-S3: cas/{hmac} (master copy, preserved if ref_count > 0)
-S3: materials/{user_id}/{upload_id}/{filename} (permanent)
-S3: uploads/... DELETED (post-commit cleanup)
+S3: cas/{hmac} (single source of truth, ref_count >= 1)
 DB: materials row (with directory_id, slug, type)
-DB: material_versions row (file_key, file_size, mime_type, virus_scan_result=clean)
+DB: material_versions row (file_key=cas/{hmac}, cas_sha256, file_name, file_size, mime_type)
 MeiliSearch: indexed for full-text search
 ```
 

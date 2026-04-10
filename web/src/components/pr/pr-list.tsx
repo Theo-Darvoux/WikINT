@@ -109,8 +109,8 @@ export function PRList() {
     };
 
     const emptyMessage = filterStatus
-        ? `No ${filterStatus} pull requests`
-        : "No pull requests yet";
+        ? `No ${filterStatus} contributions`
+        : "No contributions yet";
 
     const EmptyIcon =
         filterStatus === "open"
@@ -126,7 +126,7 @@ export function PRList() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-bold tracking-tight">
-                    Pull Requests
+                    Contributions
                 </h1>
             </div>
 
@@ -204,7 +204,7 @@ export function PRList() {
                     <p className="text-xs mt-1 opacity-70">
                         {filterStatus === "open"
                             ? "Stage changes from the browse page to create one."
-                            : "Pull requests will appear here once they exist."}
+                            : "Contributions will appear here once they exist."}
                     </p>
                 </div>
             ) : (

@@ -16,6 +16,7 @@ import { ImageViewer } from "@/components/viewers/image-viewer";
 import { VideoPlayer } from "@/components/viewers/video-player";
 import { AudioPlayer } from "@/components/viewers/audio-player";
 import { CodeViewer } from "@/components/viewers/code-viewer";
+import { CsvViewer } from "@/components/viewers/csv-viewer";
 import { OfficeViewer } from "@/components/viewers/office-viewer";
 import { GenericViewer } from "@/components/viewers/generic-viewer";
 import { EpubViewer } from "@/components/viewers/epub-viewer";
@@ -64,6 +65,8 @@ const MIME_TO_VIEWER: Record<string, string> = {
     "image/x-djvu": "djvu",
     "application/x-tex": "code",
     "text/x-tex": "code",
+    "text/csv": "csv",
+    "application/csv": "csv",
 };
 
 const CODE_EXTENSIONS = new Set([
@@ -72,7 +75,7 @@ const CODE_EXTENSIONS = new Set([
     "html", "css", "scss", "json", "yaml", "yml", "toml", "xml",
     "sql", "sh", "bash", "zsh", "fish", "ps1",
     "lua", "r", "m", "ml", "hs", "ex", "exs", "clj",
-    "txt", "log", "csv", "ini", "cfg", "conf", "tex", "latex",
+    "txt", "log", "ini", "cfg", "conf", "tex", "latex",
 ]);
 
 // Fallback: map file extensions to viewer types when MIME is unknown
@@ -88,15 +91,11 @@ const EXT_TO_VIEWER: Record<string, string> = {
     "odt": "office", "ods": "office",
     "epub": "epub",
     "djvu": "djvu", "djv": "djvu",
+    "csv": "csv",
 };
 
 function getViewerType(mimeType: string, fileName: string): string {
     const ext = getFileExtension(fileName);
-
-    // Force video player for video extensions even if mime type is ambiguous (e.g. audio/mp4)
-    if (ext === "mp4" || ext === "webm" || ext === "ogg" || ext === "mov") {
-        return "video";
-    }
 
     // 1. Exact MIME match
     if (MIME_TO_VIEWER[mimeType]) return MIME_TO_VIEWER[mimeType];
@@ -107,7 +106,12 @@ function getViewerType(mimeType: string, fileName: string): string {
     if (mimeType.startsWith("audio/")) return "audio";
     if (mimeType.startsWith("text/")) return "code";
 
-    // 3. File extension fallback (handles octet-stream / unknown MIME)
+    // 3. Force video player for video extensions if mime type is ambiguous (e.g. application/octet-stream)
+    if (ext === "mp4" || ext === "webm" || ext === "ogg" || ext === "mov") {
+        return "video";
+    }
+
+    // 4. File extension fallback (handles octet-stream / unknown MIME)
     if (EXT_TO_VIEWER[ext]) return EXT_TO_VIEWER[ext];
     if (CODE_EXTENSIONS.has(ext)) return "code";
 
@@ -276,11 +280,12 @@ export function MaterialViewer({ material, breadcrumbs = [] }: MaterialViewerPro
                 {/* Viewer */}
                 <div ref={viewerContainerRef} className="relative flex-1 min-h-0 overflow-auto rounded-lg border">
                     {viewerType === "pdf" && <PdfViewer fileKey={fileKey} materialId={materialId} annotations={threads} onAnnotationClick={handleHighlightClick} />}
-                    {viewerType === "markdown" && <MarkdownViewer fileKey={fileKey} materialId={materialId} />}
+                    {viewerType === "markdown" && <MarkdownViewer fileKey={fileKey} materialId={materialId} material={material} />}
                     {viewerType === "image" && <ImageViewer fileKey={fileKey} materialId={materialId} fileName={fileName} />}
                     {viewerType === "video" && <VideoPlayer fileKey={fileKey} materialId={materialId} material={material} />}
                     {viewerType === "audio" && <AudioPlayer fileKey={fileKey} materialId={materialId} />}
                     {viewerType === "code" && <CodeViewer fileKey={fileKey} materialId={materialId} fileName={fileName} />}
+                    {viewerType === "csv" && <CsvViewer fileKey={fileKey} materialId={materialId} fileName={fileName} />}
                     {viewerType === "office" && <OfficeViewer fileKey={fileKey} materialId={materialId} fileName={fileName} mimeType={mimeType} />}
                     {viewerType === "epub" && <EpubViewer fileKey={fileKey} materialId={materialId} />}
                     {viewerType === "djvu" && <DjvuViewer fileKey={fileKey} materialId={materialId} />}

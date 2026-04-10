@@ -17,7 +17,6 @@ async def cleanup_uploads(ctx: dict) -> None:
     pr_cutoff = datetime.now(UTC) - timedelta(days=7)
 
     async with async_session_factory() as db:
-        # Update PRs to REJECTED if they've been idle for 7 days
         expire_stmt = (
             update(PullRequest)
             .where(PullRequest.status == PRStatus.OPEN)
@@ -27,20 +26,19 @@ async def cleanup_uploads(ctx: dict) -> None:
         from typing import cast
 
         from sqlalchemy.engine import CursorResult
+
         res = cast(CursorResult, await db.execute(expire_stmt))
         await db.commit()
         if res.rowcount > 0:
             logger.info("Expired %d stale Pull Requests (older than 7 days)", res.rowcount)
 
-    # ── 1c. Abort stale Multipart Uploads (24 hours) (Issue 4) ─────────────
-    # S3 multipart uploads that are never completed consume hidden storage.
-    # We must explicitly list and abort them.
+    # ── 1c. Abort stale Multipart Uploads (24 hours) ─────────────────────────
     from app.core.storage import abort_multipart_upload, list_multipart_uploads
+
     mp_cutoff = datetime.now(UTC) - timedelta(hours=24)
     mp_aborted = 0
 
     async for mp in list_multipart_uploads():
-        # mp['Initiated'] is already a datetime object from botocore
         initiated = mp["Initiated"]
         if isinstance(initiated, datetime) and initiated < mp_cutoff:
             await abort_multipart_upload(cast(str, mp["Key"]), cast(str, mp["UploadId"]))
@@ -49,7 +47,7 @@ async def cleanup_uploads(ctx: dict) -> None:
     if mp_aborted > 0:
         logger.info("Aborted %d stale S3 multipart uploads (older than 24h)", mp_aborted)
 
-    # ── 1b. Expire stale pending Uploads (2 hours) — audit fix #8 ─────────
+    # ── 1b. Expire stale pending Uploads (2 hours) ───────────────────────────
     pending_cutoff = datetime.now(UTC) - timedelta(hours=2)
 
     async with async_session_factory() as db:
@@ -67,7 +65,6 @@ async def cleanup_uploads(ctx: dict) -> None:
             logger.info("Expired %d stale pending uploads (older than 2h)", pending_res.rowcount)
 
     # ── 2. Collect protected keys ────────────────────────────────────────────
-    # Only OPEN or APPROVED (pending merge) PRs protect their files.
     protected_keys: set[str] = set()
     async with async_session_factory() as db:
         result = await db.execute(
@@ -85,22 +82,16 @@ async def cleanup_uploads(ctx: dict) -> None:
                     if att_fk:
                         protected_keys.add(att_fk)
 
-    # 3. Clean uploads/ (staging area for PRs)
-    # Since the S3 Lifecycle Rule will also be active, this serves as a
-    # fallback and handles immediate cleanup of recently rejected/closed PRs.
-    # (A8) 48h safety margin for orphan cleanup.
-    # We use a 48h cutoff to ensure that files created during long apply_pr transactions
-    # or mid-upload aren't prematurely deleted.
+    # ── 3. Clean terminal uploads ────────────────────────────────────────────
+    # CAS V2: terminal uploads reference cas/ keys. We decrement the CAS ref
+    # instead of deleting S3 objects (which are shared).
     orphan_cutoff = datetime.now(UTC) - timedelta(hours=48)
     quarantine_cutoff = datetime.now(UTC) - timedelta(hours=2)
 
-    to_delete: list[str] = []
+    non_cas_to_delete: list[str] = []
+    cas_refs_to_decrement: list[str] = []  # SHA-256 values
 
-    # 3.8: Status-based cleanup — query DB for terminal uploads instead of S3 prefix scan.
-    # This is more efficient and avoids listing potentially millions of S3 objects.
     async with async_session_factory() as db:
-        from sqlalchemy import select
-
         from app.models.upload import Upload
 
         terminal_statuses = ["clean", "failed", "malicious"]
@@ -113,62 +104,75 @@ async def cleanup_uploads(ctx: dict) -> None:
         terminal_uploads: list[Upload] = list(upload_result.scalars().all())
 
     for upload in terminal_uploads:
-        # Skip if the file is referenced by an active PR
-        if upload.final_key and upload.final_key not in protected_keys:
-            to_delete.append(upload.final_key)
-        elif upload.quarantine_key and upload.quarantine_key not in protected_keys:
-            to_delete.append(upload.quarantine_key)
+        key = upload.final_key or upload.quarantine_key
+        if not key or key in protected_keys:
+            continue
 
-    # 2. Clean quarantine/ files older than quarantine_cutoff via S3 scan.
-    # (These may have no DB row — e.g. direct uploads before DB row was created.)
+        if key.startswith("cas/"):
+            # CAS V2: decrement ref count instead of deleting shared object.
+            # Use the upload's original SHA-256 for proper ref counting.
+            if upload.sha256:
+                cas_refs_to_decrement.append(upload.sha256)
+        else:
+            # Legacy V1 keys (uploads/, quarantine/) — direct S3 delete
+            non_cas_to_delete.append(key)
+
+    # Also clean up the synthetic staging quota entries
+    redis = ctx["redis"]
+    for upload in terminal_uploads:
+        staging_key = f"staging:{upload.user_id}:{upload.upload_id}"
+        await redis.zrem(f"quota:uploads:{upload.user_id}", staging_key)
+
+    # Clean quarantine/ files older than quarantine_cutoff via S3 scan.
     async with get_s3_client() as client:
         paginator = client.get_paginator("list_objects_v2")
 
         async for page in paginator.paginate(Bucket=settings.s3_bucket, Prefix="quarantine/"):
             for obj in page.get("Contents", []):
                 key = obj["Key"]
-                if obj["LastModified"].replace(tzinfo=None) < quarantine_cutoff.replace(tzinfo=None):
-                    to_delete.append(key)
+                if obj["LastModified"].replace(tzinfo=None) < quarantine_cutoff.replace(
+                    tzinfo=None
+                ):
+                    non_cas_to_delete.append(key)
 
-    if to_delete:
+    if non_cas_to_delete:
         from app.workers.storage_ops import delete_storage_objects
-        await delete_storage_objects(ctx, to_delete)
-        logger.info("Cleanup triggered for %d staging/quarantine objects", len(to_delete))
 
-    # ── 4. Clean orphaned materials/ and cas/ (A4) ───────────────────────────
-    # Integrated from cleanup_orphans.py to provide a single cleanup path.
+        await delete_storage_objects(ctx, non_cas_to_delete)
+        logger.info("Cleanup triggered for %d staging/quarantine objects", len(non_cas_to_delete))
+
+    if cas_refs_to_decrement:
+        from app.core.cas import decrement_cas_ref
+
+        for sha256 in cas_refs_to_decrement:
+            await decrement_cas_ref(redis, sha256)
+        logger.info("Decremented CAS refs for %d expired uploads", len(cas_refs_to_decrement))
+
+    # ── 4. Clean orphaned cas/ objects ───────────────────────────────────────
+    # CAS objects without a Redis ref entry are orphans. The 48h safety margin
+    # prevents deleting objects that are mid-upload or mid-finalize.
+    from sqlalchemy import select
+
     from app.models.material import MaterialVersion
 
-    valid_keys: set[str] = set()
-
-
     async with async_session_factory() as db:
-        # Collect all active file_keys
+        # Collect all active legacy file_keys to prevent deleting valid production data
         result = await db.execute(
-            select(MaterialVersion.file_key).where(MaterialVersion.file_key.is_not(None))
+            select(MaterialVersion.file_key).where(
+                MaterialVersion.file_key.is_not(None),
+                MaterialVersion.file_key.not_like("cas/%")
+            )
         )
-        valid_keys = {row[0] for row in result if row[0]}
-
-        pass
+        valid_legacy_keys = {row[0] for row in result if row[0]}
 
     orphans_to_delete: list[str] = []
+
     async with get_s3_client() as client:
         paginator = client.get_paginator("list_objects_v2")
-        # Check materials/
-        async for page in paginator.paginate(Bucket=settings.s3_bucket, Prefix="materials/"):
-            for obj in page.get("Contents", []):
-                key = obj["Key"]
-                if key in valid_keys:
-                    continue
-                if obj["LastModified"].replace(tzinfo=None) < orphan_cutoff.replace(tzinfo=None):
-                    orphans_to_delete.append(key)
 
-        # Check cas/
-        redis = ctx["redis"]
         cas_keys_raw = await redis.keys("upload:cas:*")
         valid_cas_ids = {
-            (k.decode() if isinstance(k, bytes) else k).split(":")[-1]
-            for k in cas_keys_raw
+            (k.decode() if isinstance(k, bytes) else k).split(":")[-1] for k in cas_keys_raw
         }
 
         async for page in paginator.paginate(Bucket=settings.s3_bucket, Prefix="cas/"):
@@ -180,9 +184,49 @@ async def cleanup_uploads(ctx: dict) -> None:
                 if obj["LastModified"].replace(tzinfo=None) < orphan_cutoff.replace(tzinfo=None):
                     orphans_to_delete.append(key)
 
+        # Legacy: clean remaining materials/ or uploads/ objects that are NOT in valid_legacy_keys
+        for prefix in ("materials/", "uploads/"):
+            async for page in paginator.paginate(Bucket=settings.s3_bucket, Prefix=prefix):
+                for obj in page.get("Contents", []):
+                    key = obj["Key"]
+                    if key in valid_legacy_keys:
+                        continue
+                    if obj["LastModified"].replace(tzinfo=None) < orphan_cutoff.replace(
+                        tzinfo=None
+                    ):
+                        orphans_to_delete.append(key)
+
     if orphans_to_delete:
         from app.workers.storage_ops import delete_storage_objects
+
         await delete_storage_objects(ctx, orphans_to_delete)
         logger.info("Cleanup triggered for %d orphaned objects", len(orphans_to_delete))
     else:
         logger.info("No orphaned objects found to clean up")
+
+    # ── 5. Integrity: verify CAS objects referenced by MaterialVersions exist ─
+    # If a CAS object is missing from S3 but still referenced in the DB, log
+    # a warning. We do NOT delete the DB row automatically — this requires
+    # manual investigation.
+    from app.core.storage import object_exists
+    from app.models.material import MaterialVersion
+
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(MaterialVersion.file_key).where(
+                MaterialVersion.file_key.is_not(None),
+                MaterialVersion.file_key.like("cas/%"),
+            )
+        )
+        cas_file_keys = {row[0] for row in result if row[0]}
+
+    missing_count = 0
+    for fk in cas_file_keys:
+        if not await object_exists(fk):
+            logger.warning("CAS object missing from S3 but referenced by MaterialVersion: %s", fk)
+            missing_count += 1
+
+    if missing_count > 0:
+        logger.warning("Found %d MaterialVersion(s) referencing missing CAS objects", missing_count)
+    else:
+        logger.info("All CAS-backed MaterialVersions verified")

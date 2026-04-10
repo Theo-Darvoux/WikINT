@@ -98,6 +98,7 @@ WikINT follows a **three-tier architecture** with a clear separation of concerns
 - [`security/file-security.md`](security/file-security.md) - Metadata stripping, malware scanning, sandbox, MIME validation
 - [`security/authentication.md`](security/authentication.md) - JWT architecture, token blacklisting, RBAC
 - [`security/upload-hardening.md`](security/upload-hardening.md) - Quarantine pattern, CAS dedup, quota enforcement
+- [`security/markdown-safety.md`](security/markdown-safety.md) - Sanitization, Mermaid diagram hardening, and SVG isolation
 
 #### Frontend
 - [`modules/frontend/overview.md`](modules/frontend/overview.md) - Next.js app structure, routing, state management

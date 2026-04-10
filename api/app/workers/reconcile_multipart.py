@@ -34,7 +34,7 @@ async def reconcile_multipart_uploads(ctx: dict) -> None:
             active_s3_ids.add(s3_id.decode() if isinstance(s3_id, bytes) else s3_id)
         else:
             # Clean up stale ID from set if state is gone
-            await redis.srem(_TUS_ACTIVE_SESSIONS, tid)  # type: ignore[misc]
+            await redis.srem(_TUS_ACTIVE_SESSIONS, tid)  # type: ignore
 
     # 2. Build set of upload_ids that are still processing (from DB)
     processing_upload_ids: set[str] = set()
@@ -91,6 +91,5 @@ async def reconcile_multipart_uploads(ctx: dict) -> None:
             )
         except Exception as exc:
             logger.warning("reconcile_multipart: abort failed for %s: %s", s3_upload_id, exc)
-
 
     logger.info("reconcile_multipart: done — aborted=%d skipped=%d", aborted, skipped)

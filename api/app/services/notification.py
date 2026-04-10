@@ -73,7 +73,7 @@ async def get_unread_count(db: AsyncSession, user_id: uuid.UUID) -> int:
 
 
 async def mark_read(db: AsyncSession, notification_id: str, user_id: uuid.UUID) -> Notification:
-    nid = uuid.UUID(notification_id) if isinstance(notification_id, str) else notification_id
+    nid = uuid.UUID(str(notification_id))
     result = await db.execute(
         select(Notification).where(Notification.id == nid, Notification.user_id == user_id)
     )

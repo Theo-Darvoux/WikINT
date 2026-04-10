@@ -1,3 +1,4 @@
+import re
 import uuid
 from collections import defaultdict
 
@@ -60,6 +61,11 @@ def _collect_temp_refs(op: dict) -> set[str]:
     return refs
 
 
+def _slug_pattern(base: str) -> re.Pattern[str]:
+    """Compile a pattern matching exactly `base` or `base-<digits>`."""
+    return re.compile(r"^" + re.escape(base) + r"(?:-\d+)?$")
+
+
 async def _unique_material_slug(
     db: AsyncSession,
     directory_id: uuid.UUID | None,
@@ -68,11 +74,14 @@ async def _unique_material_slug(
 ) -> str:
     """Generate a slug unique within the directory, appending -2, -3, … on collision.
 
-    Uses SELECT ... FOR UPDATE to prevent race conditions between
-    concurrent PR applications.
+    Uses SELECT ... FOR UPDATE to prevent race conditions between concurrent
+    PR applications. Post-filters the LIKE results to only count exact matches
+    (`base` or `base-<digits>`), avoiding false collisions with slugs that
+    merely share a prefix (e.g. `linear-algebra` vs `linear-algebra-notes`).
     """
     base = slugify(title) or "untitled"
-    # Match exactly 'base' OR 'base-[0-9]+'
+    pattern = _slug_pattern(base)
+
     stmt = (
         select(Material.slug)
         .where((Material.slug == base) | Material.slug.like(f"{base}-%"))
@@ -87,7 +96,9 @@ async def _unique_material_slug(
         stmt = stmt.where(Material.id != exclude_id)
 
     result = await db.execute(stmt)
-    existing = set(result.scalars().all())
+    # Only count slugs that are exactly `base` or `base-N` (digits only).
+    existing = {s for s in result.scalars().all() if pattern.match(s)}
+
     if base not in existing:
         return base
     for i in range(2, len(existing) + 100):
@@ -105,9 +116,12 @@ async def _unique_directory_slug(
 ) -> str:
     """Generate a slug unique among sibling directories.
 
-    Uses SELECT ... FOR UPDATE to prevent race conditions.
+    Uses SELECT ... FOR UPDATE to prevent race conditions. Same prefix-collision
+    fix as _unique_material_slug.
     """
     base = slugify(name) or "untitled"
+    pattern = _slug_pattern(base)
+
     stmt = (
         select(Directory.slug)
         .where((Directory.slug == base) | Directory.slug.like(f"{base}-%"))
@@ -122,7 +136,8 @@ async def _unique_directory_slug(
         stmt = stmt.where(Directory.id != exclude_id)
 
     result = await db.execute(stmt)
-    existing = set(result.scalars().all())
+    existing = {s for s in result.scalars().all() if pattern.match(s)}
+
     if base not in existing:
         return base
     for i in range(2, len(existing) + 100):
@@ -237,31 +252,54 @@ async def _exec_create_material(
 
     if p.get("file_key"):
         file_key = str(p["file_key"])
-        info = await _get_file_info(file_key)
-        real_size = info["size"]
-        mime_type = await _resolve_mime_type(file_key, p, s3_mime=info.get("content_type"))
-        new_key = file_key.replace("uploads/", "materials/", 1)
 
-        # Phase 2.2: Copy before commit, delete after commit
-        from app.core.storage import copy_object
+        # CAS V2: file_key is already a cas/ key — no copy needed.
+        # Get size/mime from the payload (populated by the upload flow)
+        # with S3 HEAD fallback for legacy uploads/ keys.
+        if file_key.startswith("cas/"):
+            real_size = p.get("file_size") or 0
+            mime_type = p.get("file_mime_type") or "application/octet-stream"
+        else:
+            # Legacy V1 path: uploads/ key — copy to materials/
+            info = await _get_file_info(file_key)
+            real_size = info["size"]
+            mime_type = await _resolve_mime_type(file_key, p, s3_mime=info.get("content_type"))
+            from app.core.storage import copy_object
 
-        await copy_object(file_key, new_key)
-        db.info.setdefault("post_commit_jobs", []).append(("delete_storage_objects", [file_key]))
+            new_key = file_key.replace("uploads/", "materials/", 1)
+            await copy_object(file_key, new_key)
+            file_key = new_key
+            db.info.setdefault("post_commit_jobs", []).append(
+                ("delete_storage_objects", [str(p["file_key"])])
+            )
 
         mv = MaterialVersion(
             id=uuid.uuid4(),
             material_id=m.id,
             version_number=1,
-            file_key=new_key,
+            file_key=file_key,
             file_name=p.get("file_name"),
             file_size=real_size,
             file_mime_type=mime_type,
+            cas_sha256=p.get("content_sha256"),
             author_id=pr.author_id,
             pr_id=pr.id,
             virus_scan_result=VirusScanResult.CLEAN,
         )
         db.add(mv)
         await db.flush()
+
+        # CAS V2: increment ref for the MaterialVersion, then schedule
+        # decrement of the staging upload's ref post-commit.
+        if mv.file_key and mv.file_key.startswith("cas/"):
+            from app.core.cas import increment_cas_ref
+
+            if mv.cas_sha256:
+                from app.core.redis import redis_client
+
+                await increment_cas_ref(redis_client, mv.cas_sha256)
+            # The staging upload's CAS ref will be decremented when the
+            # upload row expires or is cleaned up by the cleanup worker.
 
     # attachments
     if p.get("attachments"):
@@ -296,32 +334,46 @@ async def _exec_create_material(
 
             if att.get("file_key"):
                 att_fk = str(att["file_key"])
-                att_info = await _get_file_info(att_fk)
-                att_real_size = att_info["size"]
-                att_mime = await _resolve_mime_type(
-                    att_fk, att, s3_mime=att_info.get("content_type")
-                )
-                new_att_fk = att_fk.replace("uploads/", "materials/", 1)
 
-                await copy_object(att_fk, new_att_fk)
-                db.info.setdefault("post_commit_jobs", []).append(
-                    ("delete_storage_objects", [att_fk])
-                )
+                if att_fk.startswith("cas/"):
+                    att_real_size = att.get("file_size") or 0
+                    att_mime = att.get("file_mime_type") or "application/octet-stream"
+                else:
+                    att_info = await _get_file_info(att_fk)
+                    att_real_size = att_info["size"]
+                    att_mime = await _resolve_mime_type(
+                        att_fk, att, s3_mime=att_info.get("content_type")
+                    )
+                    from app.core.storage import copy_object
+
+                    new_att_fk = att_fk.replace("uploads/", "materials/", 1)
+                    await copy_object(att_fk, new_att_fk)
+                    db.info.setdefault("post_commit_jobs", []).append(
+                        ("delete_storage_objects", [att_fk])
+                    )
+                    att_fk = new_att_fk
 
                 v = MaterialVersion(
                     id=uuid.uuid4(),
                     material_id=att_m.id,
                     version_number=1,
-                    file_key=new_att_fk,
+                    file_key=att_fk,
                     file_name=att.get("file_name"),
                     file_size=att_real_size,
                     file_mime_type=att_mime,
+                    cas_sha256=att.get("content_sha256"),
                     author_id=pr.author_id,
                     pr_id=pr.id,
                     virus_scan_result=VirusScanResult.CLEAN,
                 )
                 db.add(v)
                 await db.flush()
+
+                if v.file_key and v.file_key.startswith("cas/") and v.cas_sha256:
+                    from app.core.cas import increment_cas_ref
+                    from app.core.redis import redis_client
+
+                    await increment_cas_ref(redis_client, v.cas_sha256)
 
     db.info.setdefault("post_commit_jobs", []).append(("index_material", mat_id))
 
@@ -355,10 +407,23 @@ async def _exec_edit_material(
 
     if p.get("file_key"):
         file_key = str(p["file_key"])
-        info = await _get_file_info(file_key)
-        real_size = info["size"]
-        mime_type = await _resolve_mime_type(file_key, p, s3_mime=info.get("content_type"))
-        new_key = file_key.replace("uploads/", "materials/", 1)
+
+        # CAS V2: file_key is already a cas/ key — no copy needed.
+        if file_key.startswith("cas/"):
+            real_size = p.get("file_size") or 0
+            mime_type = p.get("file_mime_type") or "application/octet-stream"
+        else:
+            info = await _get_file_info(file_key)
+            real_size = info["size"]
+            mime_type = await _resolve_mime_type(file_key, p, s3_mime=info.get("content_type"))
+            from app.core.storage import copy_object
+
+            new_key = file_key.replace("uploads/", "materials/", 1)
+            await copy_object(file_key, new_key)
+            file_key = new_key
+            db.info.setdefault("post_commit_jobs", []).append(
+                ("delete_storage_objects", [str(p["file_key"])])
+            )
 
         # Optimistic locking (3.11): fetch the latest MaterialVersion to check version_lock
         # and to set the next value. Only enforced when the PR payload includes version_lock.
@@ -381,19 +446,15 @@ async def _exec_edit_material(
 
         _next_version_lock = (_latest_mv.version_lock + 1) if _latest_mv is not None else 0
 
-        from app.core.storage import copy_object
-
-        await copy_object(file_key, new_key)
-        db.info.setdefault("post_commit_jobs", []).append(("delete_storage_objects", [file_key]))
-
         mv = MaterialVersion(
             id=uuid.uuid4(),
             material_id=mat.id,
             version_number=mat.current_version + 1,
-            file_key=new_key,
+            file_key=file_key,
             file_name=p.get("file_name"),
             file_size=real_size,
             file_mime_type=mime_type,
+            cas_sha256=p.get("content_sha256"),
             author_id=pr.author_id,
             diff_summary=p.get("diff_summary"),
             pr_id=pr.id,
@@ -403,6 +464,12 @@ async def _exec_edit_material(
         mat.current_version += 1
         db.add(mv)
         await db.flush()
+
+        if mv.file_key and mv.file_key.startswith("cas/") and mv.cas_sha256:
+            from app.core.cas import increment_cas_ref
+            from app.core.redis import redis_client
+
+            await increment_cas_ref(redis_client, mv.cas_sha256)
 
     db.info.setdefault("post_commit_jobs", []).append(("index_material", mat.id))
 
@@ -419,8 +486,8 @@ async def _exec_delete_material(
 
     deleted_id = mat.id
 
-    # Collect file keys to delete from MinIO
-    file_keys_to_delete = []
+    # Collect file keys to delete / CAS refs to decrement
+    file_keys_to_delete: list[str] = []
     versions = await db.scalars(
         select(MaterialVersion).where(MaterialVersion.material_id == deleted_id)
     )
@@ -432,7 +499,6 @@ async def _exec_delete_material(
 
     sys_dir = await db.scalar(select(Directory).where(Directory.name == f"attachments:{mat.id}"))
     if sys_dir:
-        # Also grab attachment file keys
         att_mats = await db.scalars(select(Material).where(Material.directory_id == sys_dir.id))
         att_mat_ids = [m.id for m in att_mats]
         if att_mat_ids:
@@ -449,6 +515,8 @@ async def _exec_delete_material(
         ("delete_indexed_item", "materials", str(deleted_id))
     )
 
+    # CAS V2: delete_storage_objects already handles cas/ keys via ref
+    # counting (decrement, only delete S3 object at ref_count=0).
     if file_keys_to_delete:
         db.info.setdefault("post_commit_jobs", []).append(
             ("delete_storage_objects", file_keys_to_delete)
@@ -647,26 +715,24 @@ async def _build_browse_path(db: AsyncSession, op_type: str, result_id: uuid.UUI
 
 async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) -> None:
     """
-    Execute all operations in a batch PR.  Operations are topologically
-    sorted so that temp_id producers run before consumers, then executed
-    sequentially within a single DB transaction.
+    Execute all operations in a batch PR.  Operations are topologically sorted
+    so that temp_id producers run before consumers, then executed sequentially
+    within a single DB transaction.
 
-    After execution, each op in the payload is enriched with:
-      - result_id:          UUID string of the created/edited item
-      - result_browse_path: slug-path usable as /browse/<path>  (omitted for deletes)
+    The original pr.payload is never mutated.  After execution, pr.applied_result
+    is set to an enriched copy of the sorted operations, each annotated with:
+      - result_id:          UUID string of the created/edited/deleted item
+      - result_browse_path: slug-path usable as /browse/<path> (omitted for deletes
+                            where the path could not be captured before deletion)
     """
+    if pr.applied_result is not None:
+        return
 
-    operations: list[dict] = pr.payload  # now a list
-    sorted_ops = topo_sort_operations(operations)
-
+    sorted_ops = topo_sort_operations(list(pr.payload))
     id_map: dict[str, uuid.UUID] = {}
+    result_ops: list[dict] = []
 
     for op in sorted_ops:
-        # Idempotency: If this op was already executed (e.g. partial PR application retry), skip it.
-        if op.get("result_id"):
-            id_map[op.get("temp_id") or ""] = uuid.UUID(op["result_id"])
-            continue
-
         op_type = op.get("op") or op.get("pr_type")  # pr_type for legacy rows
         if not op_type:
             raise BadRequestError(f"Operation missing 'op' field: {op}")
@@ -681,7 +747,6 @@ async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) 
         pre_delete_browse_path: str | None = None
         if is_delete:
             try:
-                # Resolve the target id that the delete op refers to
                 id_field = "directory_id" if "directory" in op_type else "material_id"
                 raw_id = str(op.get(id_field, ""))
                 target_uuid = _resolve(raw_id, id_map) if raw_id else None
@@ -692,23 +757,26 @@ async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) 
 
         result_id = await executor(db, op, pr, id_map)
 
-        # Register temp_id -> real UUID
+        # Register temp_id -> real UUID for downstream inter-op references
         temp_id = op.get("temp_id")
         if temp_id:
             id_map[temp_id] = result_id
 
-        # Enrich op with result info for post-approval preview
-        op["result_id"] = str(result_id)
-
-        if is_delete:
-            if pre_delete_browse_path:
-                op["result_browse_path"] = pre_delete_browse_path
-        else:
+        # Build the enriched operation record for applied_result
+        enriched: dict = dict(op)
+        enriched["result_id"] = str(result_id)
+        if is_delete and pre_delete_browse_path:
+            enriched["result_browse_path"] = pre_delete_browse_path
+        elif not is_delete:
             try:
                 browse_path = await _build_browse_path(db, op_type, result_id)
                 if browse_path:
-                    op["result_browse_path"] = browse_path
+                    enriched["result_browse_path"] = browse_path
             except Exception:
                 pass  # non-critical; skip if path can't be resolved
 
-    flag_modified(pr, "payload")
+        result_ops.append(enriched)
+
+    # Store enriched results without touching the original payload
+    pr.applied_result = result_ops
+    flag_modified(pr, "applied_result")

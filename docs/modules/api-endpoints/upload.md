@@ -128,31 +128,33 @@ Real-time upload processing progress via Server-Sent Events:
 7. Send keepalive pings every **15 seconds** (`ping` event type, empty data)
 8. Decrement the active-stream counter when the connection closes
 
-**Event format:**
+**Event format (terminal state):**
 ```json
 {
   "upload_id": "...",
-  "file_key": "quarantine/...",
-  "status": "processing",
-  "detail": "Scanning for malware",
-  "stage_index": 0,
-  "stage_total": 4,
-  "stage_percent": 0.5,
-  "overall_percent": 0.20
+  "file_key": "cas/...",
+  "status": "clean",
+  "detail": "Success",
+  "result": {
+    "file_key": "cas/...",
+    "file_name": "original_name.pdf",
+    "size": 123456,
+    "original_size": 130000,
+    "mime_type": "application/pdf"
+  },
+  "overall_percent": 1.0
 }
 ```
 
 ## Upload Status Polling (`GET /api/upload/status/{file_key}`)
 
-Fallback for clients that don't support SSE. Returns the latest cached status from Redis.
-
-## Upload Status Polling (`GET /api/upload/status/{file_key}`)
-
-Non-SSE fallback for clients that don't support streaming. Returns the latest cached status from Redis. Returns `PENDING` if no status has been written yet.
+Non-SSE fallback for clients that don't support streaming. Returns the latest cached status from Redis. Returns `PENDING` if no status has been written yet. Supports both `quarantine/` and `cas/` keys (if owned by the user).
 
 ## Batch Status Polling (`POST /api/upload/status/batch`)
 
-Poll up to 50 file keys in a single request. Ownership is enforced: keys not prefixed with `quarantine/{user_id}/` or `uploads/{user_id}/` are silently omitted. Unknown keys return `status: pending`.
+Poll up to 50 file keys in a single request. Ownership is enforced: keys not prefixed with `quarantine/{user_id}/`, `uploads/{user_id}/`, or verified as owned `cas/` keys are silently omitted. Unknown keys return `status: pending`.
+
+**Database Fallback:** If the Redis status cache is missing (e.g., for older CAS hits), the endpoint falls back to the `uploads` table to retrieve the filename and processing status.
 
 **Input:** `{ "file_keys": ["quarantine/...", ...] }` (max 50)
 **Output:** `{ "statuses": { "<key>": { "status": "...", ... } } }`

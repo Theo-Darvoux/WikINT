@@ -10,16 +10,19 @@ from app.core.sandbox import _resolve_bwrap, sandboxed_run
 
 # ── Command Construction Unit Tests (Mocked) ────────────────────────────────
 
+
 def test_resolve_bwrap_found():
     with patch("shutil.which", return_value="/usr/bin/bwrap"):
-        with patch("app.core.sandbox._bwrap_path", False): # Reset cache
+        with patch("app.core.sandbox._bwrap_path", False):  # Reset cache
             assert _resolve_bwrap() == "/usr/bin/bwrap"
+
 
 def test_resolve_bwrap_missing():
     with patch("shutil.which", return_value=None):
-        with patch("app.core.sandbox._bwrap_path", False): # Reset cache
+        with patch("app.core.sandbox._bwrap_path", False):  # Reset cache
             with pytest.raises(RuntimeError, match=r"bwrap \(bubblewrap\) is required"):
                 _resolve_bwrap()
+
 
 def test_sandboxed_run_basic_command():
     # Mock resolve_bwrap to return dummy path
@@ -54,7 +57,9 @@ def test_sandboxed_run_basic_command():
             assert bwrap_cmd[-1] == "-version"
             assert kwargs["timeout"] == 10
 
+
 # ── Real Environment Smoke Tests (Functional) ───────────────────────────────
+
 
 @pytest.mark.skipif(shutil.which("bwrap") is None, reason="bwrap not installed on this host")
 def test_sandboxed_run_smoke_test(tmp_path: Path):
@@ -80,8 +85,11 @@ def test_sandboxed_run_smoke_test(tmp_path: Path):
     except (subprocess.CalledProcessError, RuntimeError, subprocess.SubprocessError) as exc:
         # If it's a TimeoutExpired we could skip, but if it's a PermissionError or
         # bwrap returning 1 with a stderr message, we want to see it clearly.
-        pytest.fail(f"Sandbox smoke test failed! This usually indicates environment restrictions "
-                    f"(like Docker or Kernel settings blocking proc mounts). Error: {exc}")
+        pytest.fail(
+            f"Sandbox smoke test failed! This usually indicates environment restrictions "
+            f"(like Docker or Kernel settings blocking proc mounts). Error: {exc}"
+        )
+
 
 @pytest.mark.skipif(shutil.which("bwrap") is None, reason="bwrap not installed on this host")
 def test_sandboxed_run_isolation_check():

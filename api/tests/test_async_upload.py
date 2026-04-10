@@ -106,17 +106,22 @@ async def test_worker_process_upload_logic():
     q_key = f"quarantine/{user_id}/{upload_id}/hash/test.pdf"
 
     with (
-        patch("app.core.storage.download_file_with_hash", new_callable=AsyncMock) as mock_dl,
-        patch("app.core.storage.get_object_info", new_callable=AsyncMock) as mock_info,
-        patch("app.workers.process_upload.check_pdf_safety"),
-        patch("app.workers.process_upload.MalwareScanner") as mock_scanner_cls,
         patch(
-            "app.workers.process_upload.strip_metadata_file", new_callable=AsyncMock
+            "app.workers.upload.stages.download.download_file_with_hash", new_callable=AsyncMock
+        ) as mock_dl,
+        patch(
+            "app.workers.upload.stages.download.get_object_info", new_callable=AsyncMock
+        ) as mock_info,
+        patch("app.workers.upload.stages.scan_strip.check_pdf_safety"),
+        patch("app.workers.upload.pipeline.MalwareScanner") as mock_scanner_cls,
+        patch(
+            "app.workers.upload.stages.scan_strip.strip_metadata_file", new_callable=AsyncMock
         ) as mock_strip,
-        patch("app.workers.process_upload.compress_file_path", new_callable=AsyncMock) as mock_comp,
-        patch("app.workers.process_upload.upload_file_multipart", new_callable=AsyncMock),
-        patch("app.workers.process_upload.delete_object", new_callable=AsyncMock),
-        patch("app.core.storage.object_exists", new_callable=AsyncMock, return_value=False),
+        patch(
+            "app.workers.upload.stages.compress.compress_file_path", new_callable=AsyncMock
+        ) as mock_comp,
+        patch("app.workers.upload.stages.finalize.upload_file_multipart", new_callable=AsyncMock),
+        patch("app.workers.upload.pipeline.delete_object", new_callable=AsyncMock),
         patch("app.core.processing.ProcessingFile.sha256", new_callable=AsyncMock) as mock_sha,
     ):
         mock_dl.return_value = "mocksha256"

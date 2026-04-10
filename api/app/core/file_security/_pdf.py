@@ -4,24 +4,48 @@ Provides:
 - check_pdf_safety: structural validation with pikepdf (OpenAction, JavaScript, etc.)
 - _apply_pdf_security_strip: strip XMP, /Info, and active content from an open PDF
 - _strip_pdf_from_path: path-based strip producing a new temp file
-- _compress_pdf_path: path-based Ghostscript compression
+- _compress_pdf_path: two-stage compression: Ghostscript (font subsetting) then pikepdf
+  (object-stream packing). Ghostscript handles the dominant source of PDF bloat
+  (unsubsetted fonts); pikepdf tightens stream encoding on the result.
 """
+
 import asyncio
+import io
 import logging
 import tempfile
 from pathlib import Path
 from typing import cast
 
 import pikepdf
+from pikepdf.models.image import PdfImage
+from PIL import Image
 
-from app.core.file_security._concurrency import _get_concurrency_guard
-from app.core.sandbox import sandboxed_run
+from app.config import settings
 
 logger = logging.getLogger("wikint")
 
-_PDF_DANGEROUS_ACTION_KEYS = frozenset({
-    "/OpenAction", "/AA", "/Launch", "/GoToR", "/URI", "/SubmitForm", "/ImportData",
-})
+_PDF_DANGEROUS_ACTION_KEYS = frozenset(
+    {
+        "/OpenAction",
+        "/AA",
+        "/Launch",
+        "/GoToR",
+        "/URI",
+        "/SubmitForm",
+        "/ImportData",
+    }
+)
+
+# Map quality tiers to (PDFSETTINGS profile, colour dpi, gray dpi, mono dpi).
+# Explicit DPI values override the profile defaults and give fine-grained control.
+# At quality=75 (default) we target 96 dpi — matching ilovepdf "recommended" output.
+_GS_QUALITY_TIERS: list[tuple[int, str, int, int, int]] = [
+    # (min_quality, profile,      colour_dpi, gray_dpi, mono_dpi)
+    (95, "/prepress", 300, 300, 1200),
+    (85, "/printer",  200, 200,  600),
+    (70, "/ebook",     96,  96,  300),
+    (0,  "/screen",    72,  72,  300),
+]
 
 
 def _walk_page_tree_for_actions(page_node: pikepdf.Dictionary, depth: int = 0) -> None:
@@ -99,7 +123,8 @@ def _strip_pdf_from_path(file_path: Path) -> Path:
     try:
         with pikepdf.open(str(file_path)) as pdf:
             _apply_pdf_security_strip(pdf)
-            new_path = tempfile.NamedTemporaryFile(delete=False).name
+            with tempfile.NamedTemporaryFile(delete=False) as _f:
+                new_path = _f.name
             pdf.save(new_path)
             return Path(new_path)
     except Exception as exc:
@@ -107,38 +132,219 @@ def _strip_pdf_from_path(file_path: Path) -> Path:
         return file_path
 
 
-async def _compress_pdf_path(file_path: Path) -> Path:
-    from app.config import settings as _settings
+async def _compress_pdf_ghostscript(file_path: Path, quality: int) -> Path:
+    """Compress a PDF with Ghostscript's pdfwrite device.
 
-    gs_quality = _settings.gs_quality
-    out_name = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False).name
+    Ghostscript subsets embedded fonts and resamples images — the two dominant
+    sources of PDF bloat that pikepdf cannot touch. Returns a new temp path if
+    the result is smaller than the input; returns the original path on failure
+    or if no saving was achieved (fail-open).
+    """
+    # Pick the tier for the requested quality level
+    profile, colour_dpi, gray_dpi, mono_dpi = "/ebook", 96, 96, 300
+    for min_q, prof, cdpi, gdpi, mdpi in _GS_QUALITY_TIERS:
+        if quality >= min_q:
+            profile, colour_dpi, gray_dpi, mono_dpi = prof, cdpi, gdpi, mdpi
+            break
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as _f:
+        out_name = _f.name
+
     try:
-        async with _get_concurrency_guard("subprocess"):
-            result = await asyncio.to_thread(
-                sandboxed_run,
-                [
-                    "gs",
-                    "-sDEVICE=pdfwrite",
-                    "-dCompatibilityLevel=1.4",
-                    f"-dPDFSETTINGS={gs_quality}",
-                    "-dNOPAUSE",
-                    "-dQUIET",
-                    "-dBATCH",
-                    "-dColorImageResolution=72",
-                    "-dGrayImageResolution=72",
-                    "-dMonoImageResolution=72",
-                    f"-sOutputFile={out_name}",
-                    str(file_path),
-                ],
-                rw_paths=[Path(out_name).parent, file_path.parent],
-                timeout=60,
+        proc = await asyncio.create_subprocess_exec(
+            "gs",
+            "-dBATCH", "-dNOPAUSE", "-dQUIET", "-dSAFER",
+            "-sDEVICE=pdfwrite",
+            "-dCompatibilityLevel=1.4",
+            f"-dPDFSETTINGS={profile}",
+            "-dDetectDuplicateImages=true",
+            # Explicit DPI overrides — these win over the profile defaults.
+            "-dDownsampleColorImages=true",
+            "-dColorImageDownsampleType=/Bicubic",
+            f"-dColorImageResolution={colour_dpi}",
+            "-dDownsampleGrayImages=true",
+            "-dGrayImageDownsampleType=/Bicubic",
+            f"-dGrayImageResolution={gray_dpi}",
+            "-dDownsampleMonoImages=true",
+            "-dMonoImageDownsampleType=/Subsample",
+            f"-dMonoImageResolution={mono_dpi}",
+            f"-sOutputFile={out_name}",
+            str(file_path),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120.0)
+
+        if proc.returncode != 0:
+            logger.warning(
+                "Ghostscript failed (rc=%d): %s",
+                proc.returncode,
+                stderr.decode(errors="replace")[:300],
             )
-        if result.returncode == 0:
-            compressed_size = Path(out_name).stat().st_size
-            if compressed_size > 0 and compressed_size < file_path.stat().st_size:
-                return Path(out_name)
+            Path(out_name).unlink(missing_ok=True)
+            return file_path
+
+        out_size = Path(out_name).stat().st_size
+        if out_size < file_path.stat().st_size:
+            logger.debug(
+                "Ghostscript: %d → %d bytes (%.0f%%)",
+                file_path.stat().st_size,
+                out_size,
+                100 * out_size / file_path.stat().st_size,
+            )
+            return Path(out_name)
+
+        Path(out_name).unlink(missing_ok=True)
+        return file_path
+
+    except Exception as exc:
+        Path(out_name).unlink(missing_ok=True)
+        logger.warning("Ghostscript compression error: %s", exc)
+        return file_path
+
+
+def _pikepdf_repack_streams(file_path: Path, out_name: str, quality: int) -> bool:
+    """Repack object/content streams with pikepdf. Returns True if output is smaller.
+
+    When called after Ghostscript, image processing is intentionally skipped —
+    GS has already resampled and re-encoded images. pikepdf's role here is solely
+    to generate object streams (PDF 1.5 cross-reference streams) and recompress
+    any remaining FlateDecode streams that GS left unoptimised.
+
+    When called without a prior GS pass (GS unavailable or produced no gain),
+    full image downsampling is performed in addition to stream repacking.
+    """
+    with pikepdf.open(str(file_path)) as pdf:
+        if quality >= 100:
+            max_dim = 4096
+        elif quality >= 85:
+            max_dim = 2048
+        elif quality >= 70:
+            max_dim = 1600
+        else:
+            max_dim = 1024
+
+        for page in pdf.pages:
+            for name, raw_image in page.images.items():
+                try:
+                    pdf_image = PdfImage(raw_image)
+                    pil_image = pdf_image.as_pil_image()
+
+                    if pil_image.width < 100 or pil_image.height < 100:
+                        continue
+
+                    w, h = pil_image.size
+                    needs_resize = w > max_dim or h > max_dim
+
+                    existing_filter = raw_image.get("/Filter")
+                    already_jpeg = existing_filter == pikepdf.Name("/DCTDecode")
+                    if already_jpeg and not needs_resize:
+                        continue
+
+                    if needs_resize:
+                        ratio = min(max_dim / w, max_dim / h)
+                        w = int(w * ratio)
+                        h = int(h * ratio)
+                        pil_image = pil_image.resize((w, h), Image.Resampling.LANCZOS)
+
+                    # Flatten transparency; remove stale /SMask reference.
+                    if pil_image.mode in ("RGBA", "LA", "P"):
+                        pil_image = pil_image.convert("RGB")
+                        if "/SMask" in raw_image:
+                            del raw_image["/SMask"]
+                    elif pil_image.mode == "CMYK":
+                        pil_image = pil_image.convert("RGB")
+
+                    # Detect line art by unique-colour sampling.
+                    sample = pil_image.convert("RGB").resize((64, 64))
+                    unique_colors = len(set(sample.getdata()))
+                    is_line_art = unique_colors < 256
+
+                    buf = io.BytesIO()
+                    if is_line_art:
+                        pil_image.save(buf, format="PNG", optimize=True)
+                        img_data = buf.getvalue()
+                        raw_image.write(img_data, filter=pikepdf.Name("/FlateDecode"))
+                        raw_image.Width = w
+                        raw_image.Height = h
+                        if "/DecodeParms" in raw_image:
+                            del raw_image["/DecodeParms"]
+                    else:
+                        pil_image.save(buf, format="JPEG", quality=quality, optimize=True)
+                        img_data = buf.getvalue()
+                        raw_image.write(img_data, filter=pikepdf.Name("/DCTDecode"))
+                        raw_image.Width = w
+                        raw_image.Height = h
+                        raw_image.BitsPerComponent = 8
+                        if pil_image.mode == "L":
+                            raw_image.ColorSpace = pikepdf.Name("/DeviceGray")
+                        else:
+                            raw_image.ColorSpace = pikepdf.Name("/DeviceRGB")
+                        if "/DecodeParms" in raw_image:
+                            del raw_image["/DecodeParms"]
+
+                except Exception as e:
+                    logger.debug("Could not downsample PDF image %s: %s", name, e)
+
+        pdf.save(
+            out_name,
+            compress_streams=True,
+            object_stream_mode=pikepdf.ObjectStreamMode.generate,
+            recompress_flate=(quality < 100),
+        )
+
+    return Path(out_name).stat().st_size < file_path.stat().st_size
+
+
+async def _compress_pdf_path(file_path: Path) -> Path:
+    """Two-stage PDF compression: Ghostscript font subsetting, then pikepdf stream packing.
+
+    Stage 1 — Ghostscript:
+      Subsets embedded fonts and resamples images. This is the dominant compression
+      lever for typical academic/conference PDFs where unsubsetted fonts account for
+      the majority of file size. Fail-open: if gs is unavailable or produces no gain,
+      stage 2 runs on the original file with full image processing instead.
+
+    Stage 2 — pikepdf:
+      Packs objects into cross-reference streams (PDF 1.5) and recompresses
+      FlateDecode streams. When GS already ran, image processing is skipped to
+      avoid generation loss. When GS was skipped, full image downsampling runs here.
+
+    Returns the smallest result ≤ the original, or the original if no stage helped.
+    """
+    quality = settings.pdf_quality
+
+    # Stage 1: Ghostscript
+    gs_result = await _compress_pdf_ghostscript(file_path, quality)
+    gs_improved = gs_result != file_path
+
+    # Stage 2: pikepdf stream repacking on the GS output (or original).
+    # When GS ran, skip image processing (GS already handled it); just repack streams.
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as _f:
+        out_name = _f.name
+
+    try:
+        work_path = gs_result  # GS output, or original if GS produced no gain
+
+        smaller = await asyncio.to_thread(
+            _pikepdf_repack_streams,
+            work_path,
+            out_name,
+            quality if not gs_improved else 100,  # quality=100 → stream-only, no image processing
+        )
+
+        # Clean up the intermediate GS file if pikepdf further reduced it
+        if gs_improved and smaller:
+            gs_result.unlink(missing_ok=True)
+
+        if smaller:
+            return Path(out_name)
+
+        Path(out_name).unlink(missing_ok=True)
+        return gs_result  # GS result alone (may equal file_path if GS also failed)
+
     except Exception:
         Path(out_name).unlink(missing_ok=True)
+        if gs_improved:
+            return gs_result
         raise
-    Path(out_name).unlink(missing_ok=True)
-    return file_path

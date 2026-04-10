@@ -49,8 +49,17 @@ The main upload function:
    - Wait for terminal status (clean, malicious, failed)
 
 5. **Return result:**
-   - On `clean`: Return `UploadResult` with `file_key`, `size`, `mime_type`
+   - On `clean`: Return `UploadResult` with `file_key`, `size`, `original_size`, `content_encoding`, `mime_type`
    - On `malicious`/`failed`: Throw error with detail message
+
+### `logicalFileSize(result)`
+
+Helper that returns the size the user will see when downloading the file:
+
+- For **gzip-encoded objects** (`content_encoding === "gzip"` — text files, SVG): S3 serves with `Content-Encoding: gzip` and browsers decompress transparently, so the download size equals `original_size`, not the smaller stored bytes.
+- For **all other objects** (video, audio, PDF, images, office): returns `size` (the stored/downloaded size).
+
+This value is what gets stored as `file_size` in the PR payload and ultimately in `material_versions.file_size`.
 
 ### Options
 ```typescript
@@ -111,7 +120,7 @@ stagingStore.addOperation({
     type: detectMaterialType(file),
     file_key: result.file_key,
     file_name: file.name,
-    file_size: result.size,
+    file_size: logicalFileSize(result),
     file_mime_type: result.mime_type,
     directory_id: currentDirectoryId,
 });
@@ -168,8 +177,9 @@ A top-level component that captures drag-and-drop events anywhere on the page:
 ## Upload Drawer (`components/pr/upload-drawer.tsx`)
 
 Side panel showing:
-- In-progress uploads with individual progress bars
-- Processing status updates (scanning, stripping, compressing, finalizing)
+- In-progress uploads with **two distinct progress bars per file**:
+  - **Upload bar** (primary/blue): tracks byte transfer progress remapped from 0–80% internal range to 0–100%. Shows MB/s speed and ETA during transfer. Stays at 100% once transfer completes.
+  - **Processing bar** (amber): appears once transfer completes (internal progress ≥ 80%). Tracks server-side pipeline stages (scanning → metadata strip → compression → finalizing) using `overall_percent` from SSE events. Displays the current stage name from `processingStatus` and stage counter (N/M).
 - Completed uploads with file keys
 - Failed uploads with error messages
 - Cancel button for individual uploads
@@ -186,7 +196,7 @@ Floating action button that:
 
 Upload component within the PR creation wizard:
 - File picker with drag-and-drop
-- Upload progress display
+- **Two-phase progress display**: upload bar (primary) for transfer, amber processing bar for server-side stages with stage name and N/M counter
 - File preview after upload
 - Integration with the staging store
 

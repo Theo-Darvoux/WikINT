@@ -15,7 +15,7 @@ Creates a new pull request with a batch of operations.
 {
   "title": "Add Linear Algebra notes",
   "description": "Notes from Prof. Martin's lectures",
-  "payload": [
+  "operations": [
     {
       "op": "create_directory",
       "temp_id": "$dir1",
@@ -29,7 +29,7 @@ Creates a new pull request with a batch of operations.
       "title": "Chapter 1 Notes",
       "directory_id": "$dir1",
       "type": "pdf",
-      "file_key": "uploads/user-id/upload-id/notes.pdf",
+      "file_key": "cas/abc123...",
       "file_name": "notes.pdf"
     }
   ]
@@ -38,23 +38,36 @@ Creates a new pull request with a batch of operations.
 
 **Key behaviors:**
 1. **File key validation:** For each operation that references a `file_key`, the endpoint verifies:
-   - The key starts with `uploads/{user_id}/` (the requesting user's staging area)
+   - The key starts with `uploads/{user_id}/` (staging area) or `cas/` (content-addressed storage)
+   - The user owns the key (verified via the `uploads` table for `cas/` keys)
    - The file exists in S3
-   - The scan result cache in Redis shows `CLEAN`
-2. **Summary types extraction:** Collects the unique `op` values into `summary_types` for filtering
-3. **Virus scan aggregation:** If all referenced files are clean, PR scan result is `CLEAN`
+   - The user has a clean `Upload` row for that key
+2. **File claiming:** Each `file_key` is claimed atomically via the `pr_file_claims` table (PRIMARY KEY uniqueness enforces exclusivity). If another open PR has already claimed the same file, an `IntegrityError` is returned as a 400 Bad Request.
+3. **Summary types extraction:** Collects the unique `op` values into `summary_types` for filtering.
+4. **Open PR limit:** Regular users are limited to 5 open PRs. Moderators, `bureau`, and `vieux` are exempt.
+5. **Auto-approval:** For users with `BUREAU` or `VIEUX` roles, the PR is automatically approved and executed in the same transaction. The response status is `APPROVED` and `applied_result` is populated immediately.
 
 ### `GET /api/pull-requests`
 
 Lists pull requests with filtering and pagination.
 
-**Query parameters:** `status`, `author_id`, `type`, `offset`, `limit`
+**Query parameters:** `status`, `author_id`, `type`, `page`, `limit`
 
-Returns `PRListItem` objects with author info, vote summary, and comment count.
+Uses `selectinload` to eagerly load author data — no N+1 queries.
+
+Returns `PullRequestOut` objects with author info and total count in `X-Total-Count` header.
+
+### `GET /api/pull-requests/for-item`
+
+**Query parameters:** `targetType` (`material` | `directory`), `targetId` (UUID string)
+
+Returns open PRs whose payload references the given item. Uses a JSONB `jsonb_array_elements` lateral query on PostgreSQL (covered by the GIN index on `payload`). Falls back to Python-level filtering on SQLite for development.
 
 ### `GET /api/pull-requests/{id}`
 
-Returns full PR detail including payload operations, votes, and comments.
+Returns full PR detail including payload operations and (if approved) `applied_result`.
+
+Uses `joinedload` for author — single query, no N+1.
 
 ### `POST /api/pull-requests/{id}/approve`
 
@@ -62,12 +75,11 @@ Returns full PR detail including payload operations, votes, and comments.
 
 Approves the PR and executes all operations atomically:
 
-1. Load PR with eager-loaded relationships
-2. Verify status is `open`
-3. Verify virus scan is `clean`
-4. Call `apply_pr(db, pr, user_id)` (see [PR Engine](../business-services/pr-engine.md))
-5. Set status to `approved`, record `reviewed_by`
-6. Commit transaction (triggers post-commit jobs: search indexing, file cleanup)
+1. Verify status is `open`
+2. Call `apply_pr(db, pr, user_id)` (see [PR Engine](../business-services/pr-engine.md))
+3. Set status to `approved`, record `reviewed_by`
+4. Delete `pr_file_claims` rows for this PR (releases file claims)
+5. Commit transaction (triggers post-commit jobs: search indexing, file cleanup)
 
 **Atomicity guarantee:** All operations in the PR payload execute within a single database transaction. If any operation fails, the entire transaction rolls back and no materials/directories are created, edited, or deleted.
 
@@ -75,17 +87,29 @@ Approves the PR and executes all operations atomically:
 
 **Requires:** Moderator role
 
-Sets status to `rejected` and records `reviewed_by`. No content changes occur.
+Sets status to `rejected` and records `reviewed_by`. 
+**Rejection Reason:** An optional `reason` (string) can be provided in the request body (`RejectRequest`).
+ No content changes occur.
 
-### `POST /api/pull-requests/{id}/vote`
+Dispatches `delete_storage_objects` background jobs for any `uploads/` staging files (not `cas/` keys, which are managed by the upload cleanup worker). Deletes `pr_file_claims` rows to release file claims.
 
-**Input:** `{ "value": 1 }` (or -1)
+### `GET /api/pull-requests/{id}/diff`
 
-Records a vote. Uses the `(pr_id, user_id)` unique constraint — if the user has already voted, the value is updated (upsert).
+Stub endpoint — returns a count of file operations. Not yet implemented.
 
-### `DELETE /api/pull-requests/{id}/vote`
+### `GET /api/pull-requests/{id}/preview`
 
-Removes the user's vote.
+**Requires:** Author or moderator role.
+
+Returns a presigned URL to preview a file referenced by the PR. Access is restricted to the PR author and moderators (S13).
+
+### `GET /api/pull-requests/{id}/comments`
+
+Lists comments for the PR in chronological order. Uses `joinedload` for author data.
+
+### `POST /api/pull-requests/{id}/comments`
+
+Posts a comment. Sends a reply notification to the parent comment's author if applicable.
 
 ## Operation Types
 
@@ -116,11 +140,18 @@ The second operation references `$d1`, which will be resolved to the actual UUID
 
 ## File Lifecycle During PR
 
-1. User uploads files → files land in `uploads/{user_id}/{upload_id}/...` (already scanned and processed)
-2. User creates PR referencing these `uploads/` keys
-3. PR is approved → files are **copied** to `materials/...` prefix
-4. After commit, a post-commit job **deletes** the `uploads/` copies
+1. User uploads files → files land in `uploads/{user_id}/{upload_id}/...` (already scanned and processed), or directly in `cas/{hmac}` for CAS V2
+2. User creates PR referencing these keys → `pr_file_claims` rows are inserted to claim the files
+3. **On approval:**
+   - CAS V2 (`cas/`): files stay in place; ref count incremented
+   - Legacy V1 (`uploads/`): files copied to `materials/...` prefix; originals deleted post-commit
+   - `pr_file_claims` rows deleted
+4. **On rejection:**
+   - `uploads/` staging files deleted via background worker
+   - `pr_file_claims` rows deleted
 
-The copy-before-commit, delete-after-commit pattern ensures:
-- If the transaction fails, the original uploads are preserved
-- If the transaction succeeds, staging files are cleaned up asynchronously
+## Response Shape
+
+`PullRequestOut` includes:
+- `payload`: Original operations as submitted (never mutated)
+- `applied_result`: Enriched operations populated after approval (each with `result_id` and `result_browse_path`). `null` for open/rejected PRs.

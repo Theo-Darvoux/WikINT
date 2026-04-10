@@ -333,7 +333,7 @@ class TestCreateBatchPR:
             headers=_auth_headers(user),
         )
         assert resp.status_code == 400
-        assert "limit of 5" in resp.json()["detail"]
+        assert "5 contributions pending" in resp.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
@@ -440,10 +440,13 @@ class TestApproveReject:
 
         resp = await client.post(
             f"/api/pull-requests/{pr_id}/reject",
+            json={"reason": "This file does not meet quality standards for the platform."},
             headers=_auth_headers(mod),
         )
         assert resp.status_code == 200
-        mock_delete.assert_called_once_with(file_key)
+
+        jobs = db_session.info.get("post_commit_jobs", [])
+        assert any(j[0] == "delete_storage_objects" and j[1] == [file_key] for j in jobs)
 
 
 class TestListAndGet:

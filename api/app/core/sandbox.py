@@ -94,36 +94,44 @@ def sandboxed_run(
     if Path("/.dockerenv").exists():
         # In Docker unprivileged user namespaces cannot mount a new /proc.
         # We must avoid unsharing the PID namespace and just bind-mount the host's /proc.
-        bwrap_cmd.extend([
-            "--unshare-user",
-            "--unshare-ipc",
-            "--unshare-net",
-            "--unshare-uts",
-            "--unshare-cgroup-try",
-        ])
+        bwrap_cmd.extend(
+            [
+                "--unshare-user",
+                "--unshare-ipc",
+                "--unshare-net",
+                "--unshare-uts",
+                "--unshare-cgroup-try",
+            ]
+        )
     else:
         bwrap_cmd.append("--unshare-all")
 
-    bwrap_cmd.extend([
-        "--die-with-parent",  # kill child if API dies
-        "--new-session",  # detach from the controlling terminal
-    ])
+    bwrap_cmd.extend(
+        [
+            "--die-with-parent",  # kill child if API dies
+            "--new-session",  # detach from the controlling terminal
+        ]
+    )
 
     # Minimal virtual filesystems
-    bwrap_cmd.extend([
-        "--dev",
-        "/dev",
-    ])
+    bwrap_cmd.extend(
+        [
+            "--dev",
+            "/dev",
+        ]
+    )
 
     if Path("/.dockerenv").exists():
         bwrap_cmd.extend(["--ro-bind", "/proc", "/proc"])
     else:
         bwrap_cmd.extend(["--proc", "/proc"])
 
-    bwrap_cmd.extend([
-        "--tmpfs",
-        "/tmp",
-    ])
+    bwrap_cmd.extend(
+        [
+            "--tmpfs",
+            "/tmp",
+        ]
+    )
 
     # System read-only mounts (binaries, libs, config)
     for sys_path in _SYSTEM_RO_BINDS:

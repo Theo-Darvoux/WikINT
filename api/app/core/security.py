@@ -34,6 +34,7 @@ def create_refresh_token(user_id: str) -> str:
     }
     return jwt.encode(payload, settings.secret_key.get_secret_value(), algorithm=ALGORITHM)
 
+
 def decode_token(token: str) -> dict:
     return jwt.decode(token, settings.secret_key.get_secret_value(), algorithms=[ALGORITHM])
 

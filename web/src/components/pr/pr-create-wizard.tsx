@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch } from "@/lib/api-client";
+import { submitDirectOperations } from "@/lib/pr-client";
+import type { Operation } from "@/lib/staging-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,62 +80,55 @@ export function PRCreateWizard() {
 
     const handleSubmit = async () => {
         setSubmitting(true);
-        try {
-            const payload: Record<string, unknown> = { pr_type: prType };
+        const payload: Record<string, unknown> = { op: prType };
 
-            if (prType === "create_material") {
-                payload.directory_id = targetId;
-                payload.title = itemName;
-                payload.description = itemDescription;
-                payload.type = itemType;
-                if (tags.length > 0) payload.tags = tags;
-                if (fileKey) {
-                    payload.file_key = fileKey;
-                    payload.file_name = fileName;
-                    payload.file_size = fileSize;
-                    payload.file_mime_type = fileMimeType;
-                }
-            } else if (prType === "edit_material") {
-                payload.material_id = targetId;
-                if (itemName) payload.title = itemName;
-                if (itemDescription) payload.description = itemDescription;
-                if (fileKey) {
-                    payload.file_key = fileKey;
-                    payload.file_name = fileName;
-                    payload.file_size = fileSize;
-                    payload.file_mime_type = fileMimeType;
-                }
-                if (tags.length > 0) payload.tags = tags;
-            } else if (prType === "create_directory") {
-                payload.parent_id = targetId || null;
-                payload.name = itemName;
-                payload.description = itemDescription;
-                if (tags.length > 0) payload.tags = tags;
-            } else if (prType === "edit_directory") {
-                payload.directory_id = targetId;
-                if (itemName) payload.name = itemName;
-                if (itemDescription) payload.description = itemDescription;
-                if (tags.length > 0) payload.tags = tags;
-            } else if (prType === "delete_material") {
-                payload.material_id = targetId;
-            } else if (prType === "delete_directory") {
-                payload.directory_id = targetId;
+        if (prType === "create_material") {
+            payload.directory_id = targetId || null;
+            payload.title = itemName;
+            if (itemDescription) payload.description = itemDescription;
+            payload.type = itemType;
+            if (tags.length > 0) payload.tags = tags;
+            if (fileKey) {
+                payload.file_key = fileKey;
+                payload.file_name = fileName;
+                payload.file_size = fileSize;
+                payload.file_mime_type = fileMimeType;
             }
+        } else if (prType === "edit_material") {
+            payload.material_id = targetId;
+            if (itemName) payload.title = itemName;
+            if (itemDescription) payload.description = itemDescription;
+            if (fileKey) {
+                payload.file_key = fileKey;
+                payload.file_name = fileName;
+                payload.file_size = fileSize;
+                payload.file_mime_type = fileMimeType;
+            }
+            if (tags.length > 0) payload.tags = tags;
+        } else if (prType === "create_directory") {
+            payload.parent_id = targetId || null;
+            payload.name = itemName;
+            if (itemDescription) payload.description = itemDescription;
+            if (tags.length > 0) payload.tags = tags;
+        } else if (prType === "edit_directory") {
+            payload.directory_id = targetId;
+            if (itemName) payload.name = itemName;
+            if (itemDescription) payload.description = itemDescription;
+            if (tags.length > 0) payload.tags = tags;
+        } else if (prType === "delete_material") {
+            payload.material_id = targetId;
+        } else if (prType === "delete_directory") {
+            payload.directory_id = targetId;
+        }
 
-            const res = await apiFetch<{ id: string }>("/pull-requests", {
-                method: "POST",
-                body: JSON.stringify({
-                    type: prType,
-                    title,
-                    description,
-                    payload
-                })
-            });
-            router.push(`/pull-requests/${res.id}`);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setSubmitting(false);
+        const result = await submitDirectOperations([payload as unknown as Operation], title, description);
+        
+        setSubmitting(false);
+        if (result) {
+            if (result.status === "approved") {
+                router.refresh();
+            }
+            router.push(`/pull-requests/${result.id}`);
         }
     };
 
@@ -145,7 +139,7 @@ export function PRCreateWizard() {
                     <h2 className="text-xl font-semibold">Step 1: What do you want to do?</h2>
                     <Select value={prType} onValueChange={(val) => setPrType(val as PRType)}>
                         <SelectTrigger>
-                            <SelectValue placeholder="Select PR Type" />
+                            <SelectValue placeholder="Select Contribution Type" />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="create_material">Upload New Material</SelectItem>
@@ -158,12 +152,12 @@ export function PRCreateWizard() {
                     </Select>
 
                     <div className="space-y-2 pt-4">
-                        <label className="text-sm font-medium">PR Title (Summary of changes)</label>
+                        <label className="text-sm font-medium">Contribution Title (Summary of changes)</label>
                         <Input value={title} onChange={e => { setTitle(e.target.value); setErrors({ ...errors, title: "" }) }} placeholder="e.g., Add lecture 5 slides" />
                         {errors.title && <p className="text-sm text-destructive">{errors.title}</p>}
                     </div>
                     <div className="space-y-2">
-                        <label className="text-sm font-medium">PR Description</label>
+                        <label className="text-sm font-medium">Contribution Description</label>
                         <Textarea value={description} onChange={e => { setDescription(e.target.value); setErrors({ ...errors, description: "" }) }} placeholder="Why is this change necessary?" rows={3} />
                         {errors.description && <p className="text-sm text-destructive">{errors.description}</p>}
                     </div>
@@ -227,7 +221,7 @@ export function PRCreateWizard() {
                     <h2 className="text-xl font-semibold">Review & Submit</h2>
                     <div className="p-4 bg-muted/30 border rounded-lg space-y-2 text-sm">
                         <p><strong>Action:</strong> {prType}</p>
-                        <p><strong>PR Title:</strong> {title}</p>
+                        <p><strong>Contribution Title:</strong> {title}</p>
                         <p><strong>Target ID:</strong> {targetId || "Root"}</p>
                         {itemName && <p><strong>Item Name:</strong> {itemName}</p>}
                         {fileKey && <p><strong>File Attached:</strong> Yes</p>}
@@ -235,10 +229,16 @@ export function PRCreateWizard() {
 
                     <div className="flex gap-2">
                         <Button variant="outline" onClick={() => setStep(requiresUpload ? 3 : 2)}>Back</Button>
-                        <Button className="flex-1" disabled={submitting} onClick={handleSubmit}>
-                            {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                            Submit Pull Request
-                        </Button>
+                        {!targetId.startsWith("$") ? (
+                            <Button className="flex-1" disabled={submitting} onClick={handleSubmit}>
+                                {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                                Submit Contribution
+                            </Button>
+                        ) : (
+                            <div className="flex-1 text-center text-sm font-medium text-amber-600 bg-amber-50 rounded flex items-center justify-center border border-amber-200">
+                                Direct submission is not supported for draft items.
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

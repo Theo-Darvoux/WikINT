@@ -188,8 +188,15 @@ export function GlobalDropZone() {
             e.preventDefault();
             dragCounterRef.current--;
 
-            // If we've left all elements or left the window altogether (relatedTarget is null)
-            if (dragCounterRef.current <= 0 || !e.relatedTarget) {
+            // Reliable way to check if drag left the browser window entirely
+            const leftWindow =
+                !e.relatedTarget ||
+                e.clientX <= 0 ||
+                e.clientY <= 0 ||
+                e.clientX >= window.innerWidth ||
+                e.clientY >= window.innerHeight;
+
+            if (dragCounterRef.current <= 0 || leftWindow) {
                 dragCounterRef.current = 0;
                 setIsDragOver(false);
             }

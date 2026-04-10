@@ -57,11 +57,11 @@ def _validate_metadata(metadata: dict[str, object] | None) -> dict[str, object] 
 
 
 def _validate_file_key(file_key: str | None) -> str | None:
-    """Ensure file_key is a plausible uploads/ path — no traversal."""
+    """Ensure file_key is a plausible uploads/ or cas/ path — no traversal."""
     if file_key is None:
         return None
-    if not file_key.startswith("uploads/"):
-        raise ValueError("file_key must start with uploads/")
+    if not (file_key.startswith("uploads/") or file_key.startswith("cas/")):
+        raise ValueError("file_key must start with uploads/ or cas/")
     if ".." in file_key or "\x00" in file_key:
         raise ValueError("Invalid file_key")
     return file_key
@@ -89,6 +89,7 @@ class AttachmentOp(BaseModel):
     file_name: str | None = None
     file_size: int | None = Field(None, ge=0)
     file_mime_type: str | None = Field(None, max_length=200)
+    content_sha256: str | None = Field(None, max_length=64)
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, object] = Field(default_factory=dict)
 
@@ -140,6 +141,7 @@ class CreateMaterialOp(BaseModel):
     file_name: str | None = None
     file_size: int | None = Field(None, ge=0)  # upper bound enforced via MAX_FILE_SIZE_MB setting
     file_mime_type: str | None = Field(None, max_length=200)
+    content_sha256: str | None = Field(None, max_length=64)
     metadata: dict[str, object] = Field(default_factory=dict)
     parent_material_id: uuid.UUID | str | None = None
     attachments: list[AttachmentOp] = Field(default_factory=list)
@@ -183,6 +185,7 @@ class EditMaterialOp(BaseModel):
     file_name: str | None = None
     file_size: int | None = Field(None, ge=0)  # upper bound enforced via MAX_FILE_SIZE_MB setting
     file_mime_type: str | None = Field(None, max_length=200)
+    content_sha256: str | None = Field(None, max_length=64)
     diff_summary: str | None = Field(None, max_length=MAX_DIFF_SUMMARY_LENGTH)
     metadata: dict[str, object] | None = None
 
@@ -346,32 +349,24 @@ class PullRequestOut(BaseModel):
     title: str
     description: str | None
     payload: list[dict[str, object]]
+    # Enriched operations populated after approval (result_id, result_browse_path per op).
+    # None for open/rejected PRs.
+    applied_result: list[dict[str, object]] | None = None
     summary_types: list[str] = Field(default_factory=list)
     author_id: uuid.UUID | None
     reviewed_by: uuid.UUID | None
     virus_scan_result: VirusScanResult
+    rejection_reason: str | None = None
     author: UserOut | None
     created_at: datetime
     updated_at: datetime
     expires_at: datetime | None = None
-    vote_score: int | None = None
-    user_vote: int | None = None
 
     model_config = {"from_attributes": True}
 
 
-class PRVoteIn(BaseModel):
-    value: int = Field(..., ge=-1, le=1)
-
-
-class PRVoteOut(BaseModel):
-    id: uuid.UUID
-    pr_id: uuid.UUID
-    user_id: uuid.UUID
-    value: int
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
+class RejectRequest(BaseModel):
+    reason: str = Field(..., min_length=10, max_length=1000)
 
 
 class PRCommentCreate(BaseModel):

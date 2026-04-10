@@ -40,6 +40,20 @@ def test_clean_html_passes(tmp_path):
     check_polyglot(p, "text/html")  # must not raise
 
 
+def test_opendocument_passes(tmp_path):
+    """An OpenDocument file (e.g. ODS, ODT) with ZIP magic bytes passes."""
+    data = b"PK\x03\x04" + b"\x00" * 50 + b"mimetypeapplication/vnd.oasis.opendocument.spreadsheet" + b"\x00" * 22
+    p = _write(tmp_path, "sheet.ods", data)
+    check_polyglot(p, "application/vnd.oasis.opendocument.spreadsheet")  # must not raise
+
+
+def test_epub_passes(tmp_path):
+    """An EPUB file with ZIP magic bytes passes."""
+    data = b"PK\x03\x04" + b"\x00" * 50 + b"mimetypeapplication/epub+zip" + b"\x00" * 22
+    p = _write(tmp_path, "book.epub", data)
+    check_polyglot(p, "application/epub+zip")  # must not raise
+
+
 def test_small_file_passes(tmp_path):
     """Files under 4 bytes are skipped (too small to be meaningful)."""
     p = _write(tmp_path, "tiny.bin", b"AB")

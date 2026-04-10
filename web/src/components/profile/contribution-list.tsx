@@ -260,7 +260,7 @@ function AnnotationRow({ item, index }: { item: ContributionItem; index: number 
 /* ────────────────────────────────────────────────────────────────────────── */
 
 const EMPTY_CONFIG = {
-    prs: { icon: GitPullRequest, label: "No pull requests yet" },
+    prs: { icon: GitPullRequest, label: "No contributions yet" },
     materials: { icon: FileText, label: "No materials yet" },
     annotations: { icon: MessageSquare, label: "No annotations yet" },
 };
@@ -348,7 +348,7 @@ export function ContributionList({ userId, type }: ContributionListProps) {
             {pages > 1 && (
                 <div className="flex items-center justify-between border-t bg-muted/30 px-4 py-2.5">
                     <p className="text-xs text-muted-foreground">
-                        {total} {type === "prs" ? "pull request" : type === "annotations" ? "annotation" : "material"}
+                        {total} {type === "prs" ? "contribution" : type === "annotations" ? "annotation" : "material"}
                         {total !== 1 ? "s" : ""}
                     </p>
                     <div className="flex items-center gap-1">

@@ -53,7 +53,9 @@ class Material(UUIDMixin, TimestampMixin, Base):
         ForeignKey("materials.id", ondelete="CASCADE")
     )
     author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict, server_default="{}")
+    metadata_: Mapped[dict[str, object]] = mapped_column(
+        "metadata", JSONB, default=dict, server_default="{}"
+    )
     download_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     directory: Mapped[Directory] = relationship(back_populates="materials")
@@ -91,6 +93,7 @@ class MaterialVersion(UUIDMixin, Base):
     pr_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("pull_requests.id", ondelete="SET NULL")
     )
+    cas_sha256: Mapped[str | None] = mapped_column(String(64))
     virus_scan_result: Mapped[VirusScanResult] = mapped_column(
         String(20),
         default=VirusScanResult.PENDING,

@@ -33,7 +33,7 @@ import { useStagingStore } from "@/lib/staging-store";
 import type { CreateMaterialOp } from "@/lib/staging-store";
 import { cn } from "@/lib/utils";
 import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, ACCEPTED_FILE_TYPES } from "@/lib/file-utils";
-import { uploadFile, getUploadConfig, type UploadConfig } from "@/lib/upload-client";
+import { uploadFile, getUploadConfig, logicalFileSize, type UploadConfig } from "@/lib/upload-client";
 import { ApiError } from "@/lib/api-client";
 import { TagInput } from "@/components/ui/tag-input";
 import { useDropZoneStore } from "@/components/pr/global-drop-zone";
@@ -185,6 +185,7 @@ export function UploadDrawer({
 }: UploadDrawerProps) {
     const addOperations = useStagingStore((s) => s.addOperations);
     const nextTempId = useStagingStore((s) => s.nextTempId);
+    const setReviewOpen = useStagingStore((s) => s.setReviewOpen);
 
     // Use the persistent global queue instead of local state
     const {
@@ -293,7 +294,7 @@ export function UploadDrawer({
             try {
                 const result = await uploadFile(file, {
                     onProgress: (pct) => updateItem(cid, { progress: pct }),
-                    onStatusUpdate: (msg) => updateItem(cid, { processingStatus: msg }),
+                    onStatusUpdate: (msg, stageIndex, stageTotal) => updateItem(cid, { processingStatus: msg, stageIndex, stageTotal }),
                     onBytesProgress: (uploaded, total) => {
                         const now = Date.now();
                         const prev = speedRef.current.get(cid) ?? {
@@ -339,7 +340,7 @@ export function UploadDrawer({
                     progress: 100,
                     fileKey: result.file_key,
                     correctedName: result.correctedName,
-                    serverSize: result.size,
+                    serverSize: logicalFileSize(result),
                     mimeType: result.mime_type,
                     wasCompressed: result.wasCompressed,
                     // Auto-sync title if it hasn't been modified by user
@@ -668,8 +669,8 @@ export function UploadDrawer({
 
     const stageLabel =
         doneFiles.length === files.length
-            ? `Stage All (${doneFiles.length})`
-            : `Stage ${doneFiles.length} of ${files.length}`;
+            ? `Continuer vers le brouillon (${doneFiles.length})`
+            : `Ajouter au brouillon (${doneFiles.length}/${files.length})`;
 
     const handleStage = () => {
         // ── Explicit messaging for errors (U14) ──
@@ -732,9 +733,12 @@ export function UploadDrawer({
         setPendingDirPaths(new Map());
 
         const total = dirOps.length + matOps.length;
-        toast.success(`${total} operation${total > 1 ? "s" : ""} staged`);
+        toast.success(`${total} modification${total > 1 ? "s" : ""} ajoutée${total > 1 ? "s" : ""} au brouillon`);
 
-        if (errorFiles.length === 0) onOpenChange(false);
+        if (errorFiles.length === 0) {
+            onOpenChange(false);
+            setReviewOpen(true);
+        }
     };
 
     // Drag & drop handlers
@@ -903,38 +907,7 @@ export function UploadDrawer({
                     />
                 </div>
 
-                {/* Browse folder button (below dropzone) */}
-                <div className="flex justify-center">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2 text-xs"
-                        onClick={() => folderInputRef.current?.click()}
-                    >
-                        <Folder className="h-3.5 w-3.5" />
-                        Browse Folder…
-                    </Button>
-                    {/* Hidden folder picker */}
-                    <input
-                        ref={folderInputRef}
-                        type="file"
-                        // @ts-expect-error webkitdirectory is non-standard but widely supported
-                        webkitdirectory=""
-                        multiple
-                        accept={config?.allowed_extensions.join(",") || ACCEPTED_FILE_TYPES}
-                        className="hidden"
-                        onChange={(e) => {
-                            if (e.target.files && e.target.files.length > 0) {
-                                const scanned: ScannedFile[] = Array.from(e.target.files).map((f) => ({
-                                    file: f,
-                                    relativePath: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
-                                }));
-                                processScannedFiles(scanned);
-                            }
-                            e.target.value = "";
-                        }}
-                    />
-                </div>
+
 
                 {/* Pending folders summary */}
                 {pendingDirPaths.size > 0 && (
@@ -1057,25 +1030,52 @@ export function UploadDrawer({
                                             </div>
                                         )}
                                         {(f.status === "uploading" || f.status === "paused") && (
-                                            <div className="flex flex-col gap-1">
-                                                <Progress value={f.progress} className="h-1.5" />
-                                                <div className="flex items-center justify-between">
-                                                    {f.progress >= 80 && f.processingStatus ? (
-                                                        <p className="text-[10px] font-medium text-amber-600 dark:text-amber-500 animate-pulse">
-                                                            {f.processingStatus}
-                                                        </p>
-                                                    ) : (
-                                                        <p className="text-[10px] text-muted-foreground">
-                                                            {f.status === "paused" ? "Paused" : `${f.progress}%`}
-                                                            {f.status === "uploading" && etaMap.get(f.clientId) && (
-                                                                <span className="ml-2">
-                                                                    {((etaMap.get(f.clientId)?.bps ?? 0) / (1024 * 1024)).toFixed(1)} MB/s
-                                                                    {" — "}~{etaMap.get(f.clientId)?.etaSec}s remaining
+                                            <div className="flex flex-col gap-1.5">
+                                                {/* Upload / transfer bar */}
+                                                <div className="flex flex-col gap-0.5">
+                                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                                        <span>Upload</span>
+                                                        {f.status !== "paused" && (
+                                                            <span>
+                                                                {Math.min(Math.round(f.progress * 100 / 80), 100)}%
+                                                                {etaMap.get(f.clientId) && f.progress < 80 && (
+                                                                    <span className="ml-1">
+                                                                        · {((etaMap.get(f.clientId)?.bps ?? 0) / (1024 * 1024)).toFixed(1)} MB/s · ~{etaMap.get(f.clientId)?.etaSec}s
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <Progress
+                                                        value={f.progress < 80 ? Math.min(Math.round(f.progress * 100 / 80), 100) : 100}
+                                                        className="h-1.5"
+                                                    />
+                                                </div>
+
+                                                {/* Processing bar — server-side stages */}
+                                                {f.status === "uploading" && f.progress >= 80 && (
+                                                    <div className="flex flex-col gap-0.5">
+                                                        <div className="flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                                                            <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0" />
+                                                            <span className="truncate">{f.processingStatus || "Processing…"}</span>
+                                                            {f.stageIndex != null && f.stageTotal != null && (
+                                                                <span className="ml-auto shrink-0 font-normal text-muted-foreground">
+                                                                    {f.stageIndex + 1}/{f.stageTotal}
                                                                 </span>
                                                             )}
-                                                        </p>
-                                                    )}
-                                                </div>
+                                                        </div>
+                                                        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-amber-100 dark:bg-amber-950/40">
+                                                            <div
+                                                                className="h-full bg-amber-500 dark:bg-amber-400 transition-all duration-500 animate-pulse"
+                                                                style={{ width: `${Math.min((f.progress - 80) * 5, 100)}%` }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {f.status === "paused" && (
+                                                    <p className="text-[10px] text-muted-foreground">Paused</p>
+                                                )}
                                             </div>
                                         )}
                                         {f.status === "virus" && (

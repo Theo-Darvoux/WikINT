@@ -11,7 +11,7 @@ from app.models.comment import Comment
 from app.models.flag import Flag
 from app.models.material import Material
 from app.models.notification import Notification
-from app.models.pull_request import PRComment, PRVote, PullRequest
+from app.models.pull_request import PRComment, PullRequest
 from app.models.user import User
 from app.models.view_history import ViewHistory
 from app.services.material import material_orm_to_dict
@@ -35,13 +35,13 @@ async def onboard_user(
 
 
 async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
-    uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+    uid = uuid.UUID(str(user_id))
     result = await db.execute(select(User).where(User.id == uid, User.deleted_at.is_(None)))
     return result.scalar_one_or_none()
 
 
 async def get_user_stats(db: AsyncSession, user_id: str) -> dict[str, int]:
-    uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+    uid = uuid.UUID(str(user_id))
     from app.models.pull_request import PRStatus
 
     pr_approved = await db.scalar(
@@ -72,7 +72,7 @@ async def get_user_stats(db: AsyncSession, user_id: str) -> dict[str, int]:
 
 
 async def get_recently_viewed(db: AsyncSession, user_id: str, limit: int = 10) -> list[dict]:
-    uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+    uid = uuid.UUID(str(user_id))
     from sqlalchemy.orm import selectinload
 
     from app.models.material import MaterialVersion
@@ -108,7 +108,7 @@ async def get_user_contributions(
     limit: int,
     offset: int,
 ) -> tuple[list[PullRequest] | list[dict[str, typing.Any]] | list[Annotation], int]:
-    uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+    uid = uuid.UUID(str(user_id))
     from sqlalchemy.orm import selectinload
 
     if contribution_type == "prs":
@@ -211,9 +211,6 @@ async def export_user_data(db: AsyncSession, user: User) -> dict:
     annotations_result = await db.execute(select(Annotation).where(Annotation.author_id == uid))
     annotations = annotations_result.scalars().all()
 
-    votes_result = await db.execute(select(PRVote).where(PRVote.user_id == uid))
-    votes = votes_result.scalars().all()
-
     comments_result = await db.execute(select(Comment).where(Comment.author_id == uid))
     comments = comments_result.scalars().all()
 
@@ -238,7 +235,7 @@ async def export_user_data(db: AsyncSession, user: User) -> dict:
             "academic_year": user.academic_year,
             "role": user.role.value,
             "avatar_url": user.avatar_url,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "created_at": user.created_at.isoformat() if user.created_at is not None else None,
             "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
         },
         "consent": {
@@ -253,7 +250,6 @@ async def export_user_data(db: AsyncSession, user: User) -> dict:
             {"id": str(a.id), "body": a.body, "material_id": str(a.material_id)}
             for a in annotations
         ],
-        "votes": [{"id": str(v.id), "pr_id": str(v.pr_id), "value": v.value} for v in votes],
         "comments": [
             {"id": str(c.id), "body": c.body, "target_type": c.target_type} for c in comments
         ],
@@ -270,7 +266,7 @@ async def export_user_data(db: AsyncSession, user: User) -> dict:
                 "title": n.title,
                 "body": n.body,
                 "read": n.read,
-                "created_at": n.created_at.isoformat() if n.created_at else None,
+                "created_at": n.created_at.isoformat() if n.created_at is not None else None,
             }
             for n in notifications
         ],
@@ -278,7 +274,7 @@ async def export_user_data(db: AsyncSession, user: User) -> dict:
             {
                 "id": str(vh.id),
                 "material_id": str(vh.material_id),
-                "viewed_at": vh.viewed_at.isoformat() if vh.viewed_at else None,
+                "viewed_at": vh.viewed_at.isoformat() if vh.viewed_at is not None else None,
             }
             for vh in view_history
         ],

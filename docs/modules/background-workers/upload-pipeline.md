@@ -4,6 +4,26 @@
 
 This is the heart of the upload system. It runs as an ARQ background job, transforming a raw quarantine file into a clean, compressed, metadata-stripped file ready for use in pull requests. The pipeline emits real-time progress events via Redis pub/sub for the SSE endpoint.
 
+## Current Implementation Structure
+
+The worker is now split into three layers:
+
+- `UploadPipeline` class in `api/app/workers/upload/pipeline.py`
+  - Orchestrates the flow by calling stateless stage functions.
+  - Manages high-level pipeline state (temp paths, MIME/category, stage progress).
+  - Coordinates between the repositories and stages.
+- **Repositories** (Abstraction Layer):
+  - `UploadWorkerRepository` in `api/app/workers/upload/repository.py`: Encapsulates all DB operations (status updates, checkpoints, DLQ) with built-in **exponential backoff retry** logic for resilience.
+  - `UploadCacheRepository` in `api/app/workers/upload/cache_repo.py`: Encapsulates all Redis operations (event publishing, status caching, cancellation checks).
+- **Stages** (Stateless Logic) in `api/app/workers/upload/stages/`:
+  - `download.py`: `run_download_and_validate`
+  - `cas.py`: `try_cas_short_circuit`
+  - `scan_strip.py`: `run_scan_and_strip`, `run_strip_only`, `run_post_strip_pdf_check`
+  - `compress.py`: `run_compress_stage`
+  - `finalize.py`: `run_finalize_storage`
+
+These stages are functional and take explicit inputs, making them easier to test and maintain compared to the previous stateful implementation.
+
 ## Pipeline Stages
 
 ```
@@ -14,98 +34,56 @@ This is the heart of the upload system. It runs as an ARQ background job, transf
 │ YARA + Bazaar ║ EXIF, PDF          │    │ Ghostscript,  │    │ Upload to S3, │
 │ + PDF safety  ║ Info, tags         │    │ ffmpeg, gzip  │    │ CAS entry     │
 └─────────────────────────────────────┘    └───────────────┘    └───────────────┘
-         ▲ Parallel (4.7)
 ```
 
-**Stages 0 and 1 run in parallel** (Phase 6, item 4.7). The scan result is the security gate — if it reports malicious content, the strip result is discarded regardless of outcome. This reduces total pipeline time for the common CLEAN path.
+**Stages 0 and 1 are typically run in parallel** by `run_scan_and_strip`. The scan result acts as a security gate. Metadata stripping is performed concurrently to reduce total wall-clock time. If the pipeline resumes from a checkpoint where the scan was finished but stripping wasn't, `run_strip_only` is used.
 
-Each stage has a weight that contributes to the `overall_percent` progress:
-- Scanning: 40% (most time-consuming for large files)
-- Stripping: 25%
-- Compressing: 25%
-- Finalizing: 10%
+Each stage contributes to the `overall_percent` progress:
+- Download & Validate: Part of initial setup.
+- Scanning & Stripping: Stages 0 & 1 (65% combined wt).
+- Compressing: Stage 2 (25% wt).
+- Finalizing: Stage 3 (10% wt).
 
-### Compression Optimizations (Phase 6)
+### Compression Optimizations
 
-- **Skip threshold (4.13):** Files smaller than 10 KiB are not compressed — the overhead exceeds the benefit.
-- **Ghostscript quality (4.6):** Configurable via `GS_QUALITY` env var (default `/printer`). Higher quality means larger files but better fidelity. Options: `/screen`, `/ebook`, `/printer`, `/prepress`.
-- **Video compression profiles:** Configurable via `VIDEO_COMPRESSION_PROFILE` env var (default `heavy`). Options: `none`, `light`, `medium`, `aggressive`, `heavy`, `extreme`.
-- **Image format conversion:** Non-animated images are aggressively downscaled and transformed to `WEBP` format to minimize storage impact.
+- **Skip threshold:** Files smaller than 10 KiB are not compressed.
+- **PDF compression quality:** Configurable via `PDF_QUALITY` env var.
+- **Video compression profiles:** Configurable via `VIDEO_COMPRESSION_PROFILE` env var. Utilizes `-preset veryfast` and aggressive CRF values (32 to 60) for high-speed, compact encoding.
+- **Image format conversion:** Aggressive WEBP conversion for non-animated images.
 
 ## Full Execution Flow
 
-### Pre-Pipeline: CAS Deduplication Check (after download)
+### Pre-Pipeline: Initial Validation
 
-The worker checks CAS after download:
-
-1. Download file from quarantine to temp directory + compute SHA-256 in one pass (`download_file_with_hash`)
-2. Compute HMAC CAS key from SHA-256
-3. Check Redis for CAS entry
-
-**If CAS hit:**
-- Copy the existing processed file to the new user's staging area
-- Increment CAS reference count (atomic Lua script)
-- Set scan/SHA-256 caches
-- Update quota sorted set
-- Emit CLEAN status
-- Delete quarantine object
-- **Skip the entire pipeline** (returns early)
-
-**If CAS miss:** Continue to full pipeline.
+1. Download file from quarantine to temp directory + compute SHA-256 (`run_download_and_validate`).
+2. Proceed to full pipeline (Scan -> Strip -> Compress -> Finalize).
 
 ### Disk Space Guard
 
-Before downloading the file, the worker checks available disk space:
+Before downloading, `run_download_and_validate` ensures sufficient headroom:
 ```python
-usage = shutil.disk_usage(temp_dir)
-required_free = int(initial_size * 2.0)  # 2.0x for processing headroom (Optimization 6.1)
-if usage.free < required_free:
-    raise RuntimeError(f"Insufficient disk space for {upload_id}")
+required_free = int(initial_size * 2.0)
+ensure_disk_space(tmp_path, required_free)
 ```
 
-This prevents a worker from filling up `/tmp` and crashing, which would orphan the quarantine file.
+### Stage 0 & 1: Malware Scanning and Metadata Stripping
 
-### Stage 0: Malware Scanning
-
-1. Instantiate or reuse the `MalwareScanner`
-2. Run YARA + MalwareBazaar scans concurrently with a 120-second timeout
-3. **On timeout:** Emit FAILED status, return
-4. **On malware detection:** Emit MALICIOUS status, return
-5. For PDFs: Run `check_pdf_safety()` for auto-exec actions and embedded JavaScript
-6. Emit progress: stage 0 complete
-
-### Stage 1: Metadata Stripping
-
-1. Call `strip_metadata_file(path, mime_type)` with a 60-second timeout
-2. If the strip produces a new file (different path), swap it into the `ProcessingFile`
-3. **On timeout:** Emit FAILED, return
-4. **On ValueError:** This means auto-exec macros were detected → Emit MALICIOUS, return
+1. `run_scan_and_strip` coordinates `MalwareScanner` and `strip_metadata_file` concurrently using `asyncio.gather`.
+2. **Concurrency Safety:** If both fail, both errors are logged. Scan errors (malware detection) always take precedence for the final status.
+3. For PDFs: `run_post_strip_pdf_check` performs a final safety check on the stripped file.
 
 ### Stage 2: Compression
 
-1. Determine compression timeout based on MIME category (15s for text, 30s for images, 60s for audio, 1200s for video)
-2. Call `compress_file_path(path, mime_type, filename)` with the category-specific timeout
-3. If compression produces a new file, swap it in
-4. Track final MIME type and content encoding
-5. **On failure:** Log warning, proceed with uncompressed file (fail-open for compression)
+1. `run_compress_stage` determines timeout and applies category-specific compression.
+2. If successful, it updates the pipeline's `final_mime` and `content_encoding`.
+3. **Fail-open:** If compression fails or times out, the uncompressed file is used.
 
 ### Stage 3: Finalization
 
-1. Determine canonical file extension from final MIME type
-2. If extension changed (e.g., WAV → FLAC), rename the file
-3. Construct final key: `uploads/{user_id}/{upload_id}/{safe_name}`
-4. Upload processed file to S3 via `upload_file_multipart`
-5. Compute content SHA-256 of the processed file
-6. Set Redis caches:
-   - Scan result cache (`CLEAN`, 24h TTL)
-   - Per-user SHA-256 cache (24h TTL)
-   - Global CAS entry (permanent, ref_count=1)
-   - Quota sorted set entry
-7. Emit CLEAN status with result data
-8. Update upload DB row (clean, sha256, final_key)
-9. Delete quarantine object
-10. Record Prometheus metrics (pipeline duration, file size, compression ratio)
-11. Optionally dispatch webhook
+1. `run_finalize_storage` constructs the final S3 key and **always uploads** the processed file to the `cas/` prefix, replacing any pre-existing object. This ensures compression and stripping improvements propagate even when the same source SHA-256 was previously stored under an older pipeline.
+2. It sets all final Redis caches and updates the user quota.
+3. `UploadPipeline` then updates the DB status to `clean` via the repository.
+
 
 ## Progress Event Format
 
@@ -160,7 +138,7 @@ In addition to the status cache and pub/sub, events are appended to a Redis list
 
 ## Webhook Dispatch
 
-After a successful pipeline, `_maybe_dispatch_webhook` checks if the upload DB row has a `webhook_url`. If so, it enqueues a `dispatch_webhook` job. The webhook sends an HMAC-SHA256 signed POST request with the upload result data.
+After a successful pipeline, `UploadWorkerRepository.maybe_dispatch_webhook()` checks if the upload DB row has a `webhook_url`. If so, it enqueues a `dispatch_webhook` job. The webhook sends an HMAC-SHA256 signed POST request with the upload result data.
 
 ## Pipeline Checkpointing (Phase 2)
 
@@ -175,7 +153,7 @@ Each stage saves its completion to the DB via `_checkpoint_stage(ctx, upload_id,
 
 On ARQ retry, `_get_pipeline_stage(ctx, upload_id)` reads the DB. Stages with index < `completed_stage` are skipped with a log message. This makes the pipeline idempotent: a crash after scan but before strip retries from the strip stage.
 
-The checkpoint is written using a bare SQLAlchemy `UPDATE` inside the worker's session factory, independent of the main pipeline transaction.
+Internally these wrappers now delegate to `UploadWorkerRepository`, which performs the SQLAlchemy `UPDATE`/`SELECT` calls using the worker session factory.
 
 ## Upload Cancellation (Phase 2)
 
@@ -202,6 +180,8 @@ When an upload fails on its last ARQ retry (`job_try >= _MAX_ARQ_RETRIES = 3`), 
 - `payload` — original job kwargs (user_id, quarantine_key, filename, mime_type)
 - `error_detail` — stringified exception (truncated at 4000 chars)
 - `attempts` — number of ARQ attempts made
+
+`_insert_dead_letter` now delegates to `UploadWorkerRepository.insert_dead_letter`.
 
 Admin endpoints (bureau/vieux roles only):
 - `GET /api/admin/dlq` — paginated list, defaults to unresolved jobs

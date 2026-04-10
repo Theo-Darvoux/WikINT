@@ -55,7 +55,7 @@ export function EditsTab({ target }: EditsTabProps) {
             <div className="flex flex-col items-center justify-center py-12 text-center">
                 <GitPullRequest className="mb-3 h-8 w-8 text-muted-foreground/50" />
                 <p className="text-sm text-muted-foreground">
-                    No active pull requests for this {target.type}.
+                    No active contributions for this {target.type}.
                 </p>
             </div>
         );

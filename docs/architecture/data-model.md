@@ -148,44 +148,41 @@
 | Column | Type | Constraints | Purpose |
 |--------|------|-------------|---------|
 | `id` | UUID | PK | |
-| `type` | VARCHAR(50) | default 'batch' | Always 'batch' in current schema |
 | `status` | ENUM(open, approved, rejected) | default 'open' | |
 | `title` | VARCHAR(300) | NOT NULL | |
 | `description` | TEXT | nullable | |
+| `rejection_reason` | TEXT | nullable | Fixed in Audit v3 |
 | `payload` | JSONB | NOT NULL | Array of operation objects |
-| `summary_types` | JSONB | default [] | List of operation types for quick filtering |
+| `applied_result` | JSONB | nullable | Enriched result (IDs/paths) |
 | `author_id` | UUID | FK(users.id) SET NULL | |
-| `reviewed_by` | UUID | FK(users.id) SET NULL | Who approved/rejected |
-| `virus_scan_result` | VARCHAR(20) | default 'pending' | Aggregated scan status |
+| `reviewed_by` | UUID | FK(users.id) SET NULL | |
 | `created_at` | TIMESTAMP(tz) | | |
-| `updated_at` | TIMESTAMP(tz) | | |
 
-The `payload` column is the most complex field in the schema. It stores an ordered array of operation objects, each describing a mutation to the content tree:
+---
 
-```json
-[
-  {
-    "op": "create_directory",
-    "temp_id": "$dir1",
-    "name": "Linear Algebra",
-    "parent_id": "uuid-of-parent",
-    "type": "folder"
-  },
-  {
-    "op": "create_material",
-    "temp_id": "$mat1",
-    "title": "Lecture Notes",
-    "directory_id": "$dir1",
-    "type": "pdf",
-    "file_key": "uploads/user-id/upload-id/notes.pdf",
-    "file_name": "notes.pdf"
-  }
-]
-```
+### PRFileClaim
+**Table:** `pr_file_claims`
 
-Operations can reference each other via `$`-prefixed temp_ids. The PR engine topologically sorts them before execution.
+| Column | Type | Constraints | Purpose |
+|--------|------|-------------|---------|
+| `file_key` | VARCHAR(500) | PK | Atomic lock for temp files |
+| `pr_id` | UUID | FK(pull_requests.id) CASCADE | |
 
-### Supporting Entities
+**Constraint:** `PRIMARY KEY (file_key)` - Every file can be claimed by exactly one PR.
+
+---
+
+### CAS (Content-Addressable Storage)
+**Table:** `cas_entries`
+
+| Column | Type | Constraints | Purpose |
+|--------|------|-------------|---------|
+| `sha256` | VARCHAR(64) | PK | File content hash |
+| `file_key` | VARCHAR(500) | NOT NULL | S3 storage key |
+| `mime_type` | VARCHAR(100) | | |
+| `size_bytes` | BIGINT | | |
+| `ref_count` | INTEGER | default 1 | Reference count for GC |
+| `scanned_at` | TIMESTAMP(tz) | | For YARA staleness checks |
 
 **PRVote** (`pr_votes`): One vote per user per PR. `value` is a SmallInteger (typically +1 / -1).
 

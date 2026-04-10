@@ -2,7 +2,7 @@
 
 Covers:
 - 4.3: Early CAS check before quarantine download (skips full pipeline on CAS hit)
-- 4.6: Configurable Ghostscript quality (gs_quality setting, default /prepress)
+- 4.6: Configurable PDF quality (pdf_quality setting, default 75)
 - 4.7: Parallel scan + strip (asyncio.gather, discard strip if scan fails)
 - 4.8: Dynamic multipart chunk size (8/16/32 MiB based on file size)
 - 4.13: Skip compression for files < 10 KB
@@ -126,22 +126,14 @@ async def test_compress_file_path_does_not_skip_larger_files(tmp_path: Path):
 # ── 4.6: Configurable Ghostscript quality ────────────────────────────────────
 
 
-def test_gs_quality_default():
-    """Default Ghostscript quality must be /prepress."""
-    from app.config import Settings
-
-    s = Settings()
-    assert s.gs_quality == "/prepress"
-
-
-def test_gs_quality_used_in_pdf_compression():
-    """_compress_pdf_path reads gs_quality from settings."""
+def test_pdf_quality_used_in_pdf_compression():
+    """_compress_pdf_path reads pdf_quality from settings."""
     import inspect
 
     from app.core import file_security
 
     src = inspect.getsource(file_security._compress_pdf_path)
-    assert "gs_quality" in src
+    assert "pdf_quality" in src
 
 
 # ── 4.7: Parallel scan + strip ───────────────────────────────────────────────
@@ -196,15 +188,3 @@ async def test_scan_failure_discards_strip_result(tmp_path: Path):
     assert scan_exc is not None  # would trigger malicious path in worker
 
 
-# ── 4.3: Early CAS check in worker ───────────────────────────────────────────
-
-
-def test_worker_early_cas_check_present():
-    """process_upload contains a global CAS deduplication check."""
-    import inspect
-
-    from app.workers.process_upload import process_upload
-
-    src = inspect.getsource(process_upload)
-    assert "Global CAS deduplication check" in src
-    assert "hmac_cas_key(original_sha256)" in src

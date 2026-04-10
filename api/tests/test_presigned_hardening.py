@@ -67,7 +67,9 @@ def test_generate_presigned_put_includes_content_length():
         mock_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
         asyncio.get_event_loop().run_until_complete(
-            generate_presigned_put("quarantine/test/file.pdf", "application/pdf", content_length=1024)
+            generate_presigned_put(
+                "quarantine/test/file.pdf", "application/pdf", content_length=1024
+            )
         )
 
     assert "ContentLength" in captured_params
@@ -89,7 +91,11 @@ async def test_init_upload_stores_sha256_in_intent(
 
     presigned_url = "https://s3.example.com/quarantine/test?sig=abc"
     with (
-        patch("app.routers.upload.presigned.generate_presigned_put", new_callable=AsyncMock, return_value=presigned_url),
+        patch(
+            "app.routers.upload.presigned.generate_presigned_put",
+            new_callable=AsyncMock,
+            return_value=presigned_url,
+        ),
         patch("app.routers.upload.presigned._create_upload_row", new_callable=AsyncMock),
         patch("app.routers.upload.presigned._check_pending_cap", new_callable=AsyncMock),
     ):
@@ -108,7 +114,8 @@ async def test_init_upload_stores_sha256_in_intent(
 
     # Verify Redis was called with a set — the intent must include sha256
     set_calls = [
-        c for c in mock_redis.set.call_args_list
+        c
+        for c in mock_redis.set.call_args_list
         if c.args and isinstance(c.args[0], str) and c.args[0].startswith("upload:intent:")
     ]
     assert len(set_calls) >= 1
@@ -160,8 +167,14 @@ async def test_complete_upload_revalidates_mime(
     pdf_header = b"%PDF-1.7" + b"\x00" * 100
 
     with (
-        patch("app.routers.upload.presigned.get_object_info", new_callable=AsyncMock, return_value={"size": 1024}),
-        patch("app.core.storage.read_object_bytes", new_callable=AsyncMock, return_value=pdf_header),
+        patch(
+            "app.routers.upload.presigned.get_object_info",
+            new_callable=AsyncMock,
+            return_value={"size": 1024},
+        ),
+        patch(
+            "app.core.storage.read_object_bytes", new_callable=AsyncMock, return_value=pdf_header
+        ),
         patch("app.routers.upload.presigned._enqueue_processing", new_callable=AsyncMock),
     ):
         response = await client.post(

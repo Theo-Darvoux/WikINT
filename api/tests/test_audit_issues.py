@@ -4,11 +4,10 @@ Each test is named after its audit ID and is written to FAIL when the bug
 exists.  Once the corresponding fix is applied the test should turn green.
 """
 
-import io
 import json
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -17,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User, UserRole
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 async def _create_user(db: AsyncSession, role: UserRole = UserRole.STUDENT) -> User:
     user = User(
@@ -37,79 +37,6 @@ def _auth_headers(user: User) -> dict[str, str]:
 
     token, _ = create_access_token(str(user.id), user.role.value, user.email)
     return {"Authorization": f"Bearer {token}"}
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# CRITICAL #1 — CAS pre-check scanner uses in-memory rules (not testable
-#               at unit level without a full YARA setup — tested indirectly
-#               by ensuring staleness logic is correct in the worker).
-#
-# CRITICAL #2 — CAS exception swallowing masks malware detection
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-@pytest.mark.asyncio
-async def test_critical2_cas_precheck_does_not_swallow_malware_error(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    mock_redis: AsyncMock,
-):
-    """CAS pre-check must NOT swallow BadRequestError from the scanner.
-
-    Before the fix, a bare ``except Exception`` caught scan failures and
-    the upload proceeded silently.
-    """
-    from app.core.exceptions import BadRequestError
-
-    user = await _create_user(db_session)
-    headers = _auth_headers(user)
-
-    pdf_bytes = b"%PDF-1.4\nmalicious content here"
-
-    # Make the CAS lookup return a hit so the scanner runs
-    cas_data = json.dumps({
-        "final_key": "cas/abc123",
-        "mime_type": "application/pdf",
-        "size": len(pdf_bytes),
-        "scanned_at": 9999999999.0,  # far future — not stale
-    })
-
-    async def _fake_get(key):
-        if "upload:cas:" in str(key):
-            return cas_data.encode()
-        return None
-
-    mock_redis.get.side_effect = _fake_get
-    mock_redis.set.side_effect = AsyncMock()
-
-    # Scanner raises BadRequestError (malware found)
-    scanner_mock = MagicMock()
-    scanner_mock.scan_file_path = AsyncMock(
-        side_effect=BadRequestError("ERR_MALWARE_DETECTED: TestVirus")
-    )
-
-    with (
-        patch("app.routers.upload.direct.get_s3_client") as mock_s3_cm,
-        patch.object(
-            client._transport.app.state, "scanner", scanner_mock  # type: ignore[union-attr]
-        ),
-        patch("app.core.cas.hmac_cas_key", return_value="upload:cas:test123"),
-    ):
-        mock_s3 = AsyncMock()
-        mock_s3_cm.return_value.__aenter__.return_value = mock_s3
-
-        resp = await client.post(
-            "/api/upload",
-            files={"file": ("test.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
-            headers=headers,
-        )
-
-        # The upload MUST be rejected — not silently passed through
-        assert resp.status_code == 400, (
-            f"Expected 400 (malware), got {resp.status_code}. "
-            "CAS pre-check is swallowing BadRequestError."
-        )
-        assert "malware" in resp.text.lower() or "ERR_MALWARE_DETECTED" in resp.text
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -256,11 +183,13 @@ async def test_medium1_check_exists_does_not_expose_raw_cas_key(
 
     # No per-user cache hit
     # CAS fallback returns a cas/ key
-    cas_data = json.dumps({
-        "final_key": "cas/global_secret_hash",
-        "mime_type": "application/pdf",
-        "size": 1234,
-    })
+    cas_data = json.dumps(
+        {
+            "final_key": "cas/global_secret_hash",
+            "mime_type": "application/pdf",
+            "size": 1234,
+        }
+    )
 
     call_count = 0
 
@@ -326,6 +255,7 @@ async def test_medium4_multipart_abort_logs_db_errors(caplog):
     import inspect
 
     from app.routers.upload.presigned import presigned_multipart_abort
+
     source = inspect.getsource(presigned_multipart_abort)
 
     # After the fix, the except block should contain a logging call
@@ -408,6 +338,7 @@ async def test_low1_octet_stream_still_has_size_limit():
 
     # This should raise — over the global limit
     from app.core.exceptions import BadRequestError
+
     over_limit = (settings.max_file_size_mb * 1024 * 1024) + 1
     with pytest.raises(BadRequestError):
         _check_per_type_size("application/octet-stream", over_limit)

@@ -50,9 +50,9 @@ const STATUS_COLORS: Record<string, string> = {
 const TARGET_LABELS: Record<string, string> = {
     material: "Material",
     annotation: "Annotation",
-    pull_request: "Pull Request",
+    pull_request: "Contribution",
     comment: "Comment",
-    pr_comment: "PR Comment",
+    pr_comment: "Contribution Comment",
 };
 
 export default function AdminFlagsPage() {
@@ -122,9 +122,9 @@ export default function AdminFlagsPage() {
                         <SelectItem value="all">All types</SelectItem>
                         <SelectItem value="material">Material</SelectItem>
                         <SelectItem value="annotation">Annotation</SelectItem>
-                        <SelectItem value="pull_request">Pull Request</SelectItem>
+                        <SelectItem value="pull_request">Contribution</SelectItem>
                         <SelectItem value="comment">Comment</SelectItem>
-                        <SelectItem value="pr_comment">PR Comment</SelectItem>
+                        <SelectItem value="pr_comment">Contribution Comment</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
