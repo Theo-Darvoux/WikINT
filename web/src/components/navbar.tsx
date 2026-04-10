@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { Bell, GitPullRequest, Search, User, Settings, LogOut } from "lucide-react";
+import { Bell, Send, Search, User, Settings, LogOut } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { SearchModal } from "@/components/search/search-modal";
 import { useNotificationStore } from "@/lib/stores";
@@ -146,7 +146,7 @@ export function Navbar() {
                                     title="Contributions"
                                     className={`rounded-full ${pathname.startsWith("/pull-requests") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
                                 >
-                                    <GitPullRequest className="h-4 w-4" />
+                                    <Send className="h-4 w-4" />
                                 </Button>
                             </Link>
 

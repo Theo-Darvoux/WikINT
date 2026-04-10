@@ -94,7 +94,7 @@ export function EditItemDialog({
     const handleDraft = () => {
         if (!canSubmit) return;
         addOperation(buildOp());
-        toast.success(`Ajouté au brouillon : "${title.trim()}"`);
+        toast.success(`Added to draft: "${title.trim()}"`);
         onOpenChange(false);
     };
 
@@ -120,7 +120,7 @@ export function EditItemDialog({
     };
 
     const Icon = isMaterial ? FilePenLine : FolderPen;
-    const typeLabel = isMaterial ? "un document" : "un dossier";
+    const typeLabel = isMaterial ? "a document" : "a folder";
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -128,14 +128,14 @@ export function EditItemDialog({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Icon className="h-5 w-5 text-blue-600" />
-                        Modifier {typeLabel}
+                        Edit {typeLabel}
                     </DialogTitle>
                     <DialogDescription>
-                        Modification de{" "}
+                        Editing{" "}
                         <span className="font-medium text-foreground">
                             {currentTitle}
                         </span>
-                        . Vous pouvez soumettre directement la contribution ou l&apos;ajouter à votre brouillon.
+                        . You can submit the contribution directly or add it to your draft.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -145,7 +145,7 @@ export function EditItemDialog({
                             htmlFor="edit-title"
                             className="text-sm font-medium"
                         >
-                            {isMaterial ? "Titre" : "Nom"}
+                            {isMaterial ? "Title" : "Name"}
                         </label>
                         <Input
                             id="edit-title"
@@ -164,7 +164,7 @@ export function EditItemDialog({
                         >
                             Description{" "}
                             <span className="text-muted-foreground">
-                                (optionnel)
+                                (optional)
                             </span>
                         </label>
                         <Textarea
@@ -200,7 +200,7 @@ export function EditItemDialog({
                         disabled={submitting}
                         className="sm:mr-auto"
                     >
-                        Annuler
+                        Cancel
                     </Button>
                     <Button
                         variant="outline"
@@ -209,7 +209,7 @@ export function EditItemDialog({
                         className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
                     >
                         <Plus className="h-4 w-4" />
-                        Ajouter au brouillon
+                        Add to draft
                     </Button>
                     {!isDraftTarget && (
                         <Button
@@ -222,7 +222,7 @@ export function EditItemDialog({
                             ) : (
                                 <Send className="h-4 w-4" />
                             )}
-                            Soumettre direct
+                            Submit directly
                         </Button>
                     )}
                 </DialogFooter>

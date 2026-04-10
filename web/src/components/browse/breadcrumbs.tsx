@@ -11,17 +11,22 @@ interface BreadcrumbItem {
 
 interface BreadcrumbsProps {
     items: BreadcrumbItem[];
+    /** When set, appended as ?preview_pr= to preserve preview mode on breadcrumb navigation */
+    previewPrId?: string;
 }
 
-export function Breadcrumbs({ items }: BreadcrumbsProps) {
+export function Breadcrumbs({ items, previewPrId }: BreadcrumbsProps) {
     const buildPath = (index: number) => {
         const segments = items.slice(0, index + 1).map((item) => item.slug);
-        return `/browse/${segments.join("/")}`;
+        const base = `/browse/${segments.join("/")}`;
+        return previewPrId ? `${base}?preview_pr=${previewPrId}` : base;
     };
+
+    const rootHref = previewPrId ? `/browse?preview_pr=${previewPrId}` : "/browse";
 
     return (
         <nav className="flex items-center gap-1 overflow-x-auto text-sm">
-            <Link href="/browse" className="flex items-center text-muted-foreground hover:text-foreground">
+            <Link href={rootHref} className="flex items-center text-muted-foreground hover:text-foreground">
                 <Home className="h-4 w-4" />
             </Link>
             {items.map((item, index) => (

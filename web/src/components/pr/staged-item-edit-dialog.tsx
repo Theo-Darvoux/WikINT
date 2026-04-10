@@ -72,7 +72,7 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
             newOp.tags = tags;
             // create_material requires title, so guarantee one
             if (op.op === "create_material" && !newOp.title) {
-                newOp.title = "Sans Titre";
+                newOp.title = "Untitled";
             }
         } else if (op.op === "create_directory" || op.op === "edit_directory") {
             newOp.name = title.trim() || undefined;
@@ -80,7 +80,7 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
             newOp.tags = tags;
             // create_directory requires name
             if (op.op === "create_directory" && !newOp.name) {
-                newOp.name = "Nouveau Dossier";
+                newOp.name = "New Folder";
             }
         }
 
@@ -95,17 +95,17 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
         <Dialog open={index !== null && isEditable} onOpenChange={(open) => !open && onClose()}>
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
-                    <DialogTitle>Éditer l'élément</DialogTitle>
+                    <DialogTitle>Edit item</DialogTitle>
                     <DialogDescription>
-                        Modifiez les informations de cette contribution avant de l'ajouter définitivement.
+                        Edit this item&apos;s details before adding it permanently.
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="grid gap-4 py-4">
                     <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Nom / Titre</label>
+                        <label className="text-sm font-medium">Name / Title</label>
                         <Input
-                            placeholder="Titre du fichier ou dossier"
+                            placeholder="File or folder title"
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                         />
@@ -114,7 +114,7 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
                     <div className="space-y-1.5">
                         <label className="text-sm font-medium">Description</label>
                         <Textarea
-                            placeholder="Description optionnelle..."
+                            placeholder="Optional description..."
                             className="resize-none"
                             rows={3}
                             value={description}
@@ -125,7 +125,7 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
                     <div className="space-y-1.5">
                         <label className="text-sm font-medium">Tags</label>
                         <TagInput
-                            placeholder="Ajouter un tag..."
+                            placeholder="Add a tag..."
                             tags={tags}
                             onChange={(newTags) => setTags(newTags)}
                         />
@@ -133,8 +133,8 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
                 </div>
 
                 <DialogFooter>
-                    <Button variant="outline" onClick={onClose}>Annuler</Button>
-                    <Button onClick={handleSave}>Enregistrer</Button>
+                    <Button variant="outline" onClick={onClose}>Cancel</Button>
+                    <Button onClick={handleSave}>Save</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

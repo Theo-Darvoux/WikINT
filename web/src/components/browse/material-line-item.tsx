@@ -83,13 +83,15 @@ const EXT_ICONS: Record<string, React.ElementType> = {
 
 interface MaterialLineItemProps {
     material: Record<string, unknown>;
-    staged?: "edited" | "deleted" | null;
+    staged?: "edited" | "deleted" | "moved" | null;
     selectMode?: boolean;
     selected?: boolean;
     onToggleSelect?: () => void;
+    /** When set, appended as ?preview_pr= to preserve preview mode across navigation */
+    previewPrId?: string;
 }
 
-export function MaterialLineItem({ material, staged, selectMode, selected, onToggleSelect }: MaterialLineItemProps) {
+export function MaterialLineItem({ material, staged, selectMode, selected, onToggleSelect, previewPrId }: MaterialLineItemProps) {
     const isMobile = useIsMobile();
     const { openSidebar } = useUIStore();
     const pathname = usePathname();
@@ -110,8 +112,12 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
         mimeType = vi.file_mime_type ? String(vi.file_mime_type) : "";
     }
 
-    const base = pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
-    const materialPath = `${base}/${slug}`;
+    const buildPath = () => {
+        const base = pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+        const matPath = `${base}/${slug}`;
+        return previewPrId ? `${matPath}?preview_pr=${previewPrId}` : matPath;
+    };
+
     let badgeColor = TYPE_COLORS[type] ?? TYPE_COLORS.other;
 
     let badgeLabel = TYPE_LABELS[type] ?? type;
@@ -166,14 +172,16 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
             onToggleSelect();
             return;
         }
-        router.push(materialPath);
+        router.push(buildPath());
     };
 
     const stagedBorder = staged === "deleted"
         ? "border-l-2 border-l-red-400 bg-red-50/50 dark:bg-red-950/20"
         : staged === "edited"
           ? "border-l-2 border-l-green-400 bg-green-50/50 dark:bg-green-950/20"
-          : "";
+          : staged === "moved"
+            ? "border-l-2 border-l-amber-400 bg-amber-50/50 dark:bg-amber-950/20"
+            : "";
 
     return (
         <div
@@ -188,18 +196,20 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
                     className="shrink-0"
                 />
             )}
-            <Icon className={`h-5 w-5 shrink-0 ${staged === "deleted" ? "text-red-500" : iconColorClass}`} />
+            <Icon className={`h-5 w-5 shrink-0 ${staged === "deleted" ? "text-red-500" : staged === "moved" ? "text-amber-500" : iconColorClass}`} />
 
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                    <span className={`block truncate font-medium ${staged === "deleted" ? "line-through text-red-700 dark:text-red-400" : ""}`}>{title}</span>
+                    <span className={`block truncate font-medium ${staged === "deleted" ? "line-through text-red-700 dark:text-red-400" : staged === "moved" ? "text-amber-700 dark:text-amber-400" : ""}`}>{title}</span>
                     {staged && (
                         <span className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${
                             staged === "deleted"
                                 ? "text-red-600 border-red-300"
-                                : "text-green-600 border-green-300"
+                                : staged === "moved"
+                                  ? "text-amber-600 border-amber-300"
+                                  : "text-green-600 border-green-300"
                         }`}>
-                            {staged === "deleted" ? "Deleting" : "Edited"}
+                            {staged === "deleted" ? "Deleting" : staged === "moved" ? "Moving" : "Edited"}
                         </span>
                     )}
                 </div>
@@ -217,7 +227,7 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
             <div className="flex shrink-0 items-center gap-1">
                 {isMobile ? (
                     <Link
-                        href={materialPath}
+                        href={buildPath()}
                         onClick={(e) => e.stopPropagation()}
                         aria-label={`View ${title}`}
                     >
@@ -242,7 +252,7 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
                             <Info className="h-4 w-4 text-muted-foreground" />
                         </button>
                         <Link
-                            href={materialPath}
+                            href={buildPath()}
                             className="rounded-md p-2 hover:bg-muted"
                             title="Preview"
                             onClick={(e) => e.stopPropagation()}

@@ -190,7 +190,10 @@
 
 **Comment** (`comments`): Generic polymorphic comments via `target_type` + `target_id` fields.
 
-**Annotation** (`annotations`): Document annotations with `page_number`, `coordinates` (JSONB), and a text `body`.
+**Annotation** (`annotations`): Document annotations with `page_number`, `selection_text`, `position_data` (JSONB), and a text `body`.
+- **Self-referential threading:** Uses `thread_id` (links to the root of the conversation) and `reply_to_id` (links to the direct parent).
+- **Robustness:** Relationships use `post_update=True` to prevent circular dependency errors during batch deletions (e.g., when a material or directory is deleted).
+
 
 **Tag** (`tags`): Tags with `name` and optional `category`. Many-to-many with both materials and directories via `material_tags` and `directory_tags` junction tables.
 

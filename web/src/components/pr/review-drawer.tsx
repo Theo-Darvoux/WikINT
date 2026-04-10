@@ -36,6 +36,7 @@ import {
     Send,
     AlertTriangle,
     Clock,
+    Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -52,6 +53,8 @@ import {
 import { autoTitle, submitDirectOperations } from "@/lib/pr-client";
 import { StagedItemEditDialog } from "./staged-item-edit-dialog";
 import { useBrowseRefreshStore } from "@/lib/stores";
+import { PreviewDialog } from "./preview-dialog";
+import { apiFetch } from "@/lib/api-client";
 
 const OP_ICONS: Record<string, React.ElementType> = {
     create_material: FilePlus,
@@ -83,6 +86,7 @@ function OperationCard({
     index: number;
     onRemove: (i: number) => void;
     onEdit: (i: number) => void;
+    onPreview: (i: number) => void;
 }) {
     const op = unwrapOp(staged);
     const Icon = OP_ICONS[op.op] ?? FilePlus;
@@ -105,24 +109,35 @@ function OperationCard({
                     {expired && hasFileKey(op) && (
                         <p className="text-[11px] text-red-500 flex items-center gap-1 mt-0.5">
                             <AlertTriangle className="h-3 w-3" />
-                            Fichier expiré — supprimez cet élément
+                            Expired file — remove this item
                         </p>
                     )}
                     {expiringSoon && remaining !== null && (
                         <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1 mt-0.5">
                             <Clock className="h-3 w-3" />
-                            Expire dans {formatTimeRemaining(remaining)}
+                            Expires in {formatTimeRemaining(remaining)}
                         </p>
                     )}
                 </div>
                 <div className="flex items-center shrink-0">
+                    { !expired && hasFileKey(op) && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
+                            onClick={() => onPreview(index)}
+                            aria-label="File preview"
+                        >
+                            <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                    )}
                     { (op.op === "create_material" || op.op === "edit_material" || op.op === "create_directory" || op.op === "edit_directory") && (
                         <Button
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
                             onClick={() => onEdit(index)}
-                            aria-label="Éditer"
+                            aria-label="Edit"
                         >
                             <FilePenLine className="h-3.5 w-3.5" />
                         </Button>
@@ -132,7 +147,7 @@ function OperationCard({
                         size="icon"
                         className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
                         onClick={() => onRemove(index)}
-                        aria-label="Supprimer"
+                        aria-label="Remove"
                     >
                         <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -158,6 +173,27 @@ export function ReviewDrawer() {
     const [submitting, setSubmitting] = useState(false);
     const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+    // Preview state
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewMime, setPreviewMime] = useState<string | undefined>();
+    const [previewName, setPreviewName] = useState<string | undefined>();
+
+    const handlePreview = async (index: number) => {
+        const op = unwrapOp(operations[index]);
+        if (!hasFileKey(op) || !op.file_key) return;
+
+        try {
+            const res = await apiFetch<{ url: string }>(`/api/upload/preview?file_key=${encodeURIComponent(op.file_key)}`);
+            if (res.url) {
+                setPreviewUrl(res.url);
+                setPreviewName(op.file_name);
+                setPreviewMime(op.file_mime_type);
+            }
+        } catch (e: any) {
+            toast.error(e.message || "Unable to preview this file.");
+        }
+    };
 
     // Auto-fill title
     useEffect(() => {
@@ -205,7 +241,7 @@ export function ReviewDrawer() {
         setDescription("");
         setShowDiscardConfirm(false);
         setReviewOpen(false);
-        toast("Brouillon supprimé");
+        toast("Draft discarded");
     };
 
     // Summarize operation types
@@ -220,18 +256,26 @@ export function ReviewDrawer() {
 
     return (
         <>
+            {previewUrl && (
+                <PreviewDialog
+                    url={previewUrl}
+                    fileName={previewName}
+                    mimeType={previewMime}
+                    onClose={() => setPreviewUrl(null)}
+                />
+            )}
             <StagedItemEditDialog index={editingIndex} onClose={() => setEditingIndex(null)} />
             <Sheet open={reviewOpen} onOpenChange={setReviewOpen}>
                 <SheetContent side="right" className="flex w-full flex-col overflow-hidden sm:max-w-lg">
                     <SheetHeader className="space-y-1">
                         <SheetTitle className="flex items-center gap-2">
-                            Brouillon de contribution
+                            Contribution Draft
                             <Badge variant="secondary" className="text-xs">
-                                {operations.length} modification{operations.length !== 1 ? "s" : ""}
+                                {operations.length} change{operations.length !== 1 ? "s" : ""}
                             </Badge>
                         </SheetTitle>
                         <SheetDescription>
-                            Vérifiez les modifications avant de les soumettre pour validation.
+                            Review your changes before submitting for review.
                         </SheetDescription>
                     </SheetHeader>
 
@@ -263,10 +307,10 @@ export function ReviewDrawer() {
                             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
                             <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium text-red-700 dark:text-red-400">
-                                    {expiredCount} fichier{expiredCount !== 1 ? "s" : ""} expiré{expiredCount !== 1 ? "s" : ""}
+                                    {expiredCount} expired file{expiredCount !== 1 ? "s" : ""}
                                 </p>
                                 <p className="text-xs text-red-600/80 dark:text-red-400/70 mt-0.5">
-                                    Les fichiers téléversés sont supprimés après 72 heures. Supprimez les éléments expirés ou téléversez-les à nouveau.
+                                    Uploaded files are deleted after 72 hours. Remove expired items or re-upload them.
                                 </p>
                                 <Button
                                     variant="outline"
@@ -274,11 +318,11 @@ export function ReviewDrawer() {
                                     className="mt-2 h-7 text-xs border-red-300 text-red-600 hover:bg-red-100 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950/50"
                                     onClick={() => {
                                         const removed = purgeExpired();
-                                        toast(`${removed} élément${removed !== 1 ? "s" : ""} supprimé${removed !== 1 ? "s" : ""}`);
+                                        toast(`${removed} item${removed !== 1 ? "s" : ""} removed`);
                                     }}
                                 >
                                     <Trash2 className="mr-1.5 h-3 w-3" />
-                                    Supprimer les expirés
+                                    Remove expired
                                 </Button>
                             </div>
                         </div>
@@ -287,7 +331,7 @@ export function ReviewDrawer() {
                         <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/30 my-4">
                             <Clock className="h-4 w-4 shrink-0 text-amber-500" />
                             <p className="text-xs text-amber-700 dark:text-amber-400">
-                                {expiringSoonCount} fichier{expiringSoonCount !== 1 ? "s" : ""} bientôt expiré{expiringSoonCount !== 1 ? "s" : ""} — soumettez avant l&apos;expiration
+                                {expiringSoonCount} file{expiringSoonCount !== 1 ? "s" : ""} expiring soon — submit before they expire
                             </p>
                         </div>
                     )}
@@ -302,11 +346,12 @@ export function ReviewDrawer() {
                                     index={i}
                                     onRemove={removeOperation}
                                     onEdit={setEditingIndex}
+                                    onPreview={handlePreview}
                                 />
                             ))}
                             {operations.length === 0 && (
                                 <p className="py-8 text-center text-sm text-muted-foreground">
-                                    Aucune modification en attente.
+                                    No pending changes.
                                 </p>
                             )}
                         </div>
@@ -321,11 +366,11 @@ export function ReviewDrawer() {
                                 htmlFor="pr-title"
                                 className="text-sm font-medium"
                             >
-                                Titre de la contribution
+                                Contribution Title
                             </label>
                             <Input
                                 id="pr-title"
-                                placeholder="Décrivez vos modifications…"
+                                placeholder="Describe your changes…"
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
                                 maxLength={300}
@@ -336,14 +381,14 @@ export function ReviewDrawer() {
                                 htmlFor="pr-desc"
                                 className="text-sm font-medium"
                             >
-                                Note pour les modérateurs{" "}
+                                Note for moderators{" "}
                                 <span className="text-muted-foreground">
-                                    (optionnel)
+                                    (optional)
                                 </span>
                             </label>
                             <Textarea
                                 id="pr-desc"
-                                placeholder="Contexte supplémentaire…"
+                                placeholder="Additional context…"
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
                                 maxLength={1000}
@@ -363,7 +408,7 @@ export function ReviewDrawer() {
                             ) : (
                                 <Send className="h-4 w-4" />
                             )}
-                            Proposer la contribution
+                            Submit Contribution
                         </Button>
                         <Button
                             variant="ghost"
@@ -371,7 +416,7 @@ export function ReviewDrawer() {
                             disabled={operations.length === 0 || submitting}
                             className="w-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         >
-                            Annuler toutes les modifications
+                            Discard all changes
                         </Button>
                     </div>
                 </SheetContent>
@@ -384,11 +429,11 @@ export function ReviewDrawer() {
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="text-destructive">
-                            Annuler le brouillon ?
+                            Discard draft?
                         </DialogTitle>
                         <DialogDescription>
-                            Vous allez supprimer définitivement {operations.length}{" "}
-                            modification{operations.length !== 1 ? "s" : ""} en attente. Cette action est irréversible.
+                            You are about to permanently delete {operations.length}{" "}
+                            pending change{operations.length !== 1 ? "s" : ""}. This action cannot be undone.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter className="gap-2 sm:gap-0 mt-2">
@@ -396,7 +441,7 @@ export function ReviewDrawer() {
                             variant="ghost"
                             onClick={() => setShowDiscardConfirm(false)}
                         >
-                            Retour
+                            Back
                         </Button>
                         <Button
                             variant="destructive"
@@ -404,7 +449,7 @@ export function ReviewDrawer() {
                             onClick={handleClear}
                         >
                             <Trash2 className="h-4 w-4" />
-                            Supprimer
+                            Delete
                         </Button>
                     </DialogFooter>
                 </DialogContent>

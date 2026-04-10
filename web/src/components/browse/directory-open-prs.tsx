@@ -5,7 +5,7 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/api-client";
 import { Badge } from "@/components/ui/badge";
 import {
-    GitPullRequest,
+    Send,
     FilePlus,
     FilePenLine,
     FileX,
@@ -79,7 +79,7 @@ export function DirectoryOpenPRs({ directoryId }: DirectoryOpenPRsProps) {
     return (
         <div className="rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-800/50 dark:bg-amber-950/20">
             <div className="flex items-center gap-2 px-4 py-2.5 border-b border-amber-200/60 dark:border-amber-800/40">
-                <GitPullRequest className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                <Send className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                 <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
                     {prs.length} open contribution{prs.length !== 1 ? "s" : ""}{" "}
                     in this folder
@@ -97,7 +97,7 @@ export function DirectoryOpenPRs({ directoryId }: DirectoryOpenPRsProps) {
                             href={`/pull-requests/${pr.id}`}
                             className="flex items-center gap-3 px-4 py-2.5 hover:bg-amber-100/50 dark:hover:bg-amber-900/20 transition-colors group"
                         >
-                            <GitPullRequest className="h-4 w-4 shrink-0 text-green-500" />
+                            <Send className="h-4 w-4 shrink-0 text-amber-600" />
                             <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="text-sm font-medium truncate group-hover:underline">

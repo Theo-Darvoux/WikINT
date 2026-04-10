@@ -7,6 +7,7 @@ export interface UserBrief {
     avatar_url: string | null;
     role: string;
     onboarded: boolean;
+    auto_approve: boolean;
 }
 
 interface AuthState {

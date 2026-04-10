@@ -59,7 +59,7 @@ export function NewFolderDialog({
     const handleDraft = () => {
         if (!canSubmit) return;
         addOperation(buildOp());
-        toast.success(`Ajouté au brouillon : Dossier "${name.trim()}"`);
+        toast.success(`Added to draft: Folder "${name.trim()}"`);
         setName("");
         setDescription("");
         setTags([]);
@@ -97,20 +97,20 @@ export function NewFolderDialog({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <FolderPlus className="h-5 w-5 text-green-600" />
-                        Nouveau dossier
+                        New folder
                     </DialogTitle>
                     <DialogDescription>
-                        Création d'un dossier
+                        Creating a folder
                         {parentName ? (
                             <>
                                 {" "}
-                                dans{" "}
+                                in{" "}
                                 <span className="font-medium text-foreground">
                                     {parentName}
                                 </span>
                             </>
                         ) : (
-                            " à la racine"
+                            " at the root"
                         )}
                         .
                     </DialogDescription>
@@ -122,13 +122,13 @@ export function NewFolderDialog({
                             htmlFor="folder-name"
                             className="text-sm font-medium"
                         >
-                            Nom du dossier
+                            Folder name
                         </label>
                         <Input
                             id="folder-name"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            placeholder="ex: Semaine 5"
+                            placeholder="e.g. Week 5"
                             maxLength={100}
                             disabled={submitting}
                             autoFocus
@@ -141,14 +141,14 @@ export function NewFolderDialog({
                         >
                             Description{" "}
                             <span className="text-muted-foreground">
-                                (optionnel)
+                                (optional)
                             </span>
                         </label>
                         <Textarea
                             id="folder-desc"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            placeholder="Que contient ce dossier ?"
+                            placeholder="What does this folder contain?"
                             maxLength={500}
                             disabled={submitting}
                             rows={2}
@@ -171,7 +171,7 @@ export function NewFolderDialog({
                         disabled={submitting}
                         className="sm:mr-auto"
                     >
-                        Annuler
+                        Cancel
                     </Button>
                     <Button
                         variant="outline"
@@ -180,7 +180,7 @@ export function NewFolderDialog({
                         className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
                     >
                         <Plus className="h-4 w-4" />
-                        Brouillon
+                        Draft
                     </Button>
                     {!isDraftParent && (
                         <Button
@@ -193,7 +193,7 @@ export function NewFolderDialog({
                             ) : (
                                 <Send className="h-4 w-4" />
                             )}
-                            Créer direct
+                            Create directly
                         </Button>
                     )}
                 </DialogFooter>

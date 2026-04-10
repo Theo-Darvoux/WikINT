@@ -22,6 +22,7 @@ class UserUpdateIn(BaseModel):
     bio: str | None = None
     academic_year: str | None = None
     avatar_url: str | None = None
+    auto_approve: bool | None = None
 
 
 class UserOut(BaseModel):
@@ -33,6 +34,7 @@ class UserOut(BaseModel):
     bio: str | None
     academic_year: str | None
     onboarded: bool
+    auto_approve: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}

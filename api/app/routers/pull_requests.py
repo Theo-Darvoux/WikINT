@@ -12,7 +12,7 @@ from app.core.database import get_db
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.core.storage import object_exists
 from app.dependencies.auth import get_current_user
-from app.models.material import Material
+from app.models.material import Material, MaterialVersion
 from app.models.pull_request import PRComment, PRFileClaim, PRStatus, PullRequest
 from app.models.security import VirusScanResult
 from app.models.upload import Upload
@@ -170,8 +170,8 @@ async def create_pull_request(
                 "Please wait for that contribution to be reviewed first."
             )
 
-    # Auto-approve for privileged users
-    if current_user.role in (UserRole.BUREAU, UserRole.VIEUX):
+    # Auto-approve for privileged users if their setting is enabled
+    if current_user.role in (UserRole.BUREAU, UserRole.VIEUX) and current_user.auto_approve:
         pr.status = PRStatus.APPROVED
         pr.reviewed_by = current_user.id
         await apply_pr(db, pr, current_user.id)
@@ -425,12 +425,46 @@ async def get_pull_request_preview(
         raise BadRequestError("Operation index out of range")
 
     op = pr.payload[op_index]
-    if not op.get("file_key"):
+    
+    file_key = op.get("file_key")
+    file_name = op.get("file_name")
+    file_mime_type = op.get("file_mime_type")
+
+    # Handle move_item preview resolution
+    if not file_key and op.get("op") == "move_item" and op.get("target_type") == "material":
+        target_id_raw = op.get("target_id")
+        if target_id_raw:
+            target_id_str = str(target_id_raw)
+            if target_id_str.startswith("$"):
+                # Reference to a temp_id in the same PR (e.g. moving a newly created item)
+                source_op = next((o for o in pr.payload if o.get("temp_id") == target_id_str), None)
+                if source_op:
+                    file_key = source_op.get("file_key")
+                    file_name = source_op.get("file_name")
+                    file_mime_type = source_op.get("file_mime_type")
+            else:
+                # Reference to a real material UUID
+                try:
+                    target_uuid = uuid.UUID(target_id_str)
+                    # Fetch latest material version
+                    mv = await db.scalar(
+                        select(MaterialVersion)
+                        .where(MaterialVersion.material_id == target_uuid)
+                        .order_by(desc(MaterialVersion.version_number))
+                        .limit(1)
+                    )
+                    if mv:
+                        file_key = mv.file_key
+                        file_name = mv.file_name
+                        file_mime_type = mv.file_mime_type
+                except (ValueError, TypeError):
+                    pass
+
+    if not file_key:
         raise NotFoundError("No file to preview for this operation")
 
     from app.core.storage import generate_presigned_get
 
-    file_key = str(op["file_key"])
     # Legacy V1: after approval, files were moved from uploads/ to materials/
     if pr.status == "approved" and file_key.startswith("uploads/"):
         file_key = file_key.replace("uploads/", "materials/", 1)
@@ -441,10 +475,14 @@ async def get_pull_request_preview(
 
     url = await generate_presigned_get(
         file_key,
-        filename=str(op["file_name"]) if op.get("file_name") else None,
-        content_type=str(op["file_mime_type"]) if op.get("file_mime_type") else None,
+        filename=file_name,
+        content_type=file_mime_type,
     )
-    return {"url": url}
+    return {
+        "url": url,
+        "file_name": file_name,
+        "file_mime_type": file_mime_type,
+    }
 
 
 @router.get("/{id}/comments", response_model=list[PRCommentOut])

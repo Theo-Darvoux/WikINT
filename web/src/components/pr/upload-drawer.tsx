@@ -669,8 +669,8 @@ export function UploadDrawer({
 
     const stageLabel =
         doneFiles.length === files.length
-            ? `Continuer vers le brouillon (${doneFiles.length})`
-            : `Ajouter au brouillon (${doneFiles.length}/${files.length})`;
+            ? `Continue to draft (${doneFiles.length})`
+            : `Add to draft (${doneFiles.length}/${files.length})`;
 
     const handleStage = () => {
         // ── Explicit messaging for errors (U14) ──
@@ -733,7 +733,7 @@ export function UploadDrawer({
         setPendingDirPaths(new Map());
 
         const total = dirOps.length + matOps.length;
-        toast.success(`${total} modification${total > 1 ? "s" : ""} ajoutée${total > 1 ? "s" : ""} au brouillon`);
+        toast.success(`${total} change${total > 1 ? "s" : ""} added to draft`);
 
         if (errorFiles.length === 0) {
             onOpenChange(false);

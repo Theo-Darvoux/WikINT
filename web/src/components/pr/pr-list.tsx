@@ -5,8 +5,8 @@ import { apiFetch } from "@/lib/api-client";
 import { PRCard } from "./pr-card";
 import {
     Loader2,
-    GitPullRequest,
-    GitMerge,
+    Send,
+    CheckCircle2,
     XCircle,
     Inbox,
     ChevronLeft,
@@ -35,8 +35,8 @@ type StatusFilter = "open" | "approved" | "rejected" | null;
 
 const TABS: { value: StatusFilter; label: string; icon: React.ElementType }[] =
     [
-        { value: "open", label: "Open", icon: GitPullRequest },
-        { value: "approved", label: "Merged", icon: GitMerge },
+        { value: "open", label: "Pending", icon: Send },
+        { value: "approved", label: "Approved", icon: CheckCircle2 },
         { value: "rejected", label: "Rejected", icon: XCircle },
     ];
 
@@ -114,9 +114,9 @@ export function PRList() {
 
     const EmptyIcon =
         filterStatus === "open"
-            ? GitPullRequest
+            ? Send
             : filterStatus === "approved"
-              ? GitMerge
+              ? CheckCircle2
               : filterStatus === "rejected"
                 ? XCircle
                 : Inbox;

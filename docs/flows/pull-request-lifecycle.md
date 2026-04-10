@@ -104,9 +104,14 @@ Users and moderators can leave comments on the PR:
 
 The PR detail page (`/pull-requests/{id}`) renders:
 - Full operation list with visual diff (what will be created/edited/deleted)
-- File previews for uploaded materials
+- **Enriched move/delete summaries:** `move_item`, `delete_material`, and `delete_directory` operations resolve and display the item's name and path asynchronously (via `/materials/{id}` and `/directories/{id}/path`). Move operations show a from → to path indicator in the subtitle row.
+- **File previews for uploaded materials:**
+  - Create/edit ops with a staged upload link to `/pull-requests/{prId}/preview/{opIndex}`.
+  - Move/delete ops targeting existing materials show an inline **Preview** button that fetches `/materials/{id}/inline` and opens the `PreviewDialog` in-page.
 - Comment thread
 - Approve/Reject buttons (moderator-only)
+
+**Browse preview (`?preview_pr={id}`):** Items affected by `move_item` operations are displayed with an amber "Moving" badge (distinct from green "Edited" for edits and red "Deleting" for deletions) in both `DirectoryLineItem` and `MaterialLineItem`.
 
 ## Phase 4: Approval & Content Materialization
 

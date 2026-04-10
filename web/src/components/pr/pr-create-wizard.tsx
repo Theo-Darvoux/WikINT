@@ -222,9 +222,9 @@ export function PRCreateWizard() {
                 <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
                     <h2 className="text-xl font-semibold">Review & Submit</h2>
                     <div className="p-4 bg-muted/30 border rounded-lg space-y-2 text-sm">
-                        <p><strong>Action:</strong> {prType}</p>
+                        <p><strong>Action:</strong> {prType.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}</p>
                         <p><strong>Contribution Title:</strong> {title}</p>
-                        <p><strong>Target ID:</strong> {targetId || "Root"}</p>
+                        {targetId && <p className="text-muted-foreground text-xs font-mono break-all inline-flex items-center">Target Location specified</p>}
                         {itemName && <p><strong>Item Name:</strong> {itemName}</p>}
                         {fileKey && <p><strong>File Attached:</strong> Yes</p>}
                     </div>

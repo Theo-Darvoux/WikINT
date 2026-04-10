@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, Trash2, Shield, AlertTriangle, Sun, Moon } from "lucide-react";
+import { Download, Trash2, Shield, AlertTriangle, Sun, Moon, Zap, Check, X } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,11 +9,34 @@ import { useConfirmDialog } from "@/components/confirm-dialog";
 import { apiFetch } from "@/lib/api-client";
 import { performLogout } from "@/lib/auth-sync";
 import { toast } from "sonner";
+import { useAuthStore } from "@/lib/stores";
 
 export default function SettingsPage() {
     const [exporting, setExporting] = useState(false);
     const { show } = useConfirmDialog();
     const { theme, setTheme } = useTheme();
+    const { user, setUser } = useAuthStore();
+    const [updating, setUpdating] = useState(false);
+
+    const isAdmin = user?.role === "bureau" || user?.role === "vieux";
+
+    const handleToggleAutoApprove = async () => {
+        if (!user) return;
+        setUpdating(true);
+        const newValue = !user.auto_approve;
+        try {
+            const updated = await apiFetch<any>("/users/me", {
+                method: "PATCH",
+                body: JSON.stringify({ auto_approve: newValue }),
+            });
+            setUser({ ...user, auto_approve: updated.auto_approve });
+            toast.success(newValue ? "Auto-approbation activée" : "Auto-approbation désactivée");
+        } catch {
+            toast.error("Échec de la mise à jour");
+        } finally {
+            setUpdating(false);
+        }
+    };
 
     const handleExport = async () => {
         setExporting(true);
@@ -83,6 +106,43 @@ export default function SettingsPage() {
                     </Button>
                 </CardContent>
             </Card>
+            
+            {isAdmin && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                            <Zap className="h-4 w-4 text-amber-500" />
+                            Contributions
+                        </CardTitle>
+                        <CardDescription>
+                            Gérez comment vos modifications sont publiées sur la plateforme.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                                <p className="text-sm font-medium">Auto-approbation</p>
+                                <p className="text-xs text-muted-foreground mr-8">
+                                    Vos modifications sont publiées immédiatement sans passer par une contribution (PR) en attente.
+                                </p>
+                            </div>
+                            <Button
+                                variant={user?.auto_approve ? "default" : "outline"}
+                                size="sm"
+                                onClick={handleToggleAutoApprove}
+                                disabled={updating}
+                                className="shrink-0 gap-2"
+                            >
+                                {user?.auto_approve ? (
+                                    <><Check className="h-4 w-4" /> Activée</>
+                                ) : (
+                                    <><X className="h-4 w-4" /> Désactivée</>
+                                )}
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             <Card>
                 <CardHeader>

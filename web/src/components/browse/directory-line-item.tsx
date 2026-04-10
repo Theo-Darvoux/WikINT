@@ -9,13 +9,15 @@ import { useUIStore } from "@/lib/stores";
 
 interface DirectoryLineItemProps {
     directory: Record<string, unknown>;
-    staged?: "edited" | "deleted" | null;
+    staged?: "edited" | "deleted" | "moved" | null;
     selectMode?: boolean;
     selected?: boolean;
     onToggleSelect?: () => void;
+    /** When set, appended as ?preview_pr= to preserve preview mode across navigation */
+    previewPrId?: string;
 }
 
-export function DirectoryLineItem({ directory, staged, selectMode, selected, onToggleSelect }: DirectoryLineItemProps) {
+export function DirectoryLineItem({ directory, staged, selectMode, selected, onToggleSelect, previewPrId }: DirectoryLineItemProps) {
     const isMobile = useIsMobile();
     const { openSidebar } = useUIStore();
     const pathname = usePathname();
@@ -30,7 +32,8 @@ export function DirectoryLineItem({ directory, staged, selectMode, selected, onT
 
     const buildPath = () => {
         const base = pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
-        return `${base}/${slug}`;
+        const dirPath = `${base}/${slug}`;
+        return previewPrId ? `${dirPath}?preview_pr=${previewPrId}` : dirPath;
     };
 
     const handleChat = (e: React.MouseEvent) => {
@@ -57,7 +60,9 @@ export function DirectoryLineItem({ directory, staged, selectMode, selected, onT
         ? "border-l-2 border-l-red-400 bg-red-50/50 dark:bg-red-950/20"
         : staged === "edited"
           ? "border-l-2 border-l-green-400 bg-green-50/50 dark:bg-green-950/20"
-          : "";
+          : staged === "moved"
+            ? "border-l-2 border-l-amber-400 bg-amber-50/50 dark:bg-amber-950/20"
+            : "";
 
     return (
         <div
@@ -72,18 +77,20 @@ export function DirectoryLineItem({ directory, staged, selectMode, selected, onT
                     className="shrink-0"
                 />
             )}
-            <Folder className={`h-5 w-5 shrink-0 ${staged === "deleted" ? "text-red-500" : "text-blue-500"}`} />
+            <Folder className={`h-5 w-5 shrink-0 ${staged === "deleted" ? "text-red-500" : staged === "moved" ? "text-amber-500" : "text-blue-500"}`} />
 
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                    <span className={`block truncate font-medium ${staged === "deleted" ? "line-through text-red-700 dark:text-red-400" : ""}`}>{name}</span>
+                    <span className={`block truncate font-medium ${staged === "deleted" ? "line-through text-red-700 dark:text-red-400" : staged === "moved" ? "text-amber-700 dark:text-amber-400" : ""}`}>{name}</span>
                     {staged && (
                         <span className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${
                             staged === "deleted"
                                 ? "text-red-600 border-red-300"
-                                : "text-green-600 border-green-300"
+                                : staged === "moved"
+                                  ? "text-amber-600 border-amber-300"
+                                  : "text-green-600 border-green-300"
                         }`}>
-                            {staged === "deleted" ? "Deleting" : "Edited"}
+                            {staged === "deleted" ? "Deleting" : staged === "moved" ? "Moving" : "Edited"}
                         </span>
                     )}
                 </div>

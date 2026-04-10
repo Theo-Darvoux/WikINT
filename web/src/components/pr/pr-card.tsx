@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import {
-    GitPullRequest,
-    GitMerge,
+    Send,
+    CheckCircle2,
     XCircle,
     FilePlus,
     FilePenLine,
@@ -65,9 +65,9 @@ export function PRCard({ pr }: PullRequestProps) {
         : "?";
 
     const StatusIcon = isOpen
-        ? GitPullRequest
+        ? Send
         : isApproved
-          ? GitMerge
+          ? CheckCircle2
           : XCircle;
     const statusColor = isOpen
         ? "text-green-500"

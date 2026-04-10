@@ -344,6 +344,61 @@ async def list_my_uploads(
     )
 
 
+# ── GET /api/upload/preview ──────────────────────────────────────────────────
+
+@router.get("/preview")
+async def get_upload_preview(
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file_key: str = Query(...),
+) -> dict[str, str]:
+    """Retrieve a temporary presigned GET URL for an uploaded file in staging."""
+    user_id_str = str(user.id)
+
+    # Verify ownership
+    if file_key.startswith("cas/"):
+        from app.models.upload import Upload
+        from sqlalchemy import select
+
+        row = await db.scalar(
+            select(Upload.id).where(
+                Upload.final_key == file_key,
+                Upload.user_id == user.id,
+                Upload.status == "clean"
+            )
+        )
+        if not row:
+            raise BadRequestError("File could not be found or verified.")
+    elif file_key.startswith(f"quarantine/{user_id_str}/") or file_key.startswith(f"uploads/{user_id_str}/"):
+        pass  # Owned by user namespace
+    else:
+        from app.core.exceptions import ForbiddenError
+        raise ForbiddenError("You are not authorized to preview this file.")
+
+    # Refuse to serve unscanned quarantine files
+    if file_key.startswith("quarantine/"):
+        raise BadRequestError("File is still being processed and cannot be previewed yet.")
+
+    from app.core.storage import generate_presigned_get
+
+    # Try looking up filename and mimetype in the DB
+    from app.models.upload import Upload
+    from sqlalchemy import select
+    
+    upload_row = await db.scalar(
+        select(Upload).where(Upload.final_key == file_key, Upload.user_id == user.id)
+    )
+
+    filename = upload_row.filename if upload_row else None
+    content_type = upload_row.mime_type if upload_row else None
+
+    # Generate the URL
+    url = await generate_presigned_get(file_key, filename=filename, content_type=content_type)
+
+    return {"url": url}
+
+
+
 # ── Deprecated stubs ─────────────────────────────────────────────────────────
 
 

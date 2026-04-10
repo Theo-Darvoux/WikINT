@@ -292,6 +292,10 @@ class MoveItemOp(BaseModel):
     target_type: Literal["directory", "material"]
     target_id: uuid.UUID | str
     new_parent_id: uuid.UUID | str | None
+    # Enrichment for ghost rendering in PR previews
+    target_name: str | None = None
+    target_title: str | None = None
+    target_material_type: str | None = None
 
 
 def _get_op_discriminator(v: dict[str, object] | BaseModel) -> str:

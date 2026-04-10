@@ -6,6 +6,8 @@ export interface SelectedItem {
     name: string;
     /** Current parent directory ID (used to detect no-op moves) */
     parentId?: string | null;
+    /** For materials, the specific type (polycopie, annal, etc.) */
+    material_type?: string;
 }
 
 interface SelectionState {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useCallback, useEffect, useState, useMemo } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
 import { AuthGuard } from "@/components/auth-guard";
 import { DirectoryListing } from "@/components/browse/directory-listing";
@@ -10,6 +10,9 @@ import { SharedSidebar } from "@/components/sidebar/shared-sidebar";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { useUIStore, useBrowseRefreshStore } from "@/lib/stores";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Eye, X } from "lucide-react";
+import Link from "next/link";
 
 interface BrowseResponse {
     type: "directory_listing" | "material" | "attachment_listing";
@@ -108,6 +111,27 @@ function BrowseContent() {
     const [isFetching, setIsFetching] = useState(!browseCache.has(path));
     const [error, setError] = useState<string | null>(null);
 
+    // PR Preview mode
+    const searchParams = useSearchParams();
+    const previewPrId = searchParams.get("preview_pr");
+    const [previewPr, setPreviewPr] = useState<{ id: string; title: string; payload: any[] } | null>(null);
+
+    useEffect(() => {
+        if (previewPrId) {
+            apiFetch<any>(`/pull-requests/${previewPrId}`)
+                .then((pr) => {
+                    setPreviewPr({
+                        id: pr.id,
+                        title: pr.title,
+                        payload: pr.payload
+                    });
+                })
+                .catch(() => setPreviewPr(null));
+        } else {
+            setPreviewPr(null);
+        }
+    }, [previewPrId]);
+
     const fetchData = useCallback(async () => {
         setIsFetching(true);
         setError(null);
@@ -157,6 +181,26 @@ function BrowseContent() {
     return (
         <div className={`flex flex-1 gap-0 transition-opacity duration-200 ${isFetching ? "opacity-50 pointer-events-none" : "opacity-100"}`}>
             <div className={`flex-1 px-4 py-6 pb-20 md:pb-6 ${isDesktop && sidebarOpen ? "min-w-0" : ""}`}>
+                {previewPr && (
+                    <div className="mb-6 flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50/50 px-4 py-3 dark:border-blue-800/40 dark:bg-blue-950/20">
+                        <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/50">
+                                <Eye className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <div className="min-w-0">
+                                <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200">Contribution preview</h3>
+                                <p className="text-xs text-muted-foreground truncate">{previewPr.title}</p>
+                            </div>
+                        </div>
+                        <Button variant="ghost" size="sm" className="gap-2 text-blue-700 hover:bg-blue-100 dark:text-blue-300 dark:hover:bg-blue-900/50" asChild>
+                            <Link href={path ? `/browse/${path}` : "/browse"}>
+                                <X className="h-4 w-4" />
+                                Exit preview
+                            </Link>
+                        </Button>
+                    </div>
+                )}
+
                 {isDirectoryView && (
                     <DirectoryListing
                         directory={data.directory ?? null}
@@ -165,6 +209,8 @@ function BrowseContent() {
                         breadcrumbs={data.breadcrumbs}
                         isAttachmentListing={data.type === "attachment_listing"}
                         parentMaterial={data.parent_material ?? null}
+                        previewOperations={previewPr?.payload}
+                        previewPrId={previewPr?.id}
                     />
                 )}
             </div>

@@ -47,8 +47,8 @@ class Annotation(UUIDMixin, TimestampMixin, Base):
     material: Mapped[Material] = relationship(back_populates="annotations")
     author: Mapped[User | None] = relationship(back_populates="annotations")
     thread_root: Mapped[Annotation | None] = relationship(
-        remote_side="Annotation.id", foreign_keys=[thread_id]
+        remote_side="Annotation.id", foreign_keys=[thread_id], post_update=True
     )
     reply_to: Mapped[Annotation | None] = relationship(
-        remote_side="Annotation.id", foreign_keys=[reply_to_id]
+        remote_side="Annotation.id", foreign_keys=[reply_to_id], post_update=True
     )

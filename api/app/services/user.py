@@ -170,6 +170,7 @@ async def update_user_profile(
     bio: str | None = None,
     academic_year: str | None = None,
     avatar_url: str | None = None,
+    auto_approve: bool | None = None,
 ) -> User:
     from app.core.storage import delete_object, move_object
 
@@ -179,6 +180,8 @@ async def update_user_profile(
         user.bio = bio
     if academic_year is not None:
         user.academic_year = academic_year
+    if auto_approve is not None:
+        user.auto_approve = auto_approve
 
     if avatar_url is not None and avatar_url != user.avatar_url:
         final_url = avatar_url
@@ -237,6 +240,8 @@ async def export_user_data(db: AsyncSession, user: User) -> dict:
             "avatar_url": user.avatar_url,
             "created_at": user.created_at.isoformat() if user.created_at is not None else None,
             "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+            "auto_approve": user.auto_approve,
+            "is_flagged": user.is_flagged,
         },
         "consent": {
             "gdpr_consent": user.gdpr_consent,

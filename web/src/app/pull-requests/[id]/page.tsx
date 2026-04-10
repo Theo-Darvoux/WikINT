@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useState, useMemo } from "react";
 import { apiFetch } from "@/lib/api-client";
 import {
     Loader2,
@@ -27,7 +27,10 @@ import {
     Image,
     FileText,
     Video,
+    MapPin,
+    ArrowRight,
 } from "lucide-react";
+import { PreviewDialog } from "@/components/pr/preview-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -96,13 +99,13 @@ const OP_COLORS: Record<string, string> = {
 };
 
 const OP_LABELS: Record<string, string> = {
-    create_material: "Ajout de document",
-    edit_material: "Modification de document",
-    delete_material: "Suppression de document",
-    create_directory: "Création de dossier",
-    edit_directory: "Modification de dossier",
-    delete_directory: "Suppression de dossier",
-    move_item: "Déplacement",
+    create_material: "Add document",
+    edit_material: "Edit document",
+    delete_material: "Delete document",
+    create_directory: "Create folder",
+    edit_directory: "Edit folder",
+    delete_directory: "Delete folder",
+    move_item: "Move",
 };
 
 /** Fields worth displaying in the detail view (everything else is noise). */
@@ -110,14 +113,14 @@ const VISIBLE_FIELDS = new Set(["type", "tags", "description"]);
 
 const FRIENDLY_TYPES: Record<string, string> = {
     document: "Document",
-    polycopie: "Polycopié",
-    annal: "Annale",
+    polycopie: "Handout",
+    annal: "Past exam",
     cheatsheet: "Cheatsheet",
-    tip: "Conseil",
-    review: "Révision",
+    tip: "Tip",
+    review: "Review",
     discussion: "Discussion",
-    video: "Vidéo",
-    other: "Autre",
+    video: "Video",
+    other: "Other",
 };
 
 const STATUS_CONFIG: Record<
@@ -128,21 +131,42 @@ const STATUS_CONFIG: Record<
         Icon: Upload,
         color: "text-blue-600",
         bg: "bg-blue-500/10",
-        label: "En attente",
+        label: "Pending",
     },
     approved: {
         Icon: CheckCircle2,
         color: "text-green-600",
         bg: "bg-green-500/10",
-        label: "Publié",
+        label: "Published",
     },
     rejected: {
         Icon: XCircle,
         color: "text-red-600",
         bg: "bg-red-500/10",
-        label: "Refusé",
+        label: "Rejected",
     },
 };
+
+/* ── Types ───────────────────────────────────────────── */
+
+interface ResolvedItemDetails {
+    /** Display name of the item being moved or deleted */
+    itemName?: string;
+    /** Human-readable path of the item's current location */
+    sourcePath?: string;
+    /** Browse URL for the source location */
+    sourceUrl?: string;
+    /** Human-readable destination path (move only) */
+    destPath?: string;
+    /** Browse URL for the destination (move only) */
+    destUrl?: string;
+    /** Material ID for fetching inline preview */
+    materialId?: string;
+    /** MIME type for preview */
+    mimeType?: string;
+    /** File name for preview dialog */
+    fileName?: string;
+}
 
 /* ── Helpers ─────────────────────────────────────────── */
 
@@ -150,19 +174,19 @@ function opSummary(op: Record<string, unknown>): string {
     const opType = String(op.op ?? op.pr_type ?? "unknown");
     switch (opType) {
         case "create_material":
-            return `Ajouter « ${op.title} »`;
+            return `Add « ${op.title} »`;
         case "edit_material":
-            return `Modifier${op.title ? ` « ${op.title} »` : " le document"}`;
+            return `Edit${op.title ? ` « ${op.title} »` : " document"}`;
         case "delete_material":
-            return "Supprimer le document";
+            return "Delete document";
         case "create_directory":
-            return `Créer le dossier « ${op.name} »`;
+            return `Create folder « ${op.name} »`;
         case "edit_directory":
-            return `Renommer le dossier${op.name ? ` en « ${op.name} »` : ""}`;
+            return `Rename folder${op.name ? ` to « ${op.name} »` : ""}`;
         case "delete_directory":
-            return "Supprimer le dossier";
+            return "Delete folder";
         case "move_item":
-            return `Déplacer le ${op.target_type === "directory" ? "dossier" : "document"}`;
+            return `Move ${op.target_type === "directory" ? "folder" : "document"}`;
         default:
             return opType;
     }
@@ -190,16 +214,18 @@ function formatValue(value: unknown): React.ReactNode {
     return FRIENDLY_TYPES[str] ?? str;
 }
 
-/** Resolve the browse URL for a directory ID via the /path endpoint. */
-async function resolveBrowsePath(directoryId: string): Promise<string> {
+/** Resolve the browse URL and label for a directory ID via the /path endpoint. */
+async function resolveTargetPath(directoryId: string): Promise<{ url: string; label: string }> {
     try {
-        const path = await apiFetch<{ slug: string }[]>(
+        const path = await apiFetch<{ name: string; slug: string }[]>(
             `/directories/${directoryId}/path`,
         );
+        if (path.length === 0) return { url: "/browse", label: "Root" };
         const slugs = path.map((p) => p.slug).join("/");
-        return `/browse/${slugs}`;
+        const label = path.map((p) => p.name).join(" › ");
+        return { url: `/browse/${slugs}`, label };
     } catch {
-        return "/browse";
+        return { url: "/browse", label: "Root" };
     }
 }
 
@@ -214,7 +240,7 @@ function getInitials(name: string): string {
 
 /* ── Inline preview dialog ───────────────────────────── */
 
-function PreviewDialog({
+export function PreviewDialog_OMIT({
     url,
     mimeType,
     fileName,
@@ -238,7 +264,7 @@ function PreviewDialog({
                         {isImage && <Image className="h-4 w-4 text-blue-500" />}
                         {isVideo && <Video className="h-4 w-4 text-purple-500" />}
                         {!isPdf && !isImage && !isVideo && <Eye className="h-4 w-4 text-muted-foreground" />}
-                        {fileName ?? "Aperçu"}
+                        {fileName ?? "Preview"}
                     </DialogTitle>
                 </DialogHeader>
                 <div className="px-4 pb-4">
@@ -246,7 +272,7 @@ function PreviewDialog({
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                             src={url}
-                            alt={fileName ?? "Aperçu"}
+                            alt={fileName ?? "Preview"}
                             className="max-h-[70vh] w-full rounded-lg object-contain bg-muted/30"
                         />
                     )}
@@ -268,11 +294,11 @@ function PreviewDialog({
                     {!isImage && !isVideo && !isPdf && (
                         <div className="flex flex-col items-center gap-3 py-8 text-muted-foreground">
                             <Eye className="h-10 w-10 opacity-30" />
-                            <p className="text-sm">Aperçu non disponible pour ce type de fichier.</p>
+                            <p className="text-sm">Preview unavailable for this file type.</p>
                             <Button asChild variant="outline" size="sm">
                                 <a href={url} target="_blank" rel="noreferrer">
                                     <ExternalLink className="mr-2 h-3.5 w-3.5" />
-                                    Ouvrir dans un nouvel onglet
+                                    Open in new tab
                                 </a>
                             </Button>
                         </div>
@@ -296,17 +322,15 @@ function OperationRow({
     prStatus: string;
     index: number;
 }) {
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [loadingPreview, setLoadingPreview] = useState(false);
-    const [browseUrl, setBrowseUrl] = useState<string | null>(null);
-    const [isExpanded, setIsExpanded] = useState(false);
-    const [showPreviewDialog, setShowPreviewDialog] = useState(false);
+    const [targetInfo, setTargetInfo] = useState<{ url: string; label: string } | null>(null);
+    const [itemDetails, setItemDetails] = useState<ResolvedItemDetails | null>(null);
+    const [existingPreview, setExistingPreview] = useState<{ url: string; mimeType?: string; fileName?: string } | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
 
     const opType = String(op.op ?? op.pr_type ?? "unknown");
     const Icon = OP_ICONS[opType] ?? FilePlus;
     const colorClass = OP_COLORS[opType] ?? "";
     const hasFile = Boolean(op.file_key);
-    const isDir = opType.includes("directory");
     const isApproved = prStatus === "approved";
 
     // After approval: result_browse_path is already in the op
@@ -314,29 +338,188 @@ function OperationRow({
         ? `/browse/${String(op.result_browse_path)}`
         : null;
 
-    // (O8) Lazy-load preview only when expanded or if explicitly requested
+    const needsItemResolution =
+        opType === "delete_material" ||
+        opType === "delete_directory" ||
+        opType === "move_item";
+
+    // Resolve target path for create/edit ops (shows location context)
     useEffect(() => {
-        if (!hasFile || !isExpanded || previewUrl || loadingPreview) return;
+        if (needsItemResolution) return; // handled by the other effect
+        if (isApproved) return;
 
         let cancelled = false;
-        setLoadingPreview(true);
-        apiFetch<{ url: string }>(
-            `/pull-requests/${prId}/preview?opIndex=${index}`,
-        )
-            .then((res) => { if (!cancelled) setPreviewUrl(res.url); })
-            .catch(() => {})
-            .finally(() => { if (!cancelled) setLoadingPreview(false); });
-        return () => { cancelled = true; };
-    }, [prId, index, hasFile, isExpanded, previewUrl, loadingPreview]);
+        async function fetchInfo() {
+            let dirId = String(op.directory_id ?? op.parent_id ?? "");
+            const matId = String(op.material_id ?? "");
 
-    // Resolve browse URL for directory operations (only when NOT approved)
-    useEffect(() => {
-        if (isApproved) return;
-        const dirId = String(op.directory_id ?? op.parent_id ?? "");
-        if (isDir && dirId && !dirId.startsWith("$")) {
-            resolveBrowsePath(dirId).then(setBrowseUrl);
+            if (!dirId && matId && !matId.startsWith("$")) {
+                try {
+                    const mat = await apiFetch<{ directory_id: string | null }>(`/materials/${matId}`);
+                    if (mat.directory_id) dirId = mat.directory_id;
+                } catch { /* ignore */ }
+            }
+
+            if (dirId && !dirId.startsWith("$") && !cancelled) {
+                const info = await resolveTargetPath(dirId);
+                if (!cancelled) setTargetInfo(info);
+            }
         }
-    }, [op.directory_id, op.parent_id, isDir, isApproved]);
+
+        fetchInfo();
+        return () => { cancelled = true; };
+    }, [op.directory_id, op.parent_id, op.material_id, isApproved, needsItemResolution]);
+
+    // Resolve item name + paths for delete/move ops
+    useEffect(() => {
+        if (!needsItemResolution) return;
+
+        const matId = String(op.material_id ?? "");
+        const dirId = String(op.directory_id ?? "");
+        const targetId = String(op.target_id ?? "");
+
+        // Don't try to resolve temp IDs
+        if (matId.startsWith("$") || dirId.startsWith("$") || targetId.startsWith("$")) return;
+
+        let cancelled = false;
+
+        async function resolveDetails() {
+            try {
+                if (opType === "delete_material") {
+                    if (!matId) return;
+                    const mat = await apiFetch<{
+                        title: string;
+                        directory_id: string | null;
+                        current_version_info?: { file_mime_type?: string; file_name?: string } | null;
+                    }>(`/materials/${matId}`);
+                    if (cancelled) return;
+                    let sourcePath: string | undefined;
+                    let sourceUrl: string | undefined;
+                    if (mat.directory_id) {
+                        const info = await resolveTargetPath(mat.directory_id);
+                        if (!cancelled) { sourcePath = info.label; sourceUrl = info.url; }
+                    } else {
+                        sourcePath = "Root";
+                        sourceUrl = "/browse";
+                    }
+                    if (!cancelled) setItemDetails({
+                        itemName: mat.title,
+                        sourcePath,
+                        sourceUrl,
+                        materialId: matId,
+                        mimeType: mat.current_version_info?.file_mime_type ?? undefined,
+                        fileName: mat.current_version_info?.file_name ?? undefined,
+                    });
+
+                } else if (opType === "delete_directory") {
+                    if (!dirId) return;
+                    const path = await apiFetch<{ name: string; slug: string }[]>(`/directories/${dirId}/path`);
+                    if (cancelled) return;
+                    if (path.length === 0) { setItemDetails({ itemName: "Root" }); return; }
+                    const itemName = path[path.length - 1].name;
+                    const parentSegs = path.slice(0, -1);
+                    const sourcePath = parentSegs.length > 0
+                        ? parentSegs.map((p) => p.name).join(" › ")
+                        : "Root";
+                    const parentSlugs = parentSegs.map((p) => p.slug).join("/");
+                    if (!cancelled) setItemDetails({
+                        itemName,
+                        sourcePath,
+                        sourceUrl: parentSlugs ? `/browse/${parentSlugs}` : "/browse",
+                    });
+
+                } else if (opType === "move_item") {
+                    if (!targetId) return;
+                    const targetType = String(op.target_type ?? "");
+                    let itemName: string | undefined;
+                    let sourcePath: string | undefined;
+                    let sourceUrl: string | undefined;
+                    let materialId: string | undefined;
+                    let mimeType: string | undefined;
+                    let fileName: string | undefined;
+
+                    if (targetType === "material") {
+                        const mat = await apiFetch<{
+                            title: string;
+                            directory_id: string | null;
+                            current_version_info?: { file_mime_type?: string; file_name?: string } | null;
+                        }>(`/materials/${targetId}`);
+                        if (cancelled) return;
+                        itemName = mat.title;
+                        materialId = targetId;
+                        mimeType = mat.current_version_info?.file_mime_type ?? undefined;
+                        fileName = mat.current_version_info?.file_name ?? undefined;
+                        if (mat.directory_id) {
+                            const info = await resolveTargetPath(mat.directory_id);
+                            if (!cancelled) { sourcePath = info.label; sourceUrl = info.url; }
+                        } else {
+                            sourcePath = "Root";
+                            sourceUrl = "/browse";
+                        }
+                    } else {
+                        // directory
+                        const path = await apiFetch<{ name: string; slug: string }[]>(`/directories/${targetId}/path`);
+                        if (cancelled) return;
+                        if (path.length > 0) {
+                            itemName = path[path.length - 1].name;
+                            const parentSegs = path.slice(0, -1);
+                            sourcePath = parentSegs.length > 0
+                                ? parentSegs.map((p) => p.name).join(" › ")
+                                : "Root";
+                            const parentSlugs = parentSegs.map((p) => p.slug).join("/");
+                            sourceUrl = parentSlugs ? `/browse/${parentSlugs}` : "/browse";
+                        }
+                    }
+
+                    // Resolve destination
+                    const newParentId = op.new_parent_id ? String(op.new_parent_id) : null;
+                    let destPath = "Root";
+                    let destUrl = "/browse";
+                    if (newParentId && !newParentId.startsWith("$")) {
+                        const info = await resolveTargetPath(newParentId);
+                        if (!cancelled) { destPath = info.label; destUrl = info.url; }
+                    }
+
+                    if (!cancelled) setItemDetails({ itemName, sourcePath, sourceUrl, destPath, destUrl, materialId, mimeType, fileName });
+                }
+            } catch { /* Silently ignore — item may not exist (e.g., deleted after approval) */ }
+        }
+
+        resolveDetails();
+        return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [opType, op.material_id, op.directory_id, op.target_id, op.new_parent_id, op.target_type, needsItemResolution]);
+
+    // Fetch inline preview URL for an existing material
+    const handleExistingPreview = async () => {
+        const matId = itemDetails?.materialId;
+        if (!matId) return;
+        setPreviewLoading(true);
+        try {
+            const res = await apiFetch<{ url: string }>(`/materials/${matId}/inline`);
+            setExistingPreview({
+                url: res.url,
+                mimeType: itemDetails?.mimeType,
+                fileName: itemDetails?.fileName,
+            });
+        } catch {
+            // ignore
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    // Derive summary text using resolved item name when available
+    const displaySummary = (() => {
+        const name = itemDetails?.itemName;
+        if (opType === "delete_material") return `Delete « ${name ?? (op.title as string) ?? "document"} »`;
+        if (opType === "delete_directory") return `Delete folder « ${name ?? "folder"} »`;
+        if (opType === "move_item") {
+            const isDir = op.target_type === "directory";
+            return `Move ${isDir ? "folder " : ""}« ${name ?? (isDir ? "folder" : "document")} »`;
+        }
+        return opSummary(op);
+    })();
 
     // Visible metadata (type, tags, description only)
     const entries = Object.entries(op).filter(
@@ -345,26 +528,36 @@ function OperationRow({
 
     const showBrowseLink = isApproved
         ? Boolean(resultBrowsePath)
-        : isDir && browseUrl;
+        : targetInfo?.url;
 
-    const browseHref = isApproved ? resultBrowsePath : browseUrl;
-    const browseLabel = isApproved ? "Voir" : "Parcourir";
+    const browseHref = isApproved ? resultBrowsePath : targetInfo?.url;
+    const browseLabel = isApproved ? "View" : "Browse";
 
-    const mimeType = op.file_mime_type as string | undefined;
-    const fileName = op.file_name as string | undefined;
+    // For approved move ops, link to the new location
+    const approvedMoveHref = isApproved && opType === "move_item" && resultBrowsePath
+        ? resultBrowsePath
+        : null;
+
+    const canPreviewExisting = Boolean(itemDetails?.materialId) && !previewLoading;
 
     return (
         <>
+            {existingPreview && (
+                <PreviewDialog
+                    url={existingPreview.url}
+                    mimeType={existingPreview.mimeType}
+                    fileName={existingPreview.fileName}
+                    onClose={() => setExistingPreview(null)}
+                />
+            )}
             <AccordionItem
                 value={`op-${index}`}
                 className="border-b last:border-0"
-                onMouseEnter={() => { if (hasFile) setIsExpanded(true); }}
             >
-                {/* Row: trigger + preview buttons side by side */}
+                {/* Row: trigger + action buttons side by side */}
                 <AccordionPrimitive.Header className="flex items-center">
                     <AccordionPrimitive.Trigger
                         className="flex flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40 [&[data-state=open]>svg.chevron]:rotate-180"
-                        onClick={() => setIsExpanded(true)}
                     >
                         <div
                             className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border ${colorClass}`}
@@ -373,39 +566,98 @@ function OperationRow({
                         </div>
                         <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium">
-                                {opSummary(op)}
+                                {displaySummary}
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                                {OP_LABELS[opType] ?? opType}
-                            </p>
+                            {/* Subtitle: location context */}
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                                <span className={colorClass.split(" ")[0]}>{OP_LABELS[opType] ?? opType}</span>
+
+                                {/* Create/edit: show target directory */}
+                                {targetInfo && (
+                                    <>
+                                        <span className="opacity-40">·</span>
+                                        <div className="flex items-center gap-1 max-w-[200px]">
+                                            <MapPin className="h-3 w-3 shrink-0 opacity-60" />
+                                            <span className="truncate">{targetInfo.label}</span>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Move: show from → to */}
+                                {opType === "move_item" && itemDetails && (
+                                    <>
+                                        <span className="opacity-40">·</span>
+                                        {itemDetails.sourcePath && (
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <MapPin className="h-3 w-3 shrink-0 opacity-60" />
+                                                <span className="truncate max-w-[120px]">{itemDetails.sourcePath}</span>
+                                            </div>
+                                        )}
+                                        <ArrowRight className="h-3 w-3 shrink-0 opacity-60" />
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <MapPin className="h-3 w-3 shrink-0 opacity-60" />
+                                            <span className="truncate max-w-[120px]">
+                                                {isApproved && resultBrowsePath
+                                                    ? itemDetails.destPath ?? "Root"
+                                                    : (itemDetails.destPath ?? "Root")}
+                                            </span>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Delete: show current location */}
+                                {(opType === "delete_material" || opType === "delete_directory") && itemDetails?.sourcePath && (
+                                    <>
+                                        <span className="opacity-40">·</span>
+                                        <div className="flex items-center gap-1 max-w-[200px]">
+                                            <MapPin className="h-3 w-3 shrink-0 opacity-60" />
+                                            <span className="truncate">{itemDetails.sourcePath}</span>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         </div>
                         <ChevronDown className="chevron h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200" />
                     </AccordionPrimitive.Trigger>
 
-                    {/* Preview buttons — outside the trigger */}
+                    {/* Action buttons — outside the trigger */}
                     <div
                         className="flex shrink-0 items-center gap-1.5 pr-4"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        {/* Inline file preview */}
+                        {/* Preview staged upload (create/edit with file) */}
                         {hasFile && (
-                            loadingPreview ? (
-                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                            ) : previewUrl ? (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 gap-1.5 text-xs"
-                                    onClick={() => setShowPreviewDialog(true)}
-                                >
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 gap-1.5 text-xs"
+                                asChild
+                            >
+                                <Link href={`/pull-requests/${prId}/preview/${index}`}>
                                     <Eye className="h-3.5 w-3.5" />
-                                    Aperçu
-                                </Button>
-                            ) : null
+                                    Preview
+                                </Link>
+                            </Button>
                         )}
 
-                        {/* Browse / View link */}
-                        {showBrowseLink && browseHref && (
+                        {/* Preview existing material (for delete/move ops) */}
+                        {canPreviewExisting && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 gap-1.5 text-xs"
+                                onClick={handleExistingPreview}
+                                disabled={previewLoading}
+                            >
+                                {previewLoading
+                                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    : <Eye className="h-3.5 w-3.5" />}
+                                Preview
+                            </Button>
+                        )}
+
+                        {/* Browse location link for non-approved create/edit */}
+                        {showBrowseLink && browseHref && !needsItemResolution && (
                             <Button
                                 variant="ghost"
                                 size="sm"
@@ -415,6 +667,36 @@ function OperationRow({
                                 <Link href={browseHref}>
                                     <ExternalLink className="h-3.5 w-3.5" />
                                     {browseLabel}
+                                </Link>
+                            </Button>
+                        )}
+
+                        {/* Source link for delete ops */}
+                        {needsItemResolution && !isApproved && itemDetails?.sourceUrl && opType !== "move_item" && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 gap-1.5 text-xs"
+                                asChild
+                            >
+                                <Link href={itemDetails.sourceUrl}>
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                    Browse
+                                </Link>
+                            </Button>
+                        )}
+
+                        {/* For approved moves: link to final location */}
+                        {approvedMoveHref && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 gap-1.5 text-xs"
+                                asChild
+                            >
+                                <Link href={approvedMoveHref}>
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                    View
                                 </Link>
                             </Button>
                         )}
@@ -439,15 +721,6 @@ function OperationRow({
                     </AccordionContent>
                 )}
             </AccordionItem>
-
-            {showPreviewDialog && previewUrl && (
-                <PreviewDialog
-                    url={previewUrl}
-                    mimeType={mimeType}
-                    fileName={fileName}
-                    onClose={() => setShowPreviewDialog(false)}
-                />
-            )}
         </>
     );
 }
@@ -468,6 +741,42 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
     const [showRejectDialog, setShowRejectDialog] = useState(false);
     const [rejectReason, setRejectReason] = useState("");
     const [expandedItems, setExpandedItems] = useState<string[]>([]);
+    const [previewDirId, setPreviewDirId] = useState<string | null>(null);
+    const [previewPath, setPreviewPath] = useState<string | null>(null);
+
+    // Use applied_result for approved PRs (contains result_browse_path); fall back to payload
+    const operations: Record<string, unknown>[] = useMemo(() => {
+        if (!pr) return [];
+        return pr.status === "approved" && Array.isArray(pr.applied_result) && pr.applied_result.length > 0
+            ? pr.applied_result
+            : Array.isArray(pr.payload)
+                ? pr.payload
+                : [pr.payload] as Record<string, unknown>[];
+    }, [pr]);
+
+    useEffect(() => {
+        if (!pr) return;
+        // Find the first operation that points to a real directory
+        const findDir = async () => {
+            for (const op of operations) {
+                const dirId = (op.directory_id ?? op.parent_id) as string | undefined;
+                if (dirId && typeof dirId === "string" && !dirId.startsWith("$")) {
+                    setPreviewDirId(dirId);
+                    return;
+                }
+            }
+        };
+        findDir();
+    }, [pr, operations]);
+
+    useEffect(() => {
+        if (previewDirId) {
+            resolveTargetPath(previewDirId).then(info => setPreviewPath(info.url));
+        }
+    }, [previewDirId]);
+
+    const allItemValues = useMemo(() => operations.map((_, i) => `op-${i}`), [operations]);
+    const allExpanded = useMemo(() => expandedItems.length === allItemValues.length, [expandedItems, allItemValues]);
 
     useEffect(() => {
         let active = true;
@@ -491,9 +800,9 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
         try {
             await apiFetch(`/pull-requests/${id}/approve`, { method: "POST" });
             setPr((prev) => prev ? { ...prev, status: "approved" } : prev);
-            toast.success("Contribution publiée");
+            toast.success("Contribution published");
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Échec de la publication");
+            toast.error(e instanceof Error ? e.message : "Failed to publish");
         } finally {
             setActing(null);
         }
@@ -510,9 +819,9 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             });
             setPr((prev) => prev ? { ...prev, status: "rejected", rejection_reason: rejectReason.trim() } : prev);
             setRejectReason("");
-            toast("Contribution refusée");
+            toast("Contribution rejected");
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Échec du refus");
+            toast.error(e instanceof Error ? e.message : "Failed to reject");
         } finally {
             setActing(null);
         }
@@ -534,18 +843,11 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                 <XCircle className="h-10 w-10" />
                 <p className="text-sm">Contribution introuvable.</p>
                 <Button variant="ghost" size="sm" asChild>
-                    <Link href="/pull-requests">← Retour à la liste</Link>
+                    <Link href="/pull-requests">← Back to list</Link>
                 </Button>
             </div>
         );
     }
-
-    // Use applied_result for approved PRs (contains result_browse_path); fall back to payload
-    const operations: Record<string, unknown>[] = pr.status === "approved" && Array.isArray(pr.applied_result) && pr.applied_result.length > 0
-        ? pr.applied_result
-        : Array.isArray(pr.payload)
-            ? pr.payload
-            : [pr.payload];
 
     const typeCounts: Record<string, number> = {};
     for (const op of operations) {
@@ -569,8 +871,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
     const expiresDate = new Date(updatedDate.getTime() + 7 * 24 * 60 * 60 * 1000);
     const isExpiringSoon = pr.status === "open" && (expiresDate.getTime() - Date.now() < 24 * 60 * 60 * 1000);
 
-    const allItemValues = operations.map((_, i) => `op-${i}`);
-    const allExpanded = expandedItems.length === allItemValues.length;
+    const previewUrl = previewPath ? `${previewPath}?preview_pr=${id}` : `/browse?preview_pr=${id}`;
 
     return (
         <div className="container mx-auto max-w-4xl space-y-6 px-4 py-6 pb-20 md:pb-6">
@@ -589,7 +890,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
                     <div>
                         <p className="text-sm font-medium text-red-700 dark:text-red-400">
-                            Raison du refus
+                            Rejection reason
                         </p>
                         <p className="mt-1 text-sm text-red-600/90 dark:text-red-400/80">
                             {pr.rejection_reason}
@@ -601,20 +902,34 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             {/* ─── Header ─────────────────────────────── */}
             <div className="rounded-lg border bg-card shadow-sm">
                 <div className="space-y-4 p-6">
-                    {/* Status row */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${status.color} ${status.bg}`}
-                        >
-                            <StatusIcon className="h-3.5 w-3.5" />
-                            {status.label}
-                        </span>
-                    </div>
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-4 flex-1">
+                            {/* Status row */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${status.color} ${status.bg}`}
+                                >
+                                    <StatusIcon className="h-3.5 w-3.5" />
+                                    {status.label}
+                                </span>
+                            </div>
 
-                    {/* Title */}
-                    <h1 className="text-xl font-semibold leading-tight">
-                        {pr.title}
-                    </h1>
+                            {/* Title */}
+                            <h1 className="text-xl font-semibold leading-tight">
+                                {pr.title}
+                            </h1>
+                        </div>
+
+                        {pr.status === "open" && (
+                            <Button variant="outline" size="sm" className="gap-2 shrink-0 border-primary/20 hover:bg-primary/5 hover:text-primary transition-all" asChild>
+                                <Link href={previewUrl}>
+                                    <Eye className="h-4 w-4" />
+                                    <span className="hidden sm:inline">Browse preview</span>
+                                    <span className="sm:hidden">Preview</span>
+                                </Link>
+                            </Button>
+                        )}
+                    </div>
 
                     {/* Author + date */}
                     <div className="flex items-center gap-2 text-sm flex-wrap">
@@ -624,10 +939,10 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             </AvatarFallback>
                         </Avatar>
                         <span className="font-medium">
-                            {pr.author?.display_name || "[compte supprimé]"}
+                            {pr.author?.display_name || "[deleted account]"}
                         </span>
                         <span className="text-muted-foreground">
-                            soumis{" "}
+                            submitted{" "}
                             {formatDistanceToNow(new Date(pr.created_at), {
                                 addSuffix: true,
                             })}
@@ -638,8 +953,8 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                 <span className={`flex items-center gap-1 text-xs ${isExpiringSoon ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
                                     <Clock className="h-3 w-3" />
                                     {isExpiringSoon
-                                        ? `Expire ${formatDistanceToNow(expiresDate, { addSuffix: true })}`
-                                        : "Expire dans 7 jours si non traité"}
+                                        ? `Expires ${formatDistanceToNow(expiresDate, { addSuffix: true })}`
+                                        : "Expires in 7 days if not reviewed"}
                                 </span>
                             </>
                         )}
@@ -686,7 +1001,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                 ) : (
                                     <Check className="h-3.5 w-3.5" />
                                 )}
-                                Publier
+                                Publish
                             </Button>
                             <Button
                                 size="sm"
@@ -700,7 +1015,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                 ) : (
                                     <X className="h-3.5 w-3.5" />
                                 )}
-                                Refuser
+                                Reject
                             </Button>
                         </div>
                     </>
@@ -711,9 +1026,9 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             <div className="overflow-hidden rounded-lg border bg-card">
                 <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-2.5">
                     <span className="text-sm font-medium text-muted-foreground">
-                        Modifications proposées
+                        Proposed changes
                         <span className="ml-1.5 text-foreground/60">
-                            · {operations.length} modification
+                            · {operations.length} change
                             {operations.length !== 1 ? "s" : ""}
                         </span>
                     </span>
@@ -729,12 +1044,12 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             {allExpanded ? (
                                 <>
                                     <ChevronsDownUp className="h-3.5 w-3.5" />
-                                    Tout réduire
+                                    Collapse all
                                 </>
                             ) : (
                                 <>
                                     <ChevronsUpDown className="h-3.5 w-3.5" />
-                                    Tout développer
+                                    Expand all
                                 </>
                             )}
                         </Button>
@@ -772,10 +1087,10 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             <Dialog open={showApproveConfirm} onOpenChange={setShowApproveConfirm}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Publier cette contribution ?</DialogTitle>
+                        <DialogTitle>Publish this contribution?</DialogTitle>
                         <DialogDescription>
-                            {operations.length} modification{operations.length !== 1 ? "s" : ""} seront appliquées définitivement.
-                            Cette action ne peut pas être annulée.
+                            {operations.length} change{operations.length !== 1 ? "s" : ""} will be applied permanently.
+                            This action cannot be undone.
                         </DialogDescription>
                     </DialogHeader>
                     {/* Quick summary of operations */}
@@ -791,20 +1106,20 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                         })}
                         {operations.length > 10 && (
                             <p className="text-xs text-muted-foreground">
-                                + {operations.length - 10} autres modifications
+                                + {operations.length - 10} more changes
                             </p>
                         )}
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setShowApproveConfirm(false)}>
-                            Annuler
+                            Cancel
                         </Button>
                         <Button
                             className="bg-green-600 hover:bg-green-700 text-white"
                             onClick={handleApprove}
                         >
                             <Check className="mr-2 h-4 w-4" />
-                            Publier
+                            Publish
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -814,15 +1129,15 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             <Dialog open={showRejectDialog} onOpenChange={(open) => { setShowRejectDialog(open); if (!open) setRejectReason(""); }}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Refuser cette contribution</DialogTitle>
+                        <DialogTitle>Reject this contribution</DialogTitle>
                         <DialogDescription>
-                            Expliquez pourquoi cette contribution est refusée.
-                            Cette raison sera visible par l&apos;auteur.
+                            Explain why this contribution is being rejected.
+                            This reason will be visible to the author.
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-2">
                         <Textarea
-                            placeholder="Ex : Le document est en double, le titre n'est pas assez descriptif…"
+                            placeholder="E.g. The document is a duplicate, the title is not descriptive enough…"
                             value={rejectReason}
                             onChange={(e) => setRejectReason(e.target.value)}
                             rows={4}
@@ -830,13 +1145,13 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             autoFocus
                         />
                         <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>{rejectReason.trim().length < 10 ? `${10 - rejectReason.trim().length} caractères min.` : ""}</span>
+                            <span>{rejectReason.trim().length < 10 ? `${10 - rejectReason.trim().length} chars min.` : ""}</span>
                             <span>{rejectReason.length}/1000</span>
                         </div>
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => { setShowRejectDialog(false); setRejectReason(""); }}>
-                            Annuler
+                            Cancel
                         </Button>
                         <Button
                             variant="destructive"
@@ -844,7 +1159,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             onClick={handleReject}
                         >
                             <X className="mr-2 h-4 w-4" />
-                            Refuser
+                            Reject
                         </Button>
                     </DialogFooter>
                 </DialogContent>

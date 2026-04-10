@@ -93,6 +93,9 @@ export interface MoveItemOp {
     target_type: "directory" | "material";
     target_id: string;
     new_parent_id: string | null;
+    target_name?: string | null;
+    target_title?: string | null;
+    target_material_type?: string | null;
 }
 
 export type Operation =

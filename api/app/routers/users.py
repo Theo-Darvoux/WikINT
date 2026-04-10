@@ -63,6 +63,7 @@ async def patch_me(
         bio=data.bio,
         academic_year=data.academic_year,
         avatar_url=data.avatar_url,
+        auto_approve=data.auto_approve,
     )
     return UserOut.model_validate(updated)
 
