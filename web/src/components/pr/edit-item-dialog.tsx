@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
     Dialog,
     DialogContent,
@@ -18,6 +17,7 @@ import { toast } from "sonner";
 import { useStagingStore, type Operation } from "@/lib/staging-store";
 import { submitDirectOperations } from "@/lib/pr-client";
 import { TagInput } from "@/components/ui/tag-input";
+import { useBrowseRefreshStore } from "@/lib/stores";
 
 interface EditItemDialogProps {
     open: boolean;
@@ -35,7 +35,6 @@ export function EditItemDialog({
     target,
 }: EditItemDialogProps) {
     const addOperation = useStagingStore((s) => s.addOperation);
-    const router = useRouter();
     const isMaterial = target.type === "material";
 
     // Pre-fill from current values
@@ -52,6 +51,7 @@ export function EditItemDialog({
     const [description, setDescription] = useState(currentDescription);
     const [tags, setTags] = useState<string[]>(currentTags);
     const [submitting, setSubmitting] = useState(false);
+    const triggerBrowseRefresh = useBrowseRefreshStore((s) => s.triggerBrowseRefresh);
 
     // Track whether anything actually changed
     const hasTagsChanged = () => {
@@ -105,7 +105,7 @@ export function EditItemDialog({
         setSubmitting(false);
         onOpenChange(false);
         if (result?.status === "approved") {
-            router.refresh();
+            triggerBrowseRefresh();
         }
     };
 

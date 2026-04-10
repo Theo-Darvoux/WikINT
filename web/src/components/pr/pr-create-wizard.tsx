@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { submitDirectOperations } from "@/lib/pr-client";
 import type { Operation } from "@/lib/staging-store";
+import { useBrowseRefreshStore } from "@/lib/stores";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +18,7 @@ type PRType = "create_material" | "edit_material" | "delete_material" | "create_
 export function PRCreateWizard() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const triggerBrowseRefresh = useBrowseRefreshStore((s) => s.triggerBrowseRefresh);
 
     // Form state
     const [step, setStep] = useState(1);
@@ -126,7 +128,7 @@ export function PRCreateWizard() {
         setSubmitting(false);
         if (result) {
             if (result.status === "approved") {
-                router.refresh();
+                triggerBrowseRefresh();
             }
             router.push(`/pull-requests/${result.id}`);
         }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
     Dialog,
     DialogContent,
@@ -18,6 +17,7 @@ import { toast } from "sonner";
 import { useStagingStore, type Operation } from "@/lib/staging-store";
 import { TagInput } from "@/components/ui/tag-input";
 import { submitDirectOperations } from "@/lib/pr-client";
+import { useBrowseRefreshStore } from "@/lib/stores";
 
 interface NewFolderDialogProps {
     open: boolean;
@@ -33,13 +33,13 @@ export function NewFolderDialog({
     parentId,
     parentName,
 }: NewFolderDialogProps) {
-    const router = useRouter();
     const addOperation = useStagingStore((s) => s.addOperation);
     const nextTempId = useStagingStore((s) => s.nextTempId);
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
     const [tags, setTags] = useState<string[]>([]);
     const [submitting, setSubmitting] = useState(false);
+    const triggerBrowseRefresh = useBrowseRefreshStore((s) => s.triggerBrowseRefresh);
 
     const canSubmit = name.trim().length >= 1 && !submitting;
     const isDraftParent = parentId?.startsWith("$") ?? false;
@@ -76,7 +76,7 @@ export function NewFolderDialog({
         setTags([]);
         onOpenChange(false);
         if (result?.status === "approved") {
-            router.refresh();
+            triggerBrowseRefresh();
         }
     };
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
     Download,
     Edit,
@@ -26,6 +25,7 @@ import { useStagingStore, type Operation } from "@/lib/staging-store";
 import { submitDirectOperations } from "@/lib/pr-client";
 import { useDownload } from "@/hooks/use-download";
 import { usePrint } from "@/hooks/use-print";
+import { useBrowseRefreshStore } from "@/lib/stores";
 import {
     Dialog,
     DialogContent,
@@ -226,7 +226,7 @@ interface ActionsTabProps {
 }
 
 export function ActionsTab({ target }: ActionsTabProps) {
-    const router = useRouter();
+    const triggerBrowseRefresh = useBrowseRefreshStore((s) => s.triggerBrowseRefresh);
     const addOperation = useStagingStore((s) => s.addOperation);
     const [editDialogOpen, setEditDialogOpen] = useState(false);
     
@@ -290,7 +290,7 @@ export function ActionsTab({ target }: ActionsTabProps) {
         setDeleting(false);
         setDeleteDialogOpen(false);
         if (result?.status === "approved") {
-            router.refresh();
+            triggerBrowseRefresh();
         }
     };
 

@@ -51,6 +51,7 @@ import {
 } from "@/lib/staging-store";
 import { autoTitle, submitDirectOperations } from "@/lib/pr-client";
 import { StagedItemEditDialog } from "./staged-item-edit-dialog";
+import { useBrowseRefreshStore } from "@/lib/stores";
 
 const OP_ICONS: Record<string, React.ElementType> = {
     create_material: FilePlus,
@@ -143,6 +144,7 @@ function OperationCard({
 
 export function ReviewDrawer() {
     const router = useRouter();
+    const triggerBrowseRefresh = useBrowseRefreshStore((s) => s.triggerBrowseRefresh);
     const operations = useStagingStore((s) => s.operations) ?? [];
     const reviewOpen = useStagingStore((s) => s.reviewOpen);
     const setReviewOpen = useStagingStore((s) => s.setReviewOpen);
@@ -189,7 +191,7 @@ export function ReviewDrawer() {
             setDescription("");
             setReviewOpen(false);
             if (result.status === "approved") {
-                router.refresh();
+                triggerBrowseRefresh();
             } else {
                 router.push(`/pull-requests/${result.id}`);
             }

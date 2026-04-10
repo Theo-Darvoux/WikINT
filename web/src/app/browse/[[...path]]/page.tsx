@@ -8,7 +8,7 @@ import { DirectoryListing } from "@/components/browse/directory-listing";
 import { MaterialViewer } from "@/components/browse/material-viewer";
 import { SharedSidebar } from "@/components/sidebar/shared-sidebar";
 import { useIsDesktop } from "@/hooks/use-media-query";
-import { useUIStore } from "@/lib/stores";
+import { useUIStore, useBrowseRefreshStore } from "@/lib/stores";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface BrowseResponse {
@@ -90,6 +90,7 @@ function BrowseContent() {
     const params = useParams();
     const isDesktop = useIsDesktop();
     const { sidebarOpen, closeSidebar } = useUIStore();
+    const refreshCount = useBrowseRefreshStore((s) => s.refreshCount);
 
     const path = params.path
         ? Array.isArray(params.path)
@@ -126,8 +127,10 @@ function BrowseContent() {
 
     useEffect(() => {
         closeSidebar();
+        // Bust cache on explicit refresh (e.g. after admin direct-submit)
+        if (refreshCount > 0) browseCache.delete(path);
         fetchData();
-    }, [path, fetchData, closeSidebar]);
+    }, [path, refreshCount, fetchData, closeSidebar]);
 
     const isLikelyMaterial = Boolean(params.path && Array.isArray(params.path) && params.path.length >= 3);
 

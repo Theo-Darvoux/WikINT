@@ -21,6 +21,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { submitDirectOperations } from "@/lib/pr-client";
+import { useBrowseRefreshStore } from "@/lib/stores";
 import {
     Plus,
     Upload,
@@ -148,6 +149,7 @@ export function DirectoryListing({
     parentMaterial = null,
 }: DirectoryListingProps) {
     const router = useRouter();
+    const triggerBrowseRefresh = useBrowseRefreshStore((s) => s.triggerBrowseRefresh);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [newFolderOpen, setNewFolderOpen] = useState(false);
     const [showActions, setShowActions] = useState(false);
@@ -873,8 +875,8 @@ export function DirectoryListing({
                                 setBatchDeleteOps(null);
                                 setSelectMode(false);
                                 if (result?.status === "approved") {
-                                    router.refresh();
-                                }
+                                        triggerBrowseRefresh();
+                                    }
                             }
                         }} className="gap-2">
                             {submittingBatch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Supprimer
@@ -918,8 +920,8 @@ export function DirectoryListing({
                                     setBatchPasteOps(null);
                                     clearClipboard();
                                     if (result?.status === "approved") {
-                                        router.refresh();
-                                    }
+                                            triggerBrowseRefresh();
+                                        }
                                 }
                             }} className="gap-2">
                                 {submittingBatch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Déplacer direct

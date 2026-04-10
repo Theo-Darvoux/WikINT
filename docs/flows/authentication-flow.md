@@ -123,6 +123,7 @@ Same flow as code verification, but:
 - Looks up email from Redis: `magic:{token}` → email
 - Token is **single-use** (deleted from Redis after verification)
 - The frontend's `/login/verify` page detects the `?token=` query parameter and automatically submits this endpoint
+- `/login/verify` is treated as a **public route** by the `LayoutShell` auth guard — it is exempt from both the unauthenticated redirect to `/login` and the global loading-spinner overlay, so verification can complete before the user is authenticated
 
 ## Phase 3: Authenticated Requests
 

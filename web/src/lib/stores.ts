@@ -62,6 +62,21 @@ export const useUIStore = create<UIState>((set) => ({
     toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 }));
 
+// ---------------------------------------------------------------------------
+// Browse refresh store — incremented after a direct-approved PR so the browse
+// page re-fetches immediately without a manual page reload.
+// ---------------------------------------------------------------------------
+interface BrowseRefreshState {
+    refreshCount: number;
+    triggerBrowseRefresh: () => void;
+}
+
+export const useBrowseRefreshStore = create<BrowseRefreshState>((set) => ({
+    refreshCount: 0,
+    triggerBrowseRefresh: () =>
+        set((state) => ({ refreshCount: state.refreshCount + 1 })),
+}));
+
 interface NotificationState {
     unreadCount: number;
     setUnreadCount: (count: number) => void;

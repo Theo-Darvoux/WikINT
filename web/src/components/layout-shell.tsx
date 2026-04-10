@@ -40,13 +40,14 @@ export function LayoutShell({ children }: { children: ReactNode }) {
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
-        if (!isLoading && !isAuthenticated && pathname !== "/login") {
+        const isPublicRoute = pathname === "/login" || pathname === "/login/verify";
+        if (!isLoading && !isAuthenticated && !isPublicRoute) {
             router.push("/login");
         }
     }, [isLoading, isAuthenticated, pathname, router]);
 
-    const isLoginPage = pathname === "/login";
-    const shouldHideContent = !isLoginPage && (isLoading || !isAuthenticated);
+    const isPublicPage = pathname === "/login" || pathname === "/login/verify";
+    const shouldHideContent = !isPublicPage && (isLoading || !isAuthenticated);
     const isOffline = useOffline();
 
     return (

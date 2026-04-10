@@ -240,6 +240,17 @@ Privileged users (`BUREAU`, `VIEUX`) can skip the review period by selecting "Di
 2. Immediately triggers `apply_pr()`.
 3. Returns the enriched `applied_result` in the response, allowing the UI to navigate to the new content instantly.
 
+#### Client-Side Immediate Refresh
+
+After a direct submission succeeds (`result.status === "approved"`), all submission entry points call `triggerBrowseRefresh()` from `useBrowseRefreshStore` (in `web/src/lib/stores.ts`). This increments a `refreshCount` counter.
+
+The browse page (`web/src/app/browse/[[...path]]/page.tsx`) subscribes to `refreshCount` as a `useEffect` dependency. When it changes, the page:
+1. Deletes the stale cache entry for the current path from the module-level `browseCache` Map.
+2. Re-fetches the directory listing from the API immediately.
+
+This replaces the previous `router.refresh()` approach, which only re-ran server-component fetches and did not re-trigger the browse page's client-side `fetchData` when the URL path was unchanged.
+
+
 ---
 
 ### Step 4.10: Rejection with Reason
