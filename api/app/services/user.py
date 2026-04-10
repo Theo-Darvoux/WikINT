@@ -77,7 +77,7 @@ async def get_user_stats(db: AsyncSession, user_id: str) -> dict[str, int]:
     }
 
 
-async def get_recently_viewed(db: AsyncSession, user_id: str, limit: int = 10) -> list[dict]:
+async def get_recently_viewed(db: AsyncSession, user_id: str, limit: int = 10) -> list[dict[str, typing.Any]]:
     uid = uuid.UUID(str(user_id))
     from sqlalchemy.orm import selectinload
 
@@ -255,7 +255,7 @@ async def update_user_profile(
     return user
 
 
-async def export_user_data(db: AsyncSession, user: User) -> dict:
+async def export_user_data(db: AsyncSession, user: User) -> dict[str, typing.Any]:
     uid = user.id
 
     prs_result = await db.execute(select(PullRequest).where(PullRequest.author_id == uid))
@@ -288,7 +288,7 @@ async def export_user_data(db: AsyncSession, user: User) -> dict:
             "academic_year": user.academic_year,
             "role": user.role.value,
             "avatar_url": user.avatar_url,
-            "created_at": user.created_at.isoformat() if user.created_at is not None else None,
+            "created_at": user.created_at.isoformat(),
             "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
             "auto_approve": user.auto_approve,
             "is_flagged": user.is_flagged,
@@ -321,7 +321,7 @@ async def export_user_data(db: AsyncSession, user: User) -> dict:
                 "title": n.title,
                 "body": n.body,
                 "read": n.read,
-                "created_at": n.created_at.isoformat() if n.created_at is not None else None,
+                "created_at": n.created_at.isoformat(),
             }
             for n in notifications
         ],
@@ -329,7 +329,7 @@ async def export_user_data(db: AsyncSession, user: User) -> dict:
             {
                 "id": str(vh.id),
                 "material_id": str(vh.material_id),
-                "viewed_at": vh.viewed_at.isoformat() if vh.viewed_at is not None else None,
+                "viewed_at": vh.viewed_at.isoformat(),
             }
             for vh in view_history
         ],

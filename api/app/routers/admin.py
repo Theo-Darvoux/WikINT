@@ -1,6 +1,6 @@
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -25,7 +25,7 @@ ADMIN_ROLES = (UserRole.BUREAU, UserRole.VIEUX)
 async def admin_stats(
     _user: Annotated[User, Depends(require_moderator())],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> dict[str, Any]:
     user_count = (
         await db.scalar(select(func.count()).select_from(User))
         or 0

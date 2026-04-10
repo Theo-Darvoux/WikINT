@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import jwt
@@ -35,7 +36,7 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(payload, settings.secret_key.get_secret_value(), algorithm=ALGORITHM)
 
 
-def decode_token(token: str) -> dict:
+def decode_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, settings.secret_key.get_secret_value(), algorithms=[ALGORITHM])
 
 

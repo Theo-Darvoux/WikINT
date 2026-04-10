@@ -48,7 +48,8 @@ export interface UserProfile {
     role: string;
     bio: string | null;
     academic_year: string | null;
-    onboarded?: boolean;
+    onboarded: boolean;
+    auto_approve: boolean;
     created_at: string;
     prs_approved: number;
     prs_total: number;

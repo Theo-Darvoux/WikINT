@@ -1,3 +1,4 @@
+import typing
 import uuid
 from datetime import UTC, datetime
 
@@ -12,7 +13,7 @@ from app.models.view_history import ViewHistory
 
 def material_orm_to_dict(
     m: Material, *, attachment_count: int = 0, directory_path: str | None = None
-) -> dict:
+) -> dict[str, typing.Any]:
     """Convert a Material ORM instance to a plain dict safe for Pydantic validation.
 
     This avoids MissingGreenlet errors caused by SQLAlchemy lazy-loading
@@ -58,7 +59,7 @@ async def get_material_by_id(db: AsyncSession, material_id: str | uuid.UUID) -> 
     return material
 
 
-def check_material_access(user_id: uuid.UUID, material: dict) -> None:
+def check_material_access(user_id: uuid.UUID, material: dict[str, typing.Any]) -> None:
     """
     Authorization choke-point for material access.
 
@@ -94,7 +95,9 @@ async def get_material_file_info(db: AsyncSession, material_id: str | uuid.UUID)
     return version
 
 
-async def get_material_with_version(db: AsyncSession, material_id: str | uuid.UUID) -> dict:
+async def get_material_with_version(
+    db: AsyncSession, material_id: str | uuid.UUID
+) -> dict[str, typing.Any]:
 
     if isinstance(material_id, str):
         import uuid
@@ -163,7 +166,9 @@ async def get_material_version(
     return version
 
 
-async def get_material_attachments(db: AsyncSession, material_id: str | uuid.UUID) -> list[dict]:
+async def get_material_attachments(
+    db: AsyncSession, material_id: str | uuid.UUID
+) -> list[dict[str, typing.Any]]:
 
     if isinstance(material_id, str):
         import uuid

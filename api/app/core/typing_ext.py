@@ -12,6 +12,9 @@ class AnyAsyncIterator(Protocol):
 
 
 class S3Client(Protocol):
+    @property
+    def exceptions(self) -> Any: ...
+
     async def get_object(self, Bucket: str, Key: str, **kwargs: object) -> dict[str, object]: ...
     async def head_object(self, Bucket: str, Key: str, **kwargs: object) -> dict[str, object]: ...
     async def put_object(
@@ -20,6 +23,15 @@ class S3Client(Protocol):
     async def delete_object(self, Bucket: str, Key: str, **kwargs: object) -> dict[str, object]: ...
     async def list_objects_v2(
         self, Bucket: str, Prefix: str = "", **kwargs: object
+    ) -> dict[str, object]: ...
+    async def copy_object(
+        self,
+        Bucket: str,
+        CopySource: dict[str, str],
+        Key: str,
+        MetadataDirective: str | None = None,
+        ContentType: str | None = None,
+        **kwargs: object,
     ) -> dict[str, object]: ...
     async def upload_file(self, Filename: str, Bucket: str, Key: str, **kwargs: object) -> None: ...
     async def upload_fileobj(

@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlparse, urlunparse
 
 import aioboto3
@@ -104,7 +104,7 @@ async def create_multipart_upload(
     content_disposition: str | None = "attachment",
 ) -> str:
     """Initiate an S3 multipart upload. Returns the UploadId."""
-    params: dict = {
+    params: dict[str, Any] = {
         "Bucket": settings.s3_bucket,
         "Key": file_key,
         "ContentType": content_type,
@@ -113,7 +113,7 @@ async def create_multipart_upload(
         params["ContentDisposition"] = content_disposition
     async with get_s3_client() as client:
         resp = await client.create_multipart_upload(**params)
-        return resp["UploadId"]
+        return str(resp["UploadId"])
 
 
 async def upload_part(
@@ -131,7 +131,7 @@ async def upload_part(
             PartNumber=part_number,
             Body=body,
         )
-        return resp["ETag"]
+        return str(resp["ETag"])
 
 
 async def complete_multipart_upload(
@@ -186,7 +186,7 @@ async def upload_file_multipart(
         # Small file — single put_object
         with open(path, "rb") as fh:
             await upload_file(
-                fh,
+                fh.read(),
                 file_key,
                 content_type=content_type,
                 content_encoding=content_encoding,
@@ -231,7 +231,7 @@ async def upload_file(
     ``content_disposition=None`` to omit the header (e.g. for internal
     quarantine objects that are never served to end-users).
     """
-    extra_args: dict = {}
+    extra_args: dict[str, Any] = {}
     if content_type:
         extra_args["ContentType"] = content_type
     if content_encoding:
@@ -252,7 +252,7 @@ async def download_file(file_key: str, dest_path: str | Path) -> None:
     """Download an object from storage to a local path."""
     async with get_s3_client() as client:
         response = await client.get_object(Bucket=settings.s3_bucket, Key=file_key)
-        body = response["Body"]
+        body: Any = response["Body"]
         try:
             with open(dest_path, "wb") as f:
                 while True:
@@ -272,7 +272,7 @@ async def download_file_with_hash(file_key: str, dest_path: str | Path) -> str:
     hasher = hashlib.sha256()
     async with get_s3_client() as client:
         response = await client.get_object(Bucket=settings.s3_bucket, Key=file_key)
-        body = response["Body"]
+        body: Any = response["Body"]
         try:
             with open(dest_path, "wb") as f:
                 while True:
@@ -300,12 +300,12 @@ async def generate_presigned_put(
     content_length: int | None = None,
     checksum_sha256: str | None = None,
 ) -> str:
-    params: dict = {
+    params: dict[str, Any] = {
         "Bucket": settings.s3_bucket,
         "Key": file_key,
         "ContentType": content_type,
     }
-    conditions: list = [
+    conditions: list[Any] = [
         {"bucket": settings.s3_bucket},
         ["starts-with", "$key", file_key],
         {"content-type": content_type},
@@ -359,7 +359,7 @@ async def generate_presigned_get(
             f"Refusing to generate presigned GET for unscanned quarantine key: {file_key}"
         )
 
-    params: dict = {
+    params: dict[str, Any] = {
         "Bucket": settings.s3_bucket,
         "Key": file_key,
     }
@@ -407,7 +407,7 @@ async def cas_object_exists(sha256: str) -> bool:
     return await object_exists(f"cas/{cas_id}")
 
 
-async def get_object_info(file_key: str) -> dict:
+async def get_object_info(file_key: str) -> dict[str, Any]:
     async with get_s3_client() as client:
         response = await client.head_object(Bucket=settings.s3_bucket, Key=file_key)
         return {
@@ -468,14 +468,15 @@ async def read_full_object(file_key: str) -> bytes:
     """
     async with get_s3_client() as client:
         response = await client.get_object(Bucket=settings.s3_bucket, Key=file_key)
-        content_length = int(response.get("ContentLength") or 0)
+        content_length = int(cast(Any, response.get("ContentLength")) or 0)
         if content_length > _READ_FULL_OBJECT_MAX_BYTES:
             raise ValueError(
                 f"Object {file_key!r} ({content_length} bytes) exceeds the "
                 f"{_READ_FULL_OBJECT_MAX_BYTES // 1024 // 1024} MiB limit for "
                 "read_full_object. Use download_file_with_hash for large files."
             )
-        return await response["Body"].read()
+        body: Any = response["Body"]
+        return await body.read()
 
 
 async def read_object_bytes(file_key: str, byte_count: int = MAGIC_HEADER_SIZE) -> bytes:
@@ -484,7 +485,8 @@ async def read_object_bytes(file_key: str, byte_count: int = MAGIC_HEADER_SIZE) 
             response = await client.get_object(
                 Bucket=settings.s3_bucket, Key=file_key, Range=f"bytes=0-{byte_count - 1}"
             )
-            return await response["Body"].read()
+            body: Any = response["Body"]
+            return await body.read()
         except client.exceptions.ClientError:
             return b""
 
@@ -501,30 +503,33 @@ async def update_object_content_type(file_key: str, content_type: str) -> None:
 
 
 @asynccontextmanager
-async def stream_object(file_key: str) -> AsyncGenerator:
+async def stream_object(file_key: str) -> AsyncGenerator[Any, None]:
     """Yield S3 response body for chunked reading via ``await body.read(size)``."""
     if _s3:
         response = await _s3.get_object(Bucket=settings.s3_bucket, Key=file_key)
+        body: Any = response["Body"]
         try:
-            yield response["Body"]
+            yield body
         finally:
-            response["Body"].close()
+            body.close()
         return
 
     async with get_s3_client() as client:
         response = await client.get_object(Bucket=settings.s3_bucket, Key=file_key)
-        yield response["Body"]
+        body: Any = response["Body"]
+        yield body
 
 
-async def list_multipart_uploads(prefix: str = "") -> AsyncIterator[dict[str, str | datetime]]:
+async def list_multipart_uploads(prefix: str = "") -> AsyncIterator[dict[str, Any]]:
     """Yield all in-progress S3 multipart uploads under the given prefix."""
     async with get_s3_client() as s3:
         paginator = s3.get_paginator("list_multipart_uploads")
-        kwargs: dict = {"Bucket": settings.s3_bucket}
+        kwargs: dict[str, Any] = {"Bucket": settings.s3_bucket}
         if prefix:
             kwargs["Prefix"] = prefix
         async for page in paginator.paginate(**kwargs):
-            for mp in page.get("Uploads", []):
+            uploads: list[dict[str, Any]] = page.get("Uploads", [])
+            for mp in uploads:
                 yield mp
 
 

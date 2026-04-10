@@ -1,9 +1,12 @@
 import asyncio
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+
 from app.core.database import async_session_factory
 from app.models.directory import Directory
 from app.models.pull_request import PullRequest
+
 
 async def check_recent_directories():
     async with async_session_factory() as db:

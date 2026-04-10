@@ -3,7 +3,7 @@ import hashlib
 import logging
 import warnings
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import httpx
 import yara
@@ -104,7 +104,7 @@ class MalwareScanner:
         """Run YARA + MalwareBazaar scans concurrently on a file path."""
         if bazaar_hash is None:
 
-            def _hash_file():
+            def _hash_file() -> str:
                 hasher = hashlib.sha256()
                 with open(file_path, "rb") as f:
                     for chunk in iter(lambda: f.read(64 * 1024), b""):
@@ -165,7 +165,7 @@ class MalwareScanner:
         if matches:
             rule_names = [m.rule for m in matches]
             logger.warning("YARA match in %s: %s", filename, ", ".join(rule_names))
-            return rule_names[0]
+            return cast(str, rule_names[0])
         return None
 
     async def _scan_yara_path(self, file_path: Path, filename: str) -> str | None:
@@ -186,7 +186,7 @@ class MalwareScanner:
         if matches:
             rule_names = [m.rule for m in matches]
             logger.warning("YARA match in %s: %s", filename, ", ".join(rule_names))
-            return rule_names[0]
+            return cast(str, rule_names[0])
         return None
 
     async def _check_malwarebazaar(self, sha256: str, filename: str) -> str | None:
@@ -246,7 +246,7 @@ class MalwareScanner:
             else:
                 threat = "known malware"
             logger.warning("MalwareBazaar hit for %s (sha256=%s): %s", filename, sha256, threat)
-            return threat
+            return cast(str, threat)
 
         logger.warning("MalwareBazaar unexpected status '%s' — skipping check.", status)
         return None
@@ -259,7 +259,7 @@ class MalwareScanner:
 
 def get_scanner(request: Request) -> MalwareScanner:
     """Retrieve the singleton scanner instance from app state."""
-    return request.app.state.scanner
+    return cast(MalwareScanner, request.app.state.scanner)
 
 
 # Singleton instance for code outside FastAPI request context (e.g. background tasks)

@@ -112,8 +112,6 @@ function TextPreview({ url, type }: { url: string; type: "markdown" | "code" | "
 
     useEffect(() => {
         let cancelled = false;
-        setLoading(true);
-        setError(false);
         fetch(url)
             .then((r) => r.text())
             .then((text) => { if (!cancelled) setContent(text); })
@@ -232,7 +230,7 @@ export function PreviewDialog({
                 </DialogHeader>
 
                 <div className={`flex-1 min-h-0 ${!isLarge ? "px-4 pb-4" : "overflow-hidden"}`}>
-                    {viewerType === "pdf" && <PdfPreview url={url} />}
+                    {viewerType === "pdf" && <PdfPreview key={url} url={url} />}
 
                     {viewerType === "image" && (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -258,7 +256,7 @@ export function PreviewDialog({
                     )}
 
                     {(viewerType === "markdown" || viewerType === "code" || viewerType === "csv") && (
-                        <TextPreview url={url} type={viewerType} />
+                        <TextPreview key={url} url={url} type={viewerType} />
                     )}
 
                     {viewerType === "generic" && (

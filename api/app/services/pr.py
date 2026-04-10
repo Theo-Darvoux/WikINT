@@ -1,4 +1,5 @@
 import re
+import typing
 import uuid
 from collections import defaultdict
 
@@ -44,7 +45,7 @@ def _resolve(value: str | None, id_map: dict[str, uuid.UUID]) -> uuid.UUID | Non
         raise BadRequestError(f"Invalid UUID: {s}")
 
 
-def _collect_temp_refs(op: dict) -> set[str]:
+def _collect_temp_refs(op: dict[str, typing.Any]) -> set[str]:
     """Collect all $-prefixed references from an operation dict (not its own temp_id)."""
     refs: set[str] = set()
     for key, val in op.items():
@@ -147,7 +148,7 @@ async def _unique_directory_slug(
     return f"{base}-{uuid.uuid4().hex[:8]}"
 
 
-def topo_sort_operations(operations: list[dict]) -> list[dict]:
+def topo_sort_operations(operations: list[dict[str, typing.Any]]) -> list[dict[str, typing.Any]]:
     """
     Topologically sort operations so that any op defining a temp_id
     comes before ops referencing that temp_id.  Preserves submission
@@ -195,7 +196,9 @@ def topo_sort_operations(operations: list[dict]) -> list[dict]:
     return [operations[i] for i in result]
 
 
-async def _resolve_mime_type(file_key: str, payload: dict, s3_mime: str | None = None) -> str:
+async def _resolve_mime_type(
+    file_key: str, payload: dict[str, typing.Any], s3_mime: str | None = None
+) -> str:
     """Determine MIME type. Trusts S3 metadata or payload hint over re-scanning."""
     if s3_mime and s3_mime != "application/octet-stream":
         return s3_mime
@@ -204,7 +207,7 @@ async def _resolve_mime_type(file_key: str, payload: dict, s3_mime: str | None =
     return payload.get("file_mime_type") or "application/octet-stream"
 
 
-async def _get_file_info(file_key: str) -> dict:
+async def _get_file_info(file_key: str) -> dict[str, typing.Any]:
     """Read the actual file size and content type from object storage."""
     from app.core.storage import get_object_info
 
@@ -218,7 +221,7 @@ async def _get_file_info(file_key: str) -> dict:
 
 
 async def _exec_create_material(
-    db: AsyncSession, p: dict, pr: PullRequest, id_map: dict[str, uuid.UUID]
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
 ) -> uuid.UUID:
     tags = p.get("tags", [])
     await get_or_create_tags(db, tags)
@@ -381,7 +384,7 @@ async def _exec_create_material(
 
 
 async def _exec_edit_material(
-    db: AsyncSession, p: dict, pr: PullRequest, id_map: dict[str, uuid.UUID]
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
 ) -> uuid.UUID:
     mat_id = _resolve(str(p["material_id"]), id_map)
     mat = await db.scalar(
@@ -477,7 +480,7 @@ async def _exec_edit_material(
 
 
 async def _exec_delete_material(
-    db: AsyncSession, p: dict, pr: PullRequest, id_map: dict[str, uuid.UUID]
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
 ) -> uuid.UUID:
     mat_id = _resolve(str(p["material_id"]), id_map)
     mat = await db.scalar(select(Material).where(Material.id == mat_id))
@@ -526,7 +529,7 @@ async def _exec_delete_material(
 
 
 async def _exec_create_directory(
-    db: AsyncSession, p: dict, pr: PullRequest, id_map: dict[str, uuid.UUID]
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
 ) -> uuid.UUID:
     tags = p.get("tags", [])
     tag_objs = []
@@ -559,7 +562,7 @@ async def _exec_create_directory(
 
 
 async def _exec_edit_directory(
-    db: AsyncSession, p: dict, pr: PullRequest, id_map: dict[str, uuid.UUID]
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
 ) -> uuid.UUID:
     dir_id = _resolve(str(p["directory_id"]), id_map)
     dir_obj = await db.scalar(
@@ -592,7 +595,7 @@ async def _exec_edit_directory(
 
 
 async def _exec_delete_directory(
-    db: AsyncSession, p: dict, pr: PullRequest, id_map: dict[str, uuid.UUID]
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
 ) -> uuid.UUID:
     dir_id = _resolve(str(p["directory_id"]), id_map)
     dir_obj = await db.scalar(select(Directory).where(Directory.id == dir_id))
@@ -610,7 +613,7 @@ async def _exec_delete_directory(
 
 
 async def _exec_move_item(
-    db: AsyncSession, p: dict, pr: PullRequest, id_map: dict[str, uuid.UUID]
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
 ) -> uuid.UUID:
     target_id = _resolve(str(p["target_id"]), id_map)
 
@@ -730,10 +733,10 @@ async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) 
 
     sorted_ops = topo_sort_operations(list(pr.payload))
     id_map: dict[str, uuid.UUID] = {}
-    result_ops: list[dict] = []
+    result_ops: list[dict[str, typing.Any]] = []
 
     for op in sorted_ops:
-        op_type = op.get("op") or op.get("pr_type")  # pr_type for legacy rows
+        op_type = str(op.get("op") or op.get("pr_type") or "")  # pr_type for legacy rows
         if not op_type:
             raise BadRequestError(f"Operation missing 'op' field: {op}")
 
@@ -741,7 +744,7 @@ async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) 
         if not executor:
             raise BadRequestError(f"Unknown operation type: {op_type}")
 
-        is_delete = "delete" in (op_type or "")
+        is_delete = "delete" in op_type
 
         # For deletes, capture the browse path BEFORE the item is removed
         pre_delete_browse_path: str | None = None
@@ -758,12 +761,12 @@ async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) 
         result_id = await executor(db, op, pr, id_map)
 
         # Register temp_id -> real UUID for downstream inter-op references
-        temp_id = op.get("temp_id")
+        temp_id = str(op.get("temp_id")) if op.get("temp_id") else None
         if temp_id:
             id_map[temp_id] = result_id
 
         # Build the enriched operation record for applied_result
-        enriched: dict = dict(op)
+        enriched: dict[str, typing.Any] = dict(op)
         enriched["result_id"] = str(result_id)
         if is_delete and pre_delete_browse_path:
             enriched["result_browse_path"] = pre_delete_browse_path

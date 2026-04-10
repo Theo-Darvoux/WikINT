@@ -38,8 +38,6 @@ export function PdfPreview({ url }: { url: string }) {
     useEffect(() => {
         let objectUrl: string | null = null;
         let cancelled = false;
-        setLoading(true);
-        setError(null);
         fetch(url)
             .then((r) => r.blob())
             .then((blob) => {

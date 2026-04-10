@@ -1,10 +1,14 @@
+from __future__ import annotations
+
 import hashlib
 import hmac as _hmac
 import json
 import logging
+from typing import Any
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from redis.asyncio import Redis
 
 from app.config import settings
 
@@ -91,24 +95,26 @@ return count
 """
 
 
-async def increment_cas_ref(redis, sha256: str, initial_data: dict | None = None) -> int:
+async def increment_cas_ref(
+    redis: Redis, sha256: str, initial_data: dict[str, Any] | None = None
+) -> int:
     """Atomically increment the CAS ref count. Returns the new count, or 0 on error."""
     cas_key = hmac_cas_key(sha256)
     try:
         if initial_data:
-            count = await redis.eval(_LUA_CAS_INCR, 1, cas_key, json.dumps(initial_data))
+            count = await redis.eval(_LUA_CAS_INCR, 1, cas_key, json.dumps(initial_data))  # type: ignore[no-untyped-call]
         else:
-            count = await redis.eval(_LUA_CAS_INCR, 1, cas_key)
+            count = await redis.eval(_LUA_CAS_INCR, 1, cas_key)  # type: ignore[no-untyped-call]
         return int(count) if count is not None else 1
     except Exception as exc:
         logger.warning("CAS ref increment failed for %s: %s", sha256, exc)
         return 0
 
 
-async def decrement_cas_ref(redis, sha256: str) -> None:
+async def decrement_cas_ref(redis: Redis, sha256: str) -> None:
     cas_key = hmac_cas_key(sha256)
     try:
-        await redis.eval(_LUA_CAS_DECR, 1, cas_key)
+        await redis.eval(_LUA_CAS_DECR, 1, cas_key)  # type: ignore[no-untyped-call]
     except Exception as exc:
         logger.warning("CAS ref decrement failed for %s: %s", sha256, exc)
 

@@ -58,7 +58,7 @@ async def _create_upload_row(
 
 async def _check_pending_cap(
     user_id: str,
-    redis: "Redis[bytes]",
+    redis: "Redis",
     *,
     privileged: bool = False,
     reserve_key: str | None = None,

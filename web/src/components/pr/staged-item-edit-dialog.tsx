@@ -34,32 +34,33 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
     const staged = index !== null ? operations[index] : null;
     const op = staged ? unwrapOp(staged) : null;
 
-    useEffect(() => {
-        if (!op) return;
-
-        if (op.op === "create_material") {
-            setTitle(op.title);
-            setDescription(op.description || "");
-            setTags(op.tags || []);
-        } else if (op.op === "create_directory") {
-            setTitle(op.name);
-            setDescription(op.description || "");
-            setTags(op.tags || []);
-        } else if (op.op === "edit_material") {
-            setTitle(op.title || "");
-            setDescription(op.description || "");
-            setTags(op.tags || []);
-        } else if (op.op === "edit_directory") {
-            setTitle(op.name || "");
-            setDescription(op.description || "");
-            setTags(op.tags || []);
-        } else {
-            // For other op types (move/delete), no editable fields
-            setTitle("");
-            setDescription("");
-            setTags([]);
+    const [prevOp, setPrevOp] = useState<Operation | null>(null);
+    if (op !== prevOp) {
+        setPrevOp(op);
+        if (op) {
+            if (op.op === "create_material") {
+                setTitle(op.title);
+                setDescription(op.description || "");
+                setTags(op.tags || []);
+            } else if (op.op === "create_directory") {
+                setTitle(op.name);
+                setDescription(op.description || "");
+                setTags(op.tags || []);
+            } else if (op.op === "edit_material") {
+                setTitle(op.title || "");
+                setDescription(op.description || "");
+                setTags(op.tags || []);
+            } else if (op.op === "edit_directory") {
+                setTitle(op.name || "");
+                setDescription(op.description || "");
+                setTags(op.tags || []);
+            } else {
+                setTitle("");
+                setDescription("");
+                setTags([]);
+            }
         }
-    }, [op]);
+    }
 
     const handleSave = () => {
         if (index === null || !op) return;

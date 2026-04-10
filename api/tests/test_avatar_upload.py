@@ -1,13 +1,15 @@
 import uuid
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from unittest.mock import patch, AsyncMock, MagicMock
-from pathlib import Path
 
-from app.models.user import User, UserRole
-from app.models.upload import Upload
 from app.core.security import create_access_token
+from app.models.upload import Upload
+from app.models.user import User, UserRole
+
 
 @pytest.fixture
 async def test_user(db_session: AsyncSession) -> User:
@@ -47,15 +49,15 @@ async def test_avatar_upload_flow(client: AsyncClient, db_session: AsyncSession,
          patch("app.services.user.upload_file", new_callable=AsyncMock) as mock_upload, \
          patch("app.services.user.delete_object", new_callable=AsyncMock) as mock_delete, \
          patch("app.services.user.process_avatar") as mock_process:
-        
+
         # Create a real dummy file to be "processed"
         import tempfile
         with tempfile.NamedTemporaryFile(suffix=".webp", delete=False) as tf:
             tf.write(b"dummy webp content")
             dummy_processed_path = Path(tf.name)
-        
+
         mock_process.return_value = dummy_processed_path
-        
+
         try:
             # 3. Call PATCH /api/users/me with the quarantine key
             response = await client.patch(

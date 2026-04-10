@@ -59,10 +59,15 @@ export function FilePreviewThumbnail({
 }) {
     const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
+    const [prevFile, setPrevFile] = useState<File | null>(null);
+    if (file !== prevFile) {
+        setPrevFile(file);
+        setObjectUrl(null);
+    }
+
     useEffect(() => {
         if (file.type.startsWith("image/")) {
             const url = URL.createObjectURL(file);
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setObjectUrl(url);
             return () => URL.revokeObjectURL(url);
         }
@@ -153,26 +158,32 @@ export function FilePreviewThumbnail({
 export function FilePreviewExpanded({ file }: { file: File }) {
     const [objectUrl, setObjectUrl] = useState<string | null>(null);
     const [textContent, setTextContent] = useState<string | null>(null);
-    const hasSetup = useRef<File | null>(null);
 
-    useEffect(() => {
-        if (hasSetup.current === file) return;
-        hasSetup.current = file;
+    const [prevFile, setPrevFile] = useState<File | null>(null);
+    if (file !== prevFile) {
+        setPrevFile(file);
         setTextContent(null);
         setObjectUrl(null);
+    }
+
+    useEffect(() => {
+        let cancelled = false;
 
         if (file.type.startsWith("image/") || file.type.startsWith("video/") || file.type.startsWith("audio/")) {
             const url = URL.createObjectURL(file);
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setObjectUrl(url);
             return () => URL.revokeObjectURL(url);
         }
 
         if (isTextFile(file) && file.size <= MAX_TEXT_PREVIEW_BYTES) {
             const reader = new FileReader();
-            reader.onload = (e) => setTextContent(e.target?.result as string ?? null);
+            reader.onload = (e) => {
+                if (!cancelled) setTextContent(e.target?.result as string ?? null);
+            };
             reader.readAsText(file);
         }
+
+        return () => { cancelled = true; };
     }, [file]);
 
     if (file.type.startsWith("image/") && objectUrl) {

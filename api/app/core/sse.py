@@ -2,22 +2,23 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator, Callable
+from typing import Any
 
-_user_queues: dict[uuid.UUID, list[asyncio.Queue[dict]]] = {}
-_topic_queues: dict[str, list[asyncio.Queue[dict]]] = {}
+_user_queues: dict[uuid.UUID, list[asyncio.Queue[dict[str, Any]]]] = {}
+_topic_queues: dict[str, list[asyncio.Queue[dict[str, Any]]]] = {}
 
 
 # --- User-keyed queues (1:N mapping, used for notifications) ---
 
 
-def register_user_queue(user_id: uuid.UUID) -> asyncio.Queue[dict]:
+def register_user_queue(user_id: uuid.UUID) -> asyncio.Queue[dict[str, Any]]:
     """Register an SSE queue for a user. Supports multiple concurrent connections."""
-    q: asyncio.Queue[dict] = asyncio.Queue()
+    q: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     _user_queues.setdefault(user_id, []).append(q)
     return q
 
 
-def unregister_user_queue(user_id: uuid.UUID, q: asyncio.Queue[dict]) -> None:
+def unregister_user_queue(user_id: uuid.UUID, q: asyncio.Queue[dict[str, Any]]) -> None:
     """Unregister a specific SSE queue for a user."""
     queues = _user_queues.get(user_id, [])
     try:
@@ -28,7 +29,7 @@ def unregister_user_queue(user_id: uuid.UUID, q: asyncio.Queue[dict]) -> None:
         _user_queues.pop(user_id, None)
 
 
-def broadcast_to_user(user_id: uuid.UUID, event: dict) -> None:
+def broadcast_to_user(user_id: uuid.UUID, event: dict[str, Any]) -> None:
     """Broadcast an event to all active SSE connections for a user."""
     for q in list(_user_queues.get(user_id, [])):
         q.put_nowait(event)
@@ -37,14 +38,14 @@ def broadcast_to_user(user_id: uuid.UUID, event: dict) -> None:
 # --- Topic-keyed queues (1:N mapping, used for material annotations) ---
 
 
-def register_topic_queue(topic: str) -> asyncio.Queue[dict]:
+def register_topic_queue(topic: str) -> asyncio.Queue[dict[str, Any]]:
     """Register a watcher queue for a topic (e.g. a material_id)."""
-    q: asyncio.Queue[dict] = asyncio.Queue()
+    q: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     _topic_queues.setdefault(topic, []).append(q)
     return q
 
 
-def unregister_topic_queue(topic: str, q: asyncio.Queue[dict]) -> None:
+def unregister_topic_queue(topic: str, q: asyncio.Queue[dict[str, Any]]) -> None:
     queues = _topic_queues.get(topic, [])
     try:
         queues.remove(q)
@@ -54,7 +55,7 @@ def unregister_topic_queue(topic: str, q: asyncio.Queue[dict]) -> None:
         _topic_queues.pop(topic, None)
 
 
-def broadcast_to_topic(topic: str, event: dict) -> None:
+def broadcast_to_topic(topic: str, event: dict[str, Any]) -> None:
     for q in list(_topic_queues.get(topic, [])):
         q.put_nowait(event)
 
@@ -63,11 +64,11 @@ def broadcast_to_topic(topic: str, event: dict) -> None:
 
 
 async def sse_event_stream(
-    queue: asyncio.Queue[dict],
+    queue: asyncio.Queue[dict[str, Any]],
     cleanup: Callable[[], None],
     event_name: str | None = None,
     keepalive_seconds: float = 30.0,
-) -> AsyncGenerator[dict, None]:
+) -> AsyncGenerator[dict[str, Any], None]:
     """
     Generic SSE event generator.
 

@@ -28,14 +28,18 @@ export function CsvViewer({ materialId }: CsvViewerProps) {
     const [page, setPage] = useState(0);
     const tableContainerRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-        let cancelled = false;
-
+    const [prevMaterialId, setPrevMaterialId] = useState(materialId);
+    if (materialId !== prevMaterialId) {
+        setPrevMaterialId(materialId);
         setLoading(true);
         setError(null);
         setHeaders([]);
         setRows([]);
         setPage(0);
+    }
+
+    useEffect(() => {
+        let cancelled = false;
 
         fetchMaterialFile(materialId)
             .then(async (res) => {

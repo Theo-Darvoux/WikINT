@@ -86,8 +86,6 @@ function TextPreview({ url, type }: { url: string; type: "markdown" | "code" | "
 
     useEffect(() => {
         let cancelled = false;
-        setLoading(true);
-        setError(false);
         fetch(url)
             .then((r) => r.text())
             .then((t) => { if (!cancelled) setContent(t); })
@@ -263,7 +261,7 @@ export default function PRPreviewPage({ params }: PageProps) {
                 {!loading && !error && presignedUrl && (
                     <>
                         {viewerType === "pdf" && (
-                            <PdfPreview url={presignedUrl} />
+                            <PdfPreview key={presignedUrl} url={presignedUrl} />
                         )}
                         {viewerType === "image" && (
                             <div className="flex h-full items-center justify-center bg-muted/10 p-4">
@@ -286,7 +284,7 @@ export default function PRPreviewPage({ params }: PageProps) {
                             </div>
                         )}
                         {(viewerType === "markdown" || viewerType === "code" || viewerType === "csv") && (
-                            <TextPreview url={presignedUrl} type={viewerType} />
+                            <TextPreview key={presignedUrl} url={presignedUrl} type={viewerType} />
                         )}
                         {viewerType === "generic" && (
                             <GenericFallback url={presignedUrl} fileName={fileName} mimeType={mimeType} />

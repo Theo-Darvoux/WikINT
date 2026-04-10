@@ -5,9 +5,11 @@ import { AuthGuard } from "@/components/auth-guard";
 import { ProfileView, ProfileSkeleton, type UserProfile } from "@/components/profile/profile-view";
 import { API_BASE, apiFetch, getClientId } from "@/lib/api-client";
 import { getAccessToken } from "@/lib/auth-tokens";
+import { useAuthStore } from "@/lib/stores";
 import { toast } from "sonner";
 
 function OwnProfileContent() {
+    const { setUser } = useAuthStore();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [isUploading, setIsUploading] = useState(false);
 
@@ -15,6 +17,7 @@ function OwnProfileContent() {
         try {
             const data = await apiFetch<UserProfile>("/users/me");
             setProfile(data);
+            setUser(data);
         } catch {
             queueMicrotask(() => {
                 toast.error("Failed to load profile");

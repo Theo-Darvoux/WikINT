@@ -23,18 +23,21 @@ interface MarkdownViewerProps {
     material?: Record<string, unknown>;
 }
 
-// Extend default sanitize schema to allow highlight.js classes
+import remarkMark from "@/lib/remark-mark";
+
 const sanitizeSchema = {
     ...defaultSchema,
+    tagNames: [...(defaultSchema.tagNames || []), "mark"],
     attributes: {
         ...defaultSchema.attributes,
         code: [...(defaultSchema.attributes?.code || []), "className"],
         span: [...(defaultSchema.attributes?.span || []), "className"],
         img: [...(defaultSchema.attributes?.img || []), "className", "src", "alt", "loading"],
+        mark: ["className"],
     },
 };
 
-const remarkPlugins = [remarkGfm, remarkWikiLink];
+const remarkPlugins = [remarkGfm, remarkWikiLink, remarkMark];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const rehypePlugins: any[] = [
     rehypeRaw,
@@ -149,46 +152,121 @@ export function MarkdownViewer({ materialId, material }: MarkdownViewerProps) {
             );
         },
         blockquote: ({ children }: any) => {
-            // Find the first paragraph and check if it starts with an Obsidian callout marker
             const allChildren = React.Children.toArray(children);
-            const firstChild = allChildren[0] as React.ReactElement<{ children: React.ReactNode, node?: { type: string } }>;
             
-            if (firstChild && (firstChild.type === "p" || (firstChild as any).props?.node?.type === "paragraph")) {
-                const pChildren = React.Children.toArray(firstChild.props.children);
-                const firstPChild = pChildren[0];
+            // Find the first actual block element, ignoring raw whitespace strings
+            const firstBlockIndex = allChildren.findIndex(
+                child => React.isValidElement(child) || (typeof child === "string" && child.trim() !== "")
+            );
+            
+            if (firstBlockIndex === -1) {
+                return <blockquote className="border-l-4 border-border pl-4 italic my-4">{children}</blockquote>;
+            }
 
-                if (typeof firstPChild === "string") {
-                    const match = firstPChild.match(/^\[!(\w+)([+-]?)\]\s*(.*)$/);
-                    if (match) {
-                        const type = match[1].toLowerCase() as CalloutType;
-                        const collapseMarker = match[2];
-                        const titleText = match[3];
-                        const collapsible = collapseMarker === "+" || collapseMarker === "-";
-                        const defaultOpen = collapseMarker !== "-";
+            const firstChild = allChildren[firstBlockIndex] as React.ReactElement<any>;
+            
+            // Extract children from the first block (usually a paragraph)
+            const firstBlockChildren = firstChild.props?.children || firstChild;
+            const pChildren = React.Children.toArray(firstBlockChildren);
+            
+            // Find the first actual inline content, ignoring raw whitespace strings
+            const firstContentIndex = pChildren.findIndex(
+                child => React.isValidElement(child) || (typeof child === "string" && child.trim() !== "")
+            );
+            
+            if (firstContentIndex === -1) {
+                return <blockquote className="border-l-4 border-border pl-4 italic my-4">{children}</blockquote>;
+            }
 
-                        // Remove the marker and title from the first paragraph
-                        const remainingPChildren = pChildren.slice(1);
-                        const otherChildren = allChildren.slice(1);
+            const firstPChild = pChildren[firstContentIndex];
+
+            const firstNodeText = typeof firstPChild === "string" ? firstPChild : getTextFromChildren(firstPChild);
+
+            if (firstNodeText) {
+                // Match the marker, allowing a few random leading characters to avoid BOM or zero-width-space issues
+                const match = firstNodeText.match(/^.{0,5}?\[!(\w+)([+-]?)\]/);
+                
+                if (match) {
+                    const type = match[1].toLowerCase() as CalloutType;
+                    const collapseMarker = match[2];
+                    const collapsible = collapseMarker === "+" || collapseMarker === "-";
+                    const defaultOpen = collapseMarker !== "-";
+
+                    const textAfterMatch = firstNodeText.slice(match[0].length).replace(/^[ \t]+/, ''); // remove leading spaces
+                    
+                    const titleElements = [];
+                    const bodyChildren = [];
+                    let foundNewline = false;
+
+                    const firstNewlineIndex = textAfterMatch.indexOf('\n');
+                    if (firstNewlineIndex !== -1) {
+                        const titlePart = textAfterMatch.slice(0, firstNewlineIndex);
+                        if (titlePart) titleElements.push(titlePart);
                         
-                        const newFirstParagraph = remainingPChildren.length > 0 
-                            ? React.cloneElement(firstChild, {
-                                ...firstChild.props,
-                                children: remainingPChildren
-                            })
-                            : null;
-
-                        return (
-                            <Callout 
-                                type={type} 
-                                collapsible={collapsible} 
-                                defaultOpen={defaultOpen}
-                                title={titleText ? titleText : undefined}
-                            >
-                                {newFirstParagraph}
-                                {otherChildren}
-                            </Callout>
-                        );
+                        const bodyPart = textAfterMatch.slice(firstNewlineIndex + 1);
+                        if (bodyPart.trim() !== '') bodyChildren.push(bodyPart);
+                        
+                        foundNewline = true;
+                        bodyChildren.push(...pChildren.slice(firstContentIndex + 1));
+                    } else {
+                        if (textAfterMatch) titleElements.push(textAfterMatch);
+                        
+                        for (let i = firstContentIndex + 1; i < pChildren.length; i++) {
+                            const child = pChildren[i];
+                            if (foundNewline) {
+                                bodyChildren.push(child);
+                            } else if (typeof child === "string") {
+                                const nlIndex = child.indexOf('\n');
+                                if (nlIndex !== -1) {
+                                    const titlePart = child.slice(0, nlIndex);
+                                    if (titlePart) titleElements.push(titlePart);
+                                    
+                                    const bodyPart = child.slice(nlIndex + 1);
+                                    if (bodyPart.trim() !== '') bodyChildren.push(bodyPart);
+                                    
+                                    foundNewline = true;
+                                } else {
+                                    titleElements.push(child);
+                                }
+                            } else {
+                                titleElements.push(child);
+                            }
+                        }
                     }
+
+                    // Clean up trailing quotes from the title if they were used for wrapping
+                    if (titleElements.length > 0) {
+                        let lastEl = titleElements[titleElements.length - 1];
+                        if (typeof lastEl === "string") {
+                            const strEl = lastEl as string;
+                            const trimmed = strEl.trimEnd();
+                            if (trimmed.endsWith("”") || trimmed.endsWith("\"") || trimmed.endsWith("'")) {
+                                titleElements[titleElements.length - 1] = trimmed.slice(0, -1);
+                            } else {
+                                titleElements[titleElements.length - 1] = trimmed;
+                            }
+                        }
+                    }
+
+                    const otherBlocks = allChildren.slice(firstBlockIndex + 1);
+
+                    
+                    let calloutContent = [];
+                    if (bodyChildren.length > 0) {
+                        calloutContent.push(React.cloneElement(firstChild, { ...firstChild.props, children: bodyChildren, key: "p-body" }));
+                    }
+                    calloutContent.push(...otherBlocks);
+
+                    return (
+                        <Callout 
+                            type={type} 
+                            collapsible={collapsible} 
+                            defaultOpen={defaultOpen}
+                            title={titleElements.length > 0 ? titleElements : undefined}
+                        >
+                            {calloutContent.length > 0 ? calloutContent : null}
+                        </Callout>
+                    );
                 }
             }
 
@@ -249,7 +327,8 @@ export function MarkdownViewer({ materialId, material }: MarkdownViewerProps) {
                     prose-table:border-collapse
                     prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2
                     prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2
-                    prose-headings:scroll-mt-20`}
+                    prose-headings:scroll-mt-20
+                    [&_mark]:bg-yellow-200 [&_mark]:text-yellow-900 dark:[&_mark]:bg-yellow-500/20 dark:[&_mark]:text-yellow-200`}
             >
                 {rendered}
             </div>

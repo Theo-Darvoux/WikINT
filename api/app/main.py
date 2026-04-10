@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await close_s3_client()
     from app.core.redis import redis_client
 
-    await redis_client.aclose()
+    await redis_client.close()
 
 
 app = FastAPI(
