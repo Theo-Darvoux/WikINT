@@ -357,8 +357,9 @@ async def get_upload_preview(
 
     # Verify ownership
     if file_key.startswith("cas/"):
-        from app.models.upload import Upload
         from sqlalchemy import select
+
+        from app.models.upload import Upload
 
         row = await db.scalar(
             select(Upload.id).where(
@@ -379,12 +380,13 @@ async def get_upload_preview(
     if file_key.startswith("quarantine/"):
         raise BadRequestError("File is still being processed and cannot be previewed yet.")
 
+    from sqlalchemy import select
+
     from app.core.storage import generate_presigned_get
 
     # Try looking up filename and mimetype in the DB
     from app.models.upload import Upload
-    from sqlalchemy import select
-    
+
     upload_row = await db.scalar(
         select(Upload).where(Upload.final_key == file_key, Upload.user_id == user.id)
     )

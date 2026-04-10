@@ -120,7 +120,6 @@ async def notify_moderators(
     result = await db.execute(
         select(User.id).where(
             User.role.in_(MODERATOR_ROLES),
-            User.deleted_at.is_(None),
         )
     )
     mod_ids = list(result.scalars().all())

@@ -45,9 +45,6 @@ async def get_current_user(
     if not user:
         raise UnauthorizedError("User not found")
 
-    if user.deleted_at is not None:
-        raise UnauthorizedError("Account has been deleted")
-
     return user
 
 
@@ -107,9 +104,6 @@ async def get_user_from_token(
     user = await get_user_by_id(db, user_id)
     if not user:
         raise UnauthorizedError("User not found")
-
-    if user.deleted_at is not None:
-        raise UnauthorizedError("Account has been deleted")
 
     return user
 

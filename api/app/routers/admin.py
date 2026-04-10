@@ -27,7 +27,7 @@ async def admin_stats(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     user_count = (
-        await db.scalar(select(func.count()).select_from(User).where(User.deleted_at.is_(None)))
+        await db.scalar(select(func.count()).select_from(User))
         or 0
     )
     material_count = await db.scalar(select(func.count()).select_from(Material)) or 0
@@ -57,7 +57,7 @@ async def admin_list_users(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
 ) -> dict:
-    base = select(User).where(User.deleted_at.is_(None))
+    base = select(User)
     if role:
         base = base.where(User.role == role)
     if search:
@@ -114,13 +114,12 @@ async def admin_delete_user(
     _user: Annotated[User | None, Depends(require_role(UserRole.BUREAU, UserRole.VIEUX))] = None,
     db: Annotated[AsyncSession | None, Depends(get_db)] = None,
 ) -> dict:
-    from datetime import UTC, datetime
+    from app.services.user import hard_delete_user
 
     target = await db.scalar(select(User).where(User.id == user_id))
     if not target:
         raise NotFoundError("User not found")
-    target.deleted_at = datetime.now(UTC)
-    await db.flush()
+    await hard_delete_user(db, target)
     return {"status": "ok"}
 
 

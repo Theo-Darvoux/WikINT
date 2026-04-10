@@ -115,13 +115,6 @@ async def get_or_create_user(db: AsyncSession, email: str) -> tuple[User, bool]:
     user = result.scalar_one_or_none()
 
     if user is not None:
-        if user.deleted_at is not None:
-            user.deleted_at = None
-            user.onboarded = False
-            user.last_login_at = datetime.now(UTC)
-            await db.flush()
-            return user, True
-
         user.last_login_at = datetime.now(UTC)
         return user, False
 

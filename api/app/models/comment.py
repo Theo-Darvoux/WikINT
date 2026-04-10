@@ -18,7 +18,7 @@ class Comment(UUIDMixin, TimestampMixin, Base):
 
     target_type: Mapped[str] = mapped_column(String(20), nullable=False)
     target_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
-    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     body: Mapped[str] = mapped_column(Text, nullable=False)
 
     author: Mapped[User | None] = relationship(back_populates="comments")

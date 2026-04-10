@@ -30,7 +30,7 @@ class Flag(UUIDMixin, Base):
     )
 
     reporter_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
+        ForeignKey("users.id", ondelete="CASCADE")
     )
     target_type: Mapped[str] = mapped_column(String(20), nullable=False)
     target_id: Mapped[uuid.UUID] = mapped_column(nullable=False)

@@ -18,7 +18,6 @@ async def year_rollover(ctx: dict) -> None:
 
         result = await db.execute(
             select(User).where(
-                User.deleted_at.is_(None),
                 User.academic_year.isnot(None),
             )
         )

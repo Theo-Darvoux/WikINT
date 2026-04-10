@@ -36,7 +36,7 @@ async def onboard_user(
 
 async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
     uid = uuid.UUID(str(user_id))
-    result = await db.execute(select(User).where(User.id == uid, User.deleted_at.is_(None)))
+    result = await db.execute(select(User).where(User.id == uid))
     return result.scalar_one_or_none()
 
 
@@ -286,18 +286,19 @@ async def export_user_data(db: AsyncSession, user: User) -> dict:
     }
 
 
-async def soft_delete_user(db: AsyncSession, user: User) -> None:
-    from app.core.storage import delete_object
+async def hard_delete_user(db: AsyncSession, user: User) -> None:
+    from sqlalchemy import delete
 
+    from app.core.storage import delete_object
+    from app.models.upload import Upload
+
+    # 1. Delete avatar from storage
     if user.avatar_url:
         await delete_object(user.avatar_url)
 
-    user.deleted_at = datetime.now(UTC)
-    user.display_name = "Deleted User"
-    user.bio = None
-    user.avatar_url = None
-    user.academic_year = None
-    user.gdpr_consent = False
-    user.gdpr_consent_at = None
-    user.onboarded = False
+    # 2. Cleanup orphaned Upload records (since they might not have a formal FK)
+    await db.execute(delete(Upload).where(Upload.user_id == user.id))
+
+    # 3. Delete the user record (cascades to notifications, comments, annotations, etc. due to model configuration)
+    await db.delete(user)
     await db.flush()

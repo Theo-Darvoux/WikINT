@@ -30,7 +30,7 @@ class Annotation(UUIDMixin, TimestampMixin, Base):
     version_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("material_versions.id", ondelete="SET NULL")
     )
-    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     body: Mapped[str] = mapped_column(Text, nullable=False)
 
     page: Mapped[int | None] = mapped_column(Integer)

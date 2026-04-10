@@ -23,7 +23,7 @@ from app.services.user import (
     get_user_contributions,
     get_user_stats,
     onboard_user,
-    soft_delete_user,
+    hard_delete_user,
     update_user_profile,
 )
 
@@ -98,7 +98,7 @@ async def delete_me(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    await soft_delete_user(db, user)
+    await hard_delete_user(db, user)
 
 
 @router.get("/{user_id}", response_model=UserProfileOut)

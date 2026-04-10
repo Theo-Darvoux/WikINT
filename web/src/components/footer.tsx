@@ -10,7 +10,7 @@ export function Footer() {
                     </Link>
                     <span>·</span>
                     <a
-                        href="https://github.com"
+                        href="https://github.com/Theo-Darvoux/WikINT"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="hover:text-foreground transition-colors"

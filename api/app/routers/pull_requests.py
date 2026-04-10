@@ -425,7 +425,7 @@ async def get_pull_request_preview(
         raise BadRequestError("Operation index out of range")
 
     op = pr.payload[op_index]
-    
+
     file_key = op.get("file_key")
     file_name = op.get("file_name")
     file_mime_type = op.get("file_mime_type")
