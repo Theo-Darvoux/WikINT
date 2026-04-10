@@ -1,33 +1,48 @@
+# Stage 1: Build environment
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+# Install uv and build essentials for native deps (like yara-python)
+RUN pip install --no-cache-dir uv && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libyara-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create venv directory and sync dependencies
+RUN mkdir /venv
+COPY pyproject.toml uv.lock ./
+ENV UV_PROJECT_ENVIRONMENT=/venv
+RUN uv sync --frozen --no-dev
+
+# Stage 2: Runtime environment
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install uv via pip to avoid ghcr.io network timeouts
-RUN pip install --no-cache-dir uv
-# Install system dependencies for yara-python, ghostscript (PDF compression), ffmpeg (video compression), bubblewrap (sandboxing), and exiftool (metadata stripping)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libyara-dev \
+# Install uv (for running the app) and runtime dependencies
+# ghostscript (PDF), ffmpeg (video), bubblewrap (sandbox), exiftool (metadata)
+RUN pip install --no-cache-dir uv && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    libyara10 \
     ghostscript \
     ffmpeg \
     bubblewrap \
     libimage-exiftool-perl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create user early and take ownership of the working directory
-RUN groupadd -r appuser && useradd -r -g appuser -m appuser && chown appuser:appuser /app
+# Create user first (must exist before --chown in COPY)
+RUN groupadd -r appuser && useradd -r -g appuser -m appuser && \
+    chown appuser:appuser /app
 
-# Create venv directory and take ownership
-RUN mkdir /venv && chown appuser:appuser /venv
-
-# Switch to non-root user before installing dependencies
-USER appuser
-
-# Move venv outside of /app so it's not hidden by the host mount
+# Copy virtual environment from builder with correct ownership
+COPY --from=builder --chown=appuser:appuser /venv /venv
 ENV UV_PROJECT_ENVIRONMENT=/venv
 
-COPY --chown=appuser:appuser pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+USER appuser
 
+# Copy application code (context is already filtered by .dockerignore)
 COPY --chown=appuser:appuser . .
 RUN chmod +x start.sh worker-start.sh
 

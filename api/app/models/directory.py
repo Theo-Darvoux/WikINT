@@ -55,9 +55,9 @@ class Directory(UUIDMixin, TimestampMixin, Base):
         back_populates="children", remote_side="Directory.id"
     )
     children: Mapped[list[Directory]] = relationship(
-        back_populates="parent", cascade="all, delete-orphan"
+        back_populates="parent", cascade="all, delete-orphan", passive_deletes=True
     )
     materials: Mapped[list[Material]] = relationship(
-        back_populates="directory", cascade="all, delete-orphan"
+        back_populates="directory", cascade="all, delete-orphan", passive_deletes=True
     )
     tags: Mapped[list[Tag]] = relationship(secondary="directory_tags", back_populates="directories")

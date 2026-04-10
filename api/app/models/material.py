@@ -63,6 +63,7 @@ class Material(UUIDMixin, TimestampMixin, Base):
     versions: Mapped[list[MaterialVersion]] = relationship(
         back_populates="material",
         cascade="all, delete-orphan",
+        passive_deletes=True,
         order_by="MaterialVersion.version_number",
     )
     parent_material: Mapped[Material | None] = relationship(
@@ -70,7 +71,7 @@ class Material(UUIDMixin, TimestampMixin, Base):
     )
     tags: Mapped[list[Tag]] = relationship(secondary="material_tags", back_populates="materials")
     annotations: Mapped[list[Annotation]] = relationship(
-        back_populates="material", cascade="all, delete-orphan"
+        back_populates="material", cascade="all, delete-orphan", passive_deletes=True
     )
 
 
