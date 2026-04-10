@@ -125,8 +125,20 @@ export function MaterialViewer({ material, breadcrumbs = [] }: MaterialViewerPro
     const pathname = usePathname();
     const isMobile = useIsMobile();
     const isDesktop = useIsDesktop();
-    const { openSidebar } = useUIStore();
+    const { openSidebar, setHideFooter } = useUIStore();
     const viewerContainerRef = useRef<HTMLDivElement>(null);
+
+    // Hide footer and prevent page scroll while previewer is active
+    useEffect(() => {
+        setHideFooter(true);
+        document.body.style.overflow = "hidden";
+        document.documentElement.style.overflow = "hidden";
+        return () => {
+            setHideFooter(false);
+            document.body.style.overflow = "";
+            document.documentElement.style.overflow = "";
+        };
+    }, [setHideFooter]);
 
     const title = String(material.title ?? "");
     const directoryId = String(material.directory_id ?? "");
@@ -278,9 +290,9 @@ export function MaterialViewer({ material, breadcrumbs = [] }: MaterialViewerPro
                 </div>
 
                 {/* Viewer */}
-                <div ref={viewerContainerRef} className="relative flex-1 min-h-0 overflow-auto rounded-lg border">
+                <div ref={viewerContainerRef} className="relative flex-1 min-h-0 overflow-hidden rounded-lg border">
                     {viewerType === "pdf" && <PdfViewer fileKey={fileKey} materialId={materialId} annotations={threads} onAnnotationClick={handleHighlightClick} />}
-                    {viewerType === "markdown" && <MarkdownViewer fileKey={fileKey} materialId={materialId} material={material} />}
+                    {viewerType === "markdown" && <MarkdownViewer fileKey={fileKey} materialId={materialId} material={material} annotations={threads} onAnnotationClick={handleHighlightClick} />}
                     {viewerType === "image" && <ImageViewer fileKey={fileKey} materialId={materialId} fileName={fileName} />}
                     {viewerType === "video" && <VideoPlayer fileKey={fileKey} materialId={materialId} material={material} />}
                     {viewerType === "audio" && <AudioPlayer fileKey={fileKey} materialId={materialId} />}

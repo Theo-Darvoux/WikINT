@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { DirectoryLineItem } from "@/components/browse/directory-line-item";
 import { MaterialLineItem } from "@/components/browse/material-line-item";
@@ -50,12 +50,12 @@ import type { SelectedItem } from "@/lib/selection-store";
 
 /** Check if a real item has any staged edit/delete/move targeting it */
 function stagedStatus(
-    ops: StagedOperation[],
+    ops: (StagedOperation | Operation)[],
     id: string,
     kind: "directory" | "material",
 ): "edited" | "deleted" | "moved" | null {
     for (const staged of ops) {
-        const op = unwrapOp(staged);
+        const op = unwrapOp(staged as StagedOperation);
         if (kind === "directory") {
             if (op.op === "delete_directory" && op.directory_id === id)
                 return "deleted";
@@ -77,53 +77,6 @@ function stagedStatus(
     return null;
 }
 
-/**
- * Merge any staged edit fields on top of the real item data so the listing
- * shows a live preview of the pending changes.
- */
-function applyDirEdits(
-    ops: StagedOperation[],
-    dir: Record<string, unknown>,
-): Record<string, unknown> {
-    const id = String(dir.id ?? "");
-    const entry = ops.find(
-        (s) => {
-            const op = unwrapOp(s);
-            return op.op === "edit_directory" && op.directory_id === id;
-        },
-    );
-    if (!entry) return dir;
-    const edit = unwrapOp(entry) as Extract<Operation, { op: "edit_directory" }>;
-    return {
-        ...dir,
-        ...(edit.name != null ? { name: edit.name } : {}),
-        ...(edit.type != null ? { type: edit.type } : {}),
-        ...(edit.description != null ? { description: edit.description } : {}),
-        ...(edit.tags != null ? { tags: edit.tags } : {}),
-    };
-}
-
-function applyMatEdits(
-    ops: StagedOperation[],
-    mat: Record<string, unknown>,
-): Record<string, unknown> {
-    const id = String(mat.id ?? "");
-    const entry = ops.find(
-        (s) => {
-            const op = unwrapOp(s);
-            return op.op === "edit_material" && op.material_id === id;
-        },
-    );
-    if (!entry) return mat;
-    const edit = unwrapOp(entry) as Extract<Operation, { op: "edit_material" }>;
-    return {
-        ...mat,
-        ...(edit.title != null ? { title: edit.title } : {}),
-        ...(edit.type != null ? { type: edit.type } : {}),
-        ...(edit.description != null ? { description: edit.description } : {}),
-        ...(edit.tags != null ? { tags: edit.tags } : {}),
-    };
-}
 
 interface DirectoryListingProps {
     directory: Record<string, unknown> | null;
@@ -159,6 +112,7 @@ export function DirectoryListing({
 }: DirectoryListingProps) {
     const isMobile = useIsMobile();
     const router = useRouter();
+    const pathname = usePathname();
     const triggerBrowseRefresh = useBrowseRefreshStore((s) => s.triggerBrowseRefresh);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [newFolderOpen, setNewFolderOpen] = useState(false);
@@ -291,6 +245,92 @@ export function DirectoryListing({
         setGhostDirStack((prev) => prev.slice(0, -1));
         setShowActions(false);
     };
+
+    // Keyboard navigation
+    const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+    const focusedIndexRef = useRef<number | null>(null);
+    focusedIndexRef.current = focusedIndex;
+
+    // Build a flat ordered list mirroring the render order for arrow-key nav
+    type NavItem =
+        | { type: "dir"; dir: Record<string, unknown> }
+        | { type: "ghost-dir"; tempId: string; name: string }
+        | { type: "mat"; mat: Record<string, unknown> }
+        | { type: "ghost-mat"; op: AugmentedOp & (CreateMaterialOp | MoveItemOp) };
+
+    const flatItems = useMemo<NavItem[]>(() => [
+        ...sortedDirs.map((dir) => ({ type: "dir" as const, dir })),
+        ...ghostDirs.map((op) => ({
+            type: "ghost-dir" as const,
+            tempId: (op.op === "create_directory" ? op.temp_id : op.target_id) || "",
+            name: (op.op === "create_directory" ? op.name : op.target_name) || "Unnamed",
+        })),
+        ...sortedMats.map((mat) => ({ type: "mat" as const, mat })),
+        ...ghostMaterials.map((op) => ({ type: "ghost-mat" as const, op })),
+    ], [sortedDirs, ghostDirs, sortedMats, ghostMaterials]);
+
+    // Reset focus when directory changes
+    useEffect(() => { setFocusedIndex(null); }, [directory?.id]);
+
+    // Build path helper (mirrors logic in line-item components)
+    const pathBase = pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+    const buildItemPath = (slug: string) =>
+        previewPrId ? `${pathBase}/${slug}?preview_pr=${previewPrId}` : `${pathBase}/${slug}`;
+
+    // Scroll focused item into view
+    useEffect(() => {
+        if (focusedIndex === null) return;
+        document
+            .querySelector(`[data-nav-index="${focusedIndex}"]`)
+            ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, [focusedIndex]);
+
+    // Keydown handler
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Don't hijack events from inputs / modals
+            const tag = (e.target as HTMLElement).tagName;
+            if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+            if ((e.target as HTMLElement).isContentEditable) return;
+            if (selectMode) return;
+            if (flatItems.length === 0) return;
+
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setFocusedIndex((prev) =>
+                    prev === null ? 0 : Math.min(prev + 1, flatItems.length - 1),
+                );
+            } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setFocusedIndex((prev) =>
+                    prev === null ? flatItems.length - 1 : Math.max(prev - 1, 0),
+                );
+            } else if (e.key === "Enter") {
+                const idx = focusedIndexRef.current;
+                if (idx === null) return;
+                const item = flatItems[idx];
+                if (!item) return;
+                e.preventDefault();
+                if (item.type === "dir") {
+                    router.push(buildItemPath(String(item.dir.slug ?? "")));
+                } else if (item.type === "ghost-dir") {
+                    enterGhostDir(item.tempId, item.name);
+                } else if (item.type === "mat") {
+                    router.push(buildItemPath(String(item.mat.slug ?? "")));
+                } else if (item.type === "ghost-mat") {
+                    const op = item.op;
+                    if (op.isExternal && previewPrId && op._previewIdx !== undefined) {
+                        router.push(`/pull-requests/${previewPrId}/preview/${op._previewIdx}`);
+                    } else {
+                        setReviewOpen(true);
+                    }
+                }
+            }
+        };
+        document.addEventListener("keydown", handleKeyDown);
+        return () => document.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [flatItems, selectMode, router, pathBase, previewPrId]);
 
     // Build the full list of selectable real items for "select all"
     const allSelectableItems: SelectedItem[] = [
@@ -715,28 +755,51 @@ export function DirectoryListing({
                 !isEmpty && (
                     <div className="divide-y rounded-lg border">
                         {/* Real directories */}
-                        {sortedDirs.map((dir) => {
-                                const id = String(dir.id);
-                                const ops = allOps.map(o => o as unknown as StagedOperation); // hack to reuse stagedStatus
-                                return (
-                                    <DirectoryLineItem
-                                        key={id}
-                                        directory={applyDirEdits(ops, dir)}
-                                        staged={stagedStatus(ops, id, "directory")}
-                                        selectMode={selectMode}
-                                        selected={selected.has(id)}
-                                        onToggleSelect={() =>
-                                            toggleSelect({
-                                                id,
-                                                type: "directory",
-                                                name: String(dir.name ?? ""),
-                                                parentId: dirId || null,
-                                            })
-                                        }
-                                        previewPrId={previewPrId}
-                                    />
-                                );
-                            })}
+                                {sortedDirs.map((dir, i) => {
+                                    const id = String(dir.id);
+                                    const op = allOps.find(o => 
+                                        ((o.op === "edit_directory" || o.op === "delete_directory") && o.directory_id === id) ||
+                                        (o.op === "move_item" && o.target_type === "directory" && o.target_id === id)
+                                    );
+
+                                    const staged = op ? (
+                                        op.op === "delete_directory" ? "deleted" :
+                                        op.op === "edit_directory" ? "edited" :
+                                        "moved"
+                                    ) : null;
+
+                                    let displayDir = dir;
+                                    if (op?.op === "edit_directory") {
+                                        displayDir = {
+                                            ...dir,
+                                            ...(op.name != null ? { name: op.name } : {}),
+                                            ...(op.type != null ? { type: op.type } : {}),
+                                            ...(op.description != null ? { description: op.description } : {}),
+                                            ...(op.tags != null ? { tags: op.tags } : {}),
+                                        };
+                                    }
+
+                                    return (
+                                        <DirectoryLineItem
+                                            key={id}
+                                            directory={displayDir}
+                                            staged={staged}
+                                            selectMode={selectMode}
+                                            selected={selected.has(id)}
+                                            onToggleSelect={() =>
+                                                toggleSelect({
+                                                    id,
+                                                    type: "directory",
+                                                    name: String(dir.name ?? ""),
+                                                    parentId: dirId || null,
+                                                })
+                                            }
+                                            previewPrId={previewPrId}
+                                            navIndex={i}
+                                            focused={focusedIndex === i}
+                                        />
+                                    );
+                                })}
 
                         {/* Ghost directories (staged creates and moves) — clickable to enter */}
                         {ghostDirs.map((op, i) => {
@@ -760,10 +823,13 @@ export function DirectoryListing({
                             const themeColor = isMove ? "amber" : (isExternal ? "blue" : "green");
                             const borderStyle = isExternal ? "border-solid" : "border-dashed";
 
+                            const ghostDirNavIndex = sortedDirs.length + i;
+                            const ghostDirFocused = focusedIndex === ghostDirNavIndex;
                             return (
                                 <div
                                     key={`ghost-dir-${tempId}`}
-                                    className={`flex items-center gap-3 px-4 py-3 ${borderStyle} border-l-2 border-l-${themeColor}-400 bg-${themeColor}-50/50 dark:bg-${themeColor}-950/20 cursor-pointer opacity-80 hover:opacity-100 hover:bg-${themeColor}-50 dark:hover:bg-${themeColor}-950/30 transition-all`}
+                                    data-nav-index={ghostDirNavIndex}
+                                    className={`flex items-center gap-3 px-4 py-3 ${borderStyle} border-l-2 border-l-${themeColor}-400 bg-${themeColor}-50/50 dark:bg-${themeColor}-950/20 cursor-pointer opacity-80 hover:opacity-100 hover:bg-${themeColor}-50 dark:hover:bg-${themeColor}-950/30 transition-all${ghostDirFocused ? " ring-2 ring-inset ring-primary/40" : ""}`}
                                     onClick={() =>
                                         enterGhostDir(tempId, name || "Unnamed")
                                     }
@@ -793,14 +859,39 @@ export function DirectoryListing({
                         })}
 
                         {/* Real materials */}
-                        {sortedMats.map((mat) => {
+                        {sortedMats.map((mat, i) => {
                                 const id = String(mat.id);
-                                const ops = allOps.map(o => o as unknown as StagedOperation);
+                                const op = allOps.find(o => 
+                                    ((o.op === "edit_material" || o.op === "delete_material") && o.material_id === id) ||
+                                    (o.op === "move_item" && o.target_type === "material" && o.target_id === id)
+                                );
+
+                                const staged = op ? (
+                                    op.op === "delete_material" ? "deleted" :
+                                    op.op === "edit_material" ? "edited" :
+                                    "moved"
+                                ) : null;
+
+                                const previewOpIndex = (op?.isExternal && op.op === "edit_material") ? op._previewIdx : undefined;
+
+                                let displayMat = mat;
+                                if (op?.op === "edit_material") {
+                                    displayMat = {
+                                        ...mat,
+                                        ...(op.title != null ? { title: op.title } : {}),
+                                        ...(op.type != null ? { type: op.type } : {}),
+                                        ...(op.description != null ? { description: op.description } : {}),
+                                        ...(op.tags != null ? { tags: op.tags } : {}),
+                                    };
+                                }
+
+                                const matNavIndex = sortedDirs.length + ghostDirs.length + i;
                                 return (
                                     <MaterialLineItem
                                         key={id}
-                                        material={applyMatEdits(ops, mat)}
-                                        staged={stagedStatus(ops, id, "material")}
+                                        material={displayMat}
+                                        staged={staged}
+                                        previewOpIndex={previewOpIndex}
                                         selectMode={selectMode}
                                         selected={selected.has(id)}
                                         onToggleSelect={() =>
@@ -813,6 +904,8 @@ export function DirectoryListing({
                                             })
                                         }
                                         previewPrId={previewPrId}
+                                        navIndex={matNavIndex}
+                                        focused={focusedIndex === matNavIndex}
                                     />
                                 );
                             })}
@@ -835,10 +928,13 @@ export function DirectoryListing({
                             const themeColor = isMove ? "amber" : (isExternal ? "blue" : "green");
                             const borderStyle = isExternal ? "border-solid" : "border-dashed";
 
+                            const ghostMatNavIndex = sortedDirs.length + ghostDirs.length + sortedMats.length + i;
+                            const ghostMatFocused = focusedIndex === ghostMatNavIndex;
                             return (
                                 <div
                                     key={`ghost-mat-${tempId ?? i}`}
-                                    className={`flex items-center gap-3 px-4 py-3 ${borderStyle} border-l-2 border-l-${themeColor}-400 bg-${themeColor}-50/50 dark:bg-${themeColor}-950/20 cursor-pointer opacity-75 hover:opacity-100 transition-opacity`}
+                                    data-nav-index={ghostMatNavIndex}
+                                    className={`flex items-center gap-3 px-4 py-3 ${borderStyle} border-l-2 border-l-${themeColor}-400 bg-${themeColor}-50/50 dark:bg-${themeColor}-950/20 cursor-pointer opacity-75 hover:opacity-100 transition-opacity${ghostMatFocused ? " ring-2 ring-inset ring-primary/40" : ""}`}
                                     onClick={() => {
                                         if (isExternal) {
                                             if (previewPrId && op._previewIdx !== undefined) {

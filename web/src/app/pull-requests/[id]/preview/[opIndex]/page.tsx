@@ -9,8 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api-client";
 import { getFileBadgeColor, getFileBadgeLabel, getFileExtension } from "@/lib/file-utils";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownRenderer } from "@/components/viewers/markdown-renderer";
 
 // pdfjs must be client-only (uses Promise.withResolvers at module-eval time)
 const PdfPreview = dynamic(
@@ -99,8 +98,16 @@ function TextPreview({ url, type }: { url: string; type: "markdown" | "code" | "
 
     if (type === "markdown") {
         return (
-            <div className="prose prose-sm dark:prose-invert max-w-3xl mx-auto h-full overflow-y-auto px-8 py-8">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            <div className="flex-1 overflow-auto prose prose-sm max-w-none p-8 dark:prose-invert
+                prose-img:rounded-lg prose-img:shadow-sm
+                prose-a:text-primary prose-a:no-underline hover:prose-a:underline
+                prose-pre:bg-muted prose-pre:border prose-pre:border-border prose-pre:text-foreground
+                prose-code:before:content-none prose-code:after:content-none prose-code:text-foreground
+                prose-table:border-collapse
+                prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2
+                prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2
+                [&_mark]:bg-yellow-200 [&_mark]:text-yellow-900 dark:[&_mark]:bg-yellow-500/20 dark:[&_mark]:text-yellow-200">
+                <MarkdownRenderer content={content} />
             </div>
         );
     }

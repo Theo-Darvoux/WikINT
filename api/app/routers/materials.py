@@ -1,8 +1,11 @@
+from __future__ import annotations
+
+import gzip
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Body, Depends, Query, Request
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +27,30 @@ from app.services.material import (
     record_view,
 )
 
+# Text MIME types that can be fetched / edited as plain text
+_TEXT_MIME_PREFIXES = ("text/",)
+_TEXT_MIME_EXACT = frozenset(
+    {
+        "application/json",
+        "application/xml",
+        "application/javascript",
+        "application/typescript",
+        "application/x-yaml",
+        "application/x-sh",
+        "application/sql",
+    }
+)
+_TEXT_EDIT_MAX_BYTES = 10 * 1024 * 1024  # 10 MiB cap on raw text body
+
 router = APIRouter(prefix="/api/materials", tags=["materials"])
+
+
+def _is_text_mime(mime: str) -> bool:
+    """Return True if this MIME type can be represented as editable UTF-8 text."""
+    m = (mime or "").lower()
+    if any(m.startswith(p) for p in _TEXT_MIME_PREFIXES):
+        return True
+    return m in _TEXT_MIME_EXACT
 
 
 @router.get("/{material_id}", response_model=MaterialDetail)
@@ -84,7 +110,7 @@ async def inline_material(
     material_id: str,
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-):
+) -> dict[str, str]:
     from app.services.material import check_material_access, get_material_with_version
 
     data = await get_material_with_version(db, material_id)
@@ -118,7 +144,7 @@ async def stream_material_file(
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
     token: Annotated[str | None, Query()] = None,
-    redis: Annotated[Redis | None, Depends(get_redis)] = None,
+    redis: Annotated[Redis | None, Depends(get_redis)] = None,  # type: ignore[type-arg]
 ) -> Any:
     from app.core.exceptions import NotFoundError, UnauthorizedError
     from app.services.material import check_material_access, get_material_with_version
@@ -254,3 +280,172 @@ async def view_material(
 ) -> dict[str, str]:
     await record_view(db, str(user.id), material_id)
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Text-content endpoints (for inline text editing)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{material_id}/text-content", response_class=PlainTextResponse)
+async def get_material_text_content(
+    material_id: str,
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PlainTextResponse:
+    """Return the raw UTF-8 text of the material's current version.
+
+    Works for both plain-text files and gzip-compressed text files (.gz).
+    Only available for text-based MIME types.
+    """
+    from app.core.exceptions import BadRequestError, NotFoundError
+    from app.core.storage import read_full_object
+
+    data = await get_material_with_version(db, material_id)
+    check_material_access(user.id, data)
+
+    version = data.get("current_version_info")
+    if version is None or version.file_key is None:
+        raise NotFoundError("No file available")
+
+    mime = (getattr(version, "file_mime_type", "") or "").lower()
+    filename = (getattr(version, "file_name", "") or "").lower()
+
+    # Allow gzip-wrapped text files (e.g. original.md.gz)
+    is_gzip_wrapped = mime == "application/gzip" or filename.endswith(".gz")
+
+    if not is_gzip_wrapped and not _is_text_mime(mime):
+        raise BadRequestError("This file is not a text-based document and cannot be edited as text")
+
+    raw_bytes = await read_full_object(version.file_key)
+
+    if is_gzip_wrapped:
+        try:
+            raw_bytes = gzip.decompress(raw_bytes)
+        except Exception as exc:
+            raise BadRequestError(f"Failed to decompress file: {exc}") from exc
+
+    # Detect and strip UTF-8 BOM if present
+    if raw_bytes.startswith(b"\xef\xbb\xbf"):
+        raw_bytes = raw_bytes[3:]
+
+    try:
+        text = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw_bytes.decode("latin-1")
+
+    return PlainTextResponse(content=text, media_type="text/plain; charset=utf-8")
+
+
+@router.post("/{material_id}/text-content")
+async def save_material_text_content(
+    material_id: str,
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    body: Annotated[str, Body(media_type="text/plain", max_length=_TEXT_EDIT_MAX_BYTES)],
+) -> dict[str, Any]:
+    """Accept raw UTF-8 text, gzip-compress it server-side, store to object storage.
+
+    Creates a clean Upload row so the returned file_key passes PR validation.
+    Returns ``{ file_key, file_name, file_size, file_mime_type }`` ready
+    to be included in an ``edit_material`` PR operation.
+    """
+    from app.core.exceptions import BadRequestError, NotFoundError
+    from app.core.storage import upload_file as storage_upload_file
+    from app.models.upload import Upload
+
+    data = await get_material_with_version(db, material_id)
+    check_material_access(user.id, data)
+
+    version = data.get("current_version_info")
+    if version is None:
+        raise NotFoundError("No version found for this material")
+
+    current_mime = (getattr(version, "file_mime_type", "") or "").lower()
+    current_name = (getattr(version, "file_name", "") or "")
+
+    # Strip any previous .gz suffix to derive the "logical" original name
+    if current_name.endswith(".gz"):
+        logical_name = current_name[:-3]
+    else:
+        logical_name = current_name
+
+    is_gzip_wrapped = current_mime == "application/gzip" or current_name.endswith(".gz")
+
+    # Determine inner MIME type for validation
+    import mimetypes as _mimetypes
+
+    if is_gzip_wrapped:
+        guessed, _ = _mimetypes.guess_type(logical_name)
+        check_mime = guessed or "text/plain"
+    else:
+        check_mime = current_mime
+
+    if not _is_text_mime(check_mime) and not is_gzip_wrapped:
+        raise BadRequestError("Cannot save text content for a non-text file")
+
+    # Compute text diff
+    import difflib
+
+    from app.core.storage import read_full_object
+
+    try:
+        old_bytes = await read_full_object(version.file_key)
+        if is_gzip_wrapped:
+            old_bytes = gzip.decompress(old_bytes)
+        if old_bytes.startswith(b"\xef\xbb\xbf"):
+            old_bytes = old_bytes[3:]
+        try:
+            old_text = old_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            old_text = old_bytes.decode("latin-1")
+    except Exception:
+        old_text = ""
+
+    diff_lines = list(difflib.unified_diff(
+        old_text.splitlines(),
+        body.splitlines(),
+        fromfile=current_name,
+        tofile=logical_name,
+        lineterm=""
+    ))
+    diff_text = "```diff\n" + "\n".join(diff_lines) + "\n```" if diff_lines else ""
+
+    # Encode without compression
+    raw_bytes = body.encode("utf-8")
+
+    # Build deterministic storage key scoped to the user
+    upload_id = str(uuid.uuid4())
+    file_key = f"uploads/{user.id}/{upload_id}/{logical_name}"
+    file_size = len(raw_bytes)
+
+    # Upload to object storage
+    await storage_upload_file(
+        raw_bytes,
+        file_key,
+        content_type=check_mime,
+        content_encoding=None,
+        content_disposition="attachment",
+    )
+
+    # Create a clean Upload row so PR key validation passes
+    upload_row = Upload(
+        upload_id=upload_id,
+        user_id=user.id,
+        quarantine_key=None,
+        final_key=file_key,
+        status="clean",
+        filename=logical_name,
+        mime_type=check_mime,
+        size_bytes=file_size,
+    )
+    db.add(upload_row)
+    await db.commit()
+
+    return {
+        "file_key": file_key,
+        "file_name": logical_name,
+        "file_size": file_size,
+        "file_mime_type": check_mime,
+        "diff": diff_text,
+    }

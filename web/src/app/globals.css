@@ -193,13 +193,11 @@
 }
 
 .dark .hljs-keyword,
-.dark .hljs-selector-tag,
-.dark .hljs-deletion { color: #ff7b72; }
+.dark .hljs-selector-tag { color: #ff7b72; }
 
 .dark .hljs-string,
 .dark .hljs-attr,
-.dark .hljs-template-tag,
-.dark .hljs-addition { color: #a5d6ff; }
+.dark .hljs-template-tag { color: #a5d6ff; }
 
 .dark .hljs-comment,
 .dark .hljs-quote { color: #8b949e; }
@@ -222,6 +220,29 @@
 .dark .hljs-symbol { color: #79c0ff; }
 
 .dark .hljs-regexp { color: #7ee787; }
+ 
+ /* ─── Diff Highlighting ─── */
+ 
+ .hljs-addition {
+     @apply bg-green-500/10 text-green-700 dark:text-green-400 px-1 -mx-1 rounded-sm;
+     /* For better line-based backgrounds if display is block */
+     display: inline-block;
+     width: calc(100% + 0.5rem);
+ }
+ 
+ .hljs-deletion {
+     @apply bg-red-500/10 text-red-700 dark:text-red-400 px-1 -mx-1 rounded-sm;
+     display: inline-block;
+     width: calc(100% + 0.5rem);
+ }
+ 
+ .dark .hljs-addition {
+     @apply bg-green-500/20 text-green-400;
+ }
+ 
+ .dark .hljs-deletion {
+     @apply bg-red-500/20 text-red-400;
+ }
 
 /* ─── Obsidian Callouts ─── */
 

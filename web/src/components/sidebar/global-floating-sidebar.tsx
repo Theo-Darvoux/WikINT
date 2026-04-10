@@ -9,11 +9,13 @@ import { DetailsTab } from "@/components/sidebar/details-tab";
 import { ChatTab } from "@/components/sidebar/chat-tab";
 import { ActionsTab } from "@/components/sidebar/actions-tab";
 import { EditsTab } from "@/components/sidebar/edits-tab";
+import { AnnotationsTab } from "@/components/sidebar/annotations-tab";
 import type { SidebarTab } from "@/lib/stores";
 
 const TAB_CONFIG: { value: SidebarTab; label: string }[] = [
     { value: "details", label: "Details" },
     { value: "edits", label: "Edits" },
+    { value: "annotations", label: "Annotations" },
     { value: "chat", label: "Chat" },
     { value: "actions", label: "Actions" },
 ];
@@ -38,21 +40,25 @@ export function GlobalFloatingSidebar() {
                         </TabsTrigger>
                     ))}
                 </TabsList>
-                <ScrollArea className="flex-1">
-                    <TabsContent value="details" className="mt-0 p-3">
+                <div className="flex-1 min-h-0 relative">
+                    <TabsContent value="details" className="absolute inset-0 m-0 overflow-auto p-4">
                         <DetailsTab target={sidebarTarget} />
                     </TabsContent>
-                    <TabsContent value="edits" className="mt-0 p-3">
+                    <TabsContent value="edits" className="absolute inset-0 m-0 overflow-auto p-4">
                         <EditsTab target={sidebarTarget} />
                     </TabsContent>
-                    <TabsContent value="chat" className="mt-0 p-3">
+                    <TabsContent value="annotations" className="absolute inset-0 m-0 flex flex-col">
+                        <AnnotationsTab target={sidebarTarget} />
+                    </TabsContent>
+                    <TabsContent value="chat" className="absolute inset-0 m-0 flex flex-col">
                         <ChatTab target={sidebarTarget} />
                     </TabsContent>
-                    <TabsContent value="actions" className="mt-0 p-3">
+                    <TabsContent value="actions" className="absolute inset-0 m-0 flex flex-col">
                         <ActionsTab target={sidebarTarget} />
                     </TabsContent>
-                </ScrollArea>
+                </div>
             </Tabs>
         </FloatingPanel>
     );
 }
+

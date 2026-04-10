@@ -41,11 +41,13 @@ interface UIState {
     sidebarTab: SidebarTab;
     sidebarTarget: SidebarTarget | null;
     searchOpen: boolean;
+    hideFooter: boolean;
     openSidebar: (tab: SidebarTab, target: SidebarTarget) => void;
     closeSidebar: () => void;
     setSidebarTab: (tab: SidebarTab) => void;
     setSidebarOpen: (open: boolean) => void;
     setSearchOpen: (open: boolean) => void;
+    setHideFooter: (hide: boolean) => void;
     toggleSidebar: () => void;
 }
 
@@ -54,12 +56,14 @@ export const useUIStore = create<UIState>((set) => ({
     sidebarTab: "details",
     sidebarTarget: null,
     searchOpen: false,
+    hideFooter: false,
     openSidebar: (tab, target) =>
         set({ sidebarOpen: true, sidebarTab: tab, sidebarTarget: target }),
     closeSidebar: () => set({ sidebarOpen: false }),
     setSidebarTab: (tab) => set({ sidebarTab: tab }),
     setSidebarOpen: (open) => set({ sidebarOpen: open }),
     setSearchOpen: (open) => set({ searchOpen: open }),
+    setHideFooter: (hide) => set({ hideFooter: hide }),
     toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 }));
 

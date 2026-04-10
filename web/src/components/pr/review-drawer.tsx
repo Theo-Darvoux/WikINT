@@ -196,10 +196,67 @@ export function ReviewDrawer() {
         }
     };
 
-    // Auto-fill title
+    // Auto-fill title & description
     useEffect(() => {
-        if (operations.length > 0 && title === "") {
-            setTitle(autoTitle(operations.map(unwrapOp)));
+        if (operations.length === 0) return;
+        
+        const ops = operations.map(unwrapOp);
+        
+        // Auto-title if empty
+        if (title === "") {
+            setTitle(autoTitle(ops));
+        }
+
+        // Auto-description with path if empty
+        if (description === "") {
+            let cancelled = false;
+
+            async function resolveAllPaths() {
+                const paths: string[] = [];
+                
+                for (const op of ops) {
+                    let dirId: string | null = null;
+                    let itemName: string | null = null;
+
+                    if (op.op === "edit_material" || op.op === "delete_material") {
+                        try {
+                            const mat = await apiFetch<any>(`/materials/${op.material_id}`);
+                            dirId = mat.directory_id;
+                            itemName = mat.title;
+                        } catch { /* ignore */ }
+                    } else if (op.op === "move_item") {
+                        dirId = op.new_parent_id;
+                        itemName = op.target_title || op.target_name || "item";
+                    } else if (op.op === "create_material") {
+                        dirId = op.directory_id;
+                        itemName = op.title;
+                    } else if (op.op === "create_directory") {
+                        dirId = op.parent_id ?? null;
+                        itemName = op.name;
+                    }
+
+                    if (dirId && !dirId.startsWith("$")) {
+                        try {
+                            const path = await apiFetch<any[]>(`/directories/${dirId}/path`);
+                            const pathStr = path.length > 0 
+                                ? path.map(p => p.name).join(" › ") + " › " + (itemName || "")
+                                : itemName || "";
+                            paths.push(pathStr);
+                        } catch { 
+                            if (itemName) paths.push(itemName);
+                        }
+                    } else if (itemName) {
+                        paths.push(itemName);
+                    }
+                }
+
+                if (!cancelled && paths.length > 0) {
+                    setDescription(paths.join("\n"));
+                }
+            }
+
+            resolveAllPaths();
+            return () => { cancelled = true; };
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [operations.length]);

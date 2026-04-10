@@ -6,11 +6,25 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.venv/
+venv/
+.env/
+api/scratch/
 
 # Node / Next.js
 node_modules/
 .next/
 .pnpm-store/
+web/public/vs/
+web/package-lock.json
+yarn.lock
+.pnpm-debug.log
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.log
 
 # Environment
 .env

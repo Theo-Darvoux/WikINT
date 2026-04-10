@@ -687,8 +687,10 @@ async def _build_browse_path(db: AsyncSession, op_type: str, result_id: uuid.UUI
 
     if "material" in op_type:
         mat = await db.scalar(select(Material).where(Material.id == result_id))
-        if not mat or mat.directory_id is None:
+        if not mat:
             return None
+        if mat.directory_id is None:
+            return mat.slug
         dir_parts = await get_directory_path(db, mat.directory_id)
         slugs = [p["slug"] for p in dir_parts]
         slugs.append(mat.slug)
@@ -699,10 +701,12 @@ async def _build_browse_path(db: AsyncSession, op_type: str, result_id: uuid.UUI
         d = await db.scalar(select(Directory).where(Directory.id == result_id))
         if d:
             path_parts = await get_directory_path(db, result_id)
-            if path_parts:
-                return "/".join(p["slug"] for p in path_parts)
+            return "/".join(p["slug"] for p in path_parts) if path_parts else ""
+        
         mat = await db.scalar(select(Material).where(Material.id == result_id))
         if mat:
+            if mat.directory_id is None:
+                return mat.slug
             dir_parts = await get_directory_path(db, mat.directory_id)
             slugs = [p["slug"] for p in dir_parts]
             slugs.append(mat.slug)

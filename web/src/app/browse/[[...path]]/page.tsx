@@ -179,8 +179,8 @@ function BrowseContent() {
     }
 
     return (
-        <div className={`flex flex-1 gap-0 transition-opacity duration-200 ${isFetching ? "opacity-50 pointer-events-none" : "opacity-100"}`}>
-            <div className={`flex-1 px-4 py-6 pb-20 md:pb-6 ${isDesktop && sidebarOpen ? "min-w-0" : ""}`}>
+        <div className={`flex flex-1 h-[calc(100vh-3.5rem)] overflow-hidden gap-0 transition-opacity duration-200 ${isFetching ? "opacity-50 pointer-events-none" : "opacity-100"}`}>
+            <div className={`flex-1 overflow-y-auto px-4 py-6 pb-20 md:pb-6 ${isDesktop && sidebarOpen ? "min-w-0" : ""}`}>
                 {previewPr && (
                     <div className="mb-6 flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50/50 px-4 py-3 dark:border-blue-800/40 dark:bg-blue-950/20">
                         <div className="flex items-center gap-3">
@@ -214,7 +214,11 @@ function BrowseContent() {
                     />
                 )}
             </div>
-            {isDesktop && sidebarOpen && isDirectoryView && <SharedSidebar />}
+            {isDesktop && sidebarOpen && isDirectoryView && (
+                <div className="sticky top-0 h-full w-80 shrink-0 border-l bg-background">
+                    <SharedSidebar />
+                </div>
+            )}
         </div>
     );
 }

@@ -16,6 +16,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { formatFileSize, getFileBadgeColor, getFileBadgeLabel } from "@/lib/file-utils";
 import { apiFetch } from "@/lib/api-client";
+import { ExpandableText } from "@/components/ui/expandable-text";
+
 
 /* -------------------------------------------------------------------------- */
 /*  Reusable primitives for a card-sectioned sidebar                          */
@@ -49,10 +51,10 @@ function MetaRow({
     href?: string;
 }) {
     const content = (
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-sm min-w-0">
             <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="text-muted-foreground">{label}</span>
-            <span className="ml-auto text-right font-medium truncate max-w-[140px]">
+            <span className="shrink-0 text-muted-foreground">{label}</span>
+            <span className="ml-auto text-right font-medium truncate min-w-0 flex-1 pl-2">
                 {value}
             </span>
         </div>
@@ -129,14 +131,14 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
     return (
         <div className="space-y-3">
             {/* Header */}
-            <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/40">
+            <div className="flex items-start gap-3 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/40">
                     <Folder className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold leading-tight">{name}</h3>
+                    <h3 className="font-semibold leading-tight break-all">{name}</h3>
                     {code && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
                             {code}
                         </p>
                     )}
@@ -146,11 +148,15 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
                 </div>
             </div>
 
+
             {/* Description */}
             {description && (
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                    {description}
-                </p>
+                <ExpandableText
+                    text={description}
+                    threshold={180}
+                    clampedLines={4}
+                    className="text-sm text-muted-foreground leading-relaxed px-0.5"
+                />
             )}
 
             {/* Metadata card */}
@@ -274,12 +280,12 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
     return (
         <div className="space-y-3">
             {/* Header */}
-            <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
+            <div className="flex items-start gap-3 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                     <FileText className="h-4.5 w-4.5 text-muted-foreground" />
                 </div>
                 <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold leading-tight">{title}</h3>
+                    <h3 className="font-semibold leading-tight break-all">{title}</h3>
                     <span className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${(fileName || fileMimeType) ? getFileBadgeColor(fileName, fileMimeType) : "bg-gray-100 text-gray-800 dark:bg-gray-800/40 dark:text-gray-300"}`}>
                         {(fileName || fileMimeType) ? getFileBadgeLabel(fileName, fileMimeType) : type}
                     </span>
@@ -288,9 +294,12 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
 
             {/* Description */}
             {description && (
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                    {description}
-                </p>
+                <ExpandableText
+                    text={description}
+                    threshold={180}
+                    clampedLines={4}
+                    className="text-sm text-muted-foreground leading-relaxed px-0.5"
+                />
             )}
 
             {/* Metadata card */}

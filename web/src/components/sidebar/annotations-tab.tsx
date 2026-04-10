@@ -19,6 +19,8 @@ interface AnnotationsTabProps {
     target: SidebarTarget | null;
 }
 
+import { ScrollArea } from "@/components/ui/scroll-area";
+
 export function AnnotationsTab({ target }: AnnotationsTabProps) {
     const { user } = useAuthStore();
     const ctx = useAnnotationsContext();
@@ -28,9 +30,11 @@ export function AnnotationsTab({ target }: AnnotationsTabProps) {
 
     if (!ctx || !target || target.type !== "material") {
         return (
-            <p className="text-sm text-muted-foreground">
-                Annotations are only available for materials.
-            </p>
+            <div className="p-4">
+                <p className="text-sm text-muted-foreground">
+                    Annotations are only available for materials.
+                </p>
+            </div>
         );
     }
 
@@ -65,120 +69,106 @@ export function AnnotationsTab({ target }: AnnotationsTabProps) {
     };
 
     return (
-        <div className="flex h-full flex-col space-y-3">
-            {loading && threads.length === 0 && (
-                <div className="space-y-3 py-2">
-                    {Array.from({ length: 3 }, (_, i) => (
-                        <div key={i} className="space-y-1.5 rounded-md border p-2">
-                            <div className="flex gap-2">
-                                <Skeleton className="h-6 w-6 rounded-full" />
-                                <div className="flex-1 space-y-1">
-                                    <Skeleton className="h-3 w-20" />
-                                    <Skeleton className="h-3 w-full" />
+        <div className="flex flex-1 min-h-0 h-full flex-col bg-background">
+            <ScrollArea className="flex-1 min-h-0">
+                <div className="p-4 space-y-0 divide-y divide-border/40">
+                    {loading && threads.length === 0 && (
+                        <div className="space-y-3 py-2">
+                            {Array.from({ length: 3 }, (_, i) => (
+                                <div key={i} className="space-y-1.5 rounded-md border p-2">
+                                    <div className="flex gap-2">
+                                        <Skeleton className="h-6 w-6 rounded-full" />
+                                        <div className="flex-1 space-y-1">
+                                            <Skeleton className="h-3 w-20" />
+                                            <Skeleton className="h-3 w-full" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {!loading && threads.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <MessageCircle className="mb-3 h-8 w-8 text-muted-foreground/50" />
+                            <p className="text-sm text-muted-foreground">
+                                No annotations yet.
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Select text in the document to start annotating.
+                            </p>
+                        </div>
+                    )}
+
+                    {threads.map((thread) => (
+                        <div key={thread.root.id} className="py-3">
+                            <AnnotationThread
+                                thread={thread}
+                                currentUserId={user?.id ?? null}
+                                currentUserRole={user?.role ?? null}
+                                onReply={handleReply}
+                                onEdit={handleStartEdit}
+                                onDelete={handleDelete}
+                            />
+                            {replyingTo &&
+                                (
+                                    thread.root.id === replyingTo ||
+                                    thread.replies.some((r) => r.id === replyingTo)
+                                ) && (
+                                    <div className="ml-4 mt-2">
+                                        <AnnotationForm
+                                            onSubmit={handleSubmitReply}
+                                            placeholder="Write a reply..."
+                                            submitLabel="Reply"
+                                        />
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="mt-1"
+                                            onClick={() => setReplyingTo(null)}
+                                        >
+                                            Cancel
+                                        </Button>
+                                    </div>
+                                )}
+                        </div>
+                    ))}
+
+                    {editingId && (
+                        <div className="space-y-3 rounded-lg border bg-muted/30 p-3 mb-4 shadow-sm">
+                            <div className="max-h-[300px] overflow-y-auto pr-1">
+                                <Textarea
+                                    value={editBody}
+                                    onChange={(e) => setEditBody(e.target.value.slice(0, 1000))}
+                                    className="min-h-[100px] text-xs focus-visible:ring-1 bg-background py-2"
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className={`text-[10px] ${editBody.length >= 1000 ? "text-destructive font-bold" : "text-muted-foreground"}`}>
+                                    {editBody.length.toLocaleString()}/1,000
+                                </span>
+                                <div className="flex gap-2">
+                                    <Button size="sm" onClick={handleSaveEdit} disabled={!editBody.trim() || editBody.length > 1000}>
+                                        Save Changes
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            setEditingId(null);
+                                            setEditBody("");
+                                        }}
+                                    >
+                                        Cancel
+                                    </Button>
                                 </div>
                             </div>
                         </div>
-                    ))}
+                    )}
                 </div>
-            )}
-
-            {!loading && threads.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <MessageCircle className="mb-3 h-8 w-8 text-muted-foreground/50" />
-                    <p className="text-sm text-muted-foreground">
-                        No annotations yet.
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                        Select text in the document to start annotating.
-                    </p>
-                </div>
-            )}
-
-            {threads.map((thread) => (
-                <div key={thread.root.id}>
-                    <AnnotationThread
-                        thread={thread}
-                        currentUserId={user?.id ?? null}
-                        currentUserRole={user?.role ?? null}
-                        onReply={handleReply}
-                        onEdit={handleStartEdit}
-                        onDelete={handleDelete}
-                    />
-                    {replyingTo &&
-                        (
-                            thread.root.id === replyingTo ||
-                            thread.replies.some((r) => r.id === replyingTo)
-                        ) && (
-                            <div className="ml-4 mt-2">
-                                <AnnotationForm
-                                    onSubmit={handleSubmitReply}
-                                    placeholder="Write a reply..."
-                                    submitLabel="Reply"
-                                />
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="mt-1"
-                                    onClick={() => setReplyingTo(null)}
-                                >
-                                    Cancel
-                                </Button>
-                            </div>
-                        )}
-                </div>
-            ))}
-
-            {editingId && (
-                <div className="space-y-2 rounded-md border p-2">
-                    <Textarea
-                        value={editBody}
-                        onChange={(e) => setEditBody(e.target.value.slice(0, 1000))}
-                        className="min-h-[60px] text-sm"
-                    />
-                    <span className="text-[10px] text-muted-foreground">
-                        {editBody.length}/1,000
-                    </span>
-                    <div className="flex gap-2">
-                        <Button size="sm" onClick={handleSaveEdit} disabled={!editBody.trim()}>
-                            Save
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                                setEditingId(null);
-                                setEditBody("");
-                            }}
-                        >
-                            Cancel
-                        </Button>
-                    </div>
-                </div>
-            )}
-
-            {pages > 1 && (
-                <div className="flex items-center justify-center gap-2 py-2">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={page <= 1}
-                        onClick={() => fetchAnnotations(page - 1)}
-                    >
-                        Prev
-                    </Button>
-                    <span className="text-xs text-muted-foreground">
-                        {page} / {pages}
-                    </span>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={page >= pages}
-                        onClick={() => fetchAnnotations(page + 1)}
-                    >
-                        Next
-                    </Button>
-                </div>
-            )}
+            </ScrollArea>
         </div>
     );
 }
+

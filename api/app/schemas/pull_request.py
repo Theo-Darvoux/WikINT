@@ -27,7 +27,7 @@ MAX_TAGS = 20
 MAX_TAG_LENGTH = 20
 MAX_METADATA_KEYS = 20
 MAX_FILE_NAME_LENGTH = 255
-MAX_DIFF_SUMMARY_LENGTH = 2000
+MAX_DIFF_SUMMARY_LENGTH = 100000
 
 
 def _validate_tags(tags: list[str] | None) -> list[str] | None:

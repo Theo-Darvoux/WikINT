@@ -20,13 +20,6 @@ const TAB_CONFIG: { value: SidebarTab; label: string }[] = [
 
 function SidebarContent() {
     const { sidebarTab, setSidebarTab, sidebarTarget } = useUIStore();
-    const isDesktop = useIsDesktop();
-
-    const visibleTabs = TAB_CONFIG.filter((tab) => {
-        if (tab.value === "annotations" && !isDesktop) return false;
-        return true;
-    });
-
     return (
         <Tabs
             value={sidebarTab}
@@ -37,7 +30,7 @@ function SidebarContent() {
                 variant="line"
                 className="w-full shrink-0 justify-start gap-0 border-b px-0.5"
             >
-                {visibleTabs.map((tab) => (
+                {TAB_CONFIG.map((tab) => (
                     <TabsTrigger
                         key={tab.value}
                         value={tab.value}
@@ -47,28 +40,35 @@ function SidebarContent() {
                     </TabsTrigger>
                 ))}
             </TabsList>
-            <ScrollArea className="flex-1">
-                <TabsContent value="details" className="mt-0 p-4">
-                    <DetailsTab target={sidebarTarget} />
+            <div className="flex-1 min-h-0 relative">
+                <TabsContent value="details" className="absolute inset-0 m-0 flex flex-col">
+                    <ScrollArea className="flex-1 min-h-0">
+                        <div className="p-4">
+                            <DetailsTab target={sidebarTarget} />
+                        </div>
+                    </ScrollArea>
                 </TabsContent>
-                <TabsContent value="chat" className="mt-0 p-4">
+                <TabsContent value="chat" className="absolute inset-0 m-0 flex flex-col">
                     <ChatTab target={sidebarTarget} />
                 </TabsContent>
-                {isDesktop && (
-                    <TabsContent value="annotations" className="mt-0 p-4">
-                        <AnnotationsTab target={sidebarTarget} />
-                    </TabsContent>
-                )}
-                <TabsContent value="edits" className="mt-0 p-4">
-                    <EditsTab target={sidebarTarget} />
+                <TabsContent value="annotations" className="absolute inset-0 m-0 flex flex-col">
+                    <AnnotationsTab target={sidebarTarget} />
                 </TabsContent>
-                <TabsContent value="actions" className="mt-0 p-4">
+                <TabsContent value="edits" className="absolute inset-0 m-0 flex flex-col">
+                    <ScrollArea className="flex-1 min-h-0">
+                        <div className="p-4">
+                            <EditsTab target={sidebarTarget} />
+                        </div>
+                    </ScrollArea>
+                </TabsContent>
+                <TabsContent value="actions" className="absolute inset-0 m-0 flex flex-col">
                     <ActionsTab target={sidebarTarget} />
                 </TabsContent>
-            </ScrollArea>
+            </div>
         </Tabs>
     );
 }
+
 
 export function SharedSidebar() {
     const { sidebarOpen, closeSidebar } = useUIStore();

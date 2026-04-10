@@ -106,7 +106,7 @@ export default function SettingsPage() {
                     </Button>
                 </CardContent>
             </Card>
-            
+
             {isAdmin && (
                 <Card>
                     <CardHeader>
@@ -183,8 +183,7 @@ export default function SettingsPage() {
                         <div className="space-y-1 text-sm">
                             <p>Your account will be immediately deactivated and your personal data anonymized.</p>
                             <p className="text-muted-foreground">
-                                Your personal data (name, email, bio) will be permanently deleted
-                                after a 30-day grace period. Contributed materials remain on the
+                                Your personal data (name, email, bio) will be permanently deleted. Contributed materials remain on the
                                 platform in anonymized form as per the content license in our{" "}
                                 <a href="/privacy" className="underline hover:text-foreground">
                                     privacy policy

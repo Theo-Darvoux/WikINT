@@ -54,6 +54,12 @@ Generates a presigned download URL for the latest version.
 ### `GET /api/materials/{id}/versions/{version_number}/download`
 Download a specific version.
 
+### `GET /api/materials/{id}/text-content`
+Returns the raw UTF-8 text of the material's current version. Works for both plain-text files and gzip-compressed text files (`.gz`). Only available for text-based materials.
+
+### `POST /api/materials/{id}/text-content`
+Accepts raw UTF-8 text in the request body, gzip-compresses it server-side, and stores it in object storage. Creates a clean `Upload` row and returns a `file_key` ready to be staged in an `edit_material` pull request operation.
+
 ## Search Router (`api/app/routers/search.py`)
 
 ### `GET /api/search`

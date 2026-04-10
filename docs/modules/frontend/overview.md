@@ -62,7 +62,7 @@ The `[[...path]]` catch-all segment captures the full slug path (e.g., `/browse/
 - `DirectoryListing` — Renders a directory's children (folders + materials)
 - `DirectoryLineItem` — Single directory row
 - `MaterialLineItem` — Single material row with type icon and metadata
-- `MaterialViewer` — Container that selects the appropriate viewer component
+- `MaterialViewer` — Container that selects the appropriate viewer component. It hides the main page scrollbar and footer while active to provide a focused viewing experience.
 - `Breadcrumbs` — Slug-path based breadcrumb navigation
 - `DirectoryOpenPRs` — Shows pending PRs affecting this directory
 - `EmptyDirectory` — Empty state with upload CTA
@@ -168,6 +168,35 @@ Manages multiple concurrent file uploads with:
 - Retry logic
 - Progress aggregation across multiple files
 - Error isolation (one failed upload doesn't affect others)
+
+## Print System (`lib/print-utils.ts`, `hooks/use-print.ts`)
+
+The print system lets viewers send a formatted document to the browser's print dialog via a hidden iframe.
+
+### Architecture
+
+- **`isPrintable(viewerType)`** — returns true for `pdf`, `image`, `code`, `markdown`, `office`
+- **`printInIframe(content, options)`** — creates a hidden `<iframe>`, writes HTML (or loads a blob URL for PDFs), calls `window.print()`, then removes the iframe
+- **`usePrint({ viewerType, materialId, fileName, mimeType })`** — React hook that assembles the printable content per viewer type and drives the flow
+
+### Per-viewer print strategies
+
+| Viewer | Strategy |
+|--------|----------|
+| `pdf` | Fetch blob → create blob URL → load directly in iframe |
+| `image` | Fetch blob → `<img>` centered in iframe |
+| `code` | Fetch raw text → HTML-escape → `<pre><code>` in iframe |
+| `markdown` | Capture rendered DOM HTML via registry → inject into iframe with prose + hljs CSS |
+| `office` | Delegate to OnlyOffice's built-in print via `office-print-registry` |
+
+### Markdown print registry (`lib/markdown-print-registry.ts`)
+
+`MarkdownViewer` registers a getter on mount (keyed by `materialId`) that returns the `innerHTML` of its rendered prose container. `usePrint` calls this registry to obtain already-rendered HTML instead of re-processing the raw markdown source. This ensures the printed output exactly matches what the user sees, including syntax highlighting, callouts, tables, and Mermaid diagrams.
+
+```
+registerMarkdownPrint(materialId, () => proseRef.current?.innerHTML)  // in MarkdownViewer
+getMarkdownContent(materialId)                                         // in usePrint
+```
 
 ## SSE Client (`lib/sse-client.ts`)
 

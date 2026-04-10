@@ -51,11 +51,11 @@ export function useAnnotations(materialId: string | null) {
             setLoading(true);
             try {
                 const data = await apiFetch<PaginatedThreads>(
-                    `/materials/${materialId}/annotations?page=${p}&limit=20`
+                    `/materials/${materialId}/annotations?page=1&limit=1000`
                 );
                 setThreads(data.items);
-                setPage(data.page);
-                setPages(data.pages);
+                setPage(1);
+                setPages(1);
                 setTotal(data.total);
             } catch {
                 // silent

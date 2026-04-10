@@ -31,6 +31,7 @@ import {
     ArrowRight,
 } from "lucide-react";
 import { PreviewDialog } from "@/components/pr/preview-dialog";
+import { MarkdownRenderer } from "@/components/viewers/markdown-renderer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -52,6 +53,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { formatDistanceToNow } from "date-fns";
 import { PRComments } from "@/components/pr/pr-comments";
+import { ExpandableText } from "@/components/ui/expandable-text";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/stores";
 import { toast } from "sonner";
@@ -99,13 +101,13 @@ const OP_COLORS: Record<string, string> = {
 };
 
 const OP_LABELS: Record<string, string> = {
-    create_material: "Add document",
-    edit_material: "Edit document",
-    delete_material: "Delete document",
-    create_directory: "Create folder",
-    edit_directory: "Edit folder",
-    delete_directory: "Delete folder",
-    move_item: "Move",
+    create_material: "Added document",
+    edit_material: "Edited document",
+    delete_material: "Deleted document",
+    create_directory: "Created folder",
+    edit_directory: "Renamed folder",
+    delete_directory: "Deleted folder",
+    move_item: "Moved item",
 };
 
 /** Fields worth displaying in the detail view (everything else is noise). */
@@ -172,21 +174,23 @@ interface ResolvedItemDetails {
 
 function opSummary(op: Record<string, unknown>): string {
     const opType = String(op.op ?? op.pr_type ?? "unknown");
+    const name = (op.title || op.name) as string | undefined;
+    
     switch (opType) {
         case "create_material":
-            return `Add « ${op.title} »`;
+            return `Added « ${name || "document"} »`;
         case "edit_material":
-            return `Edit${op.title ? ` « ${op.title} »` : " document"}`;
+            return `Edited « ${name || "document"} »`;
         case "delete_material":
-            return "Delete document";
+            return `Deleted « ${name || "document"} »`;
         case "create_directory":
-            return `Create folder « ${op.name} »`;
+            return `Created folder « ${name || "folder"} »`;
         case "edit_directory":
-            return `Rename folder${op.name ? ` to « ${op.name} »` : ""}`;
+            return `Renamed folder « ${name || "folder"} »`;
         case "delete_directory":
-            return "Delete folder";
+            return `Deleted folder « ${name || "folder"} »`;
         case "move_item":
-            return `Move ${op.target_type === "directory" ? "folder" : "document"}`;
+            return `Moved ${op.target_type === "directory" ? "folder" : "document"}${name ? ` « ${name} »` : ""}`;
         default:
             return opType;
     }
@@ -334,14 +338,28 @@ function OperationRow({
     const isApproved = prStatus === "approved";
 
     // After approval: result_browse_path is already in the op
-    const resultBrowsePath = op.result_browse_path
-        ? `/browse/${String(op.result_browse_path)}`
-        : null;
+    const resultBrowsePath = (() => {
+        if (!isApproved) return null;
+        if (op.result_browse_path !== undefined && op.result_browse_path !== null) {
+            const path = String(op.result_browse_path);
+            return path ? `/browse/${path}` : "/browse";
+        }
+        // Fallback for older PRs or if path wasn't captured: use resolved details
+        if (itemDetails?.sourceUrl && itemDetails?.itemName) {
+            if (opType.includes("material")) {
+                return `${itemDetails.sourceUrl}/${itemDetails.itemName}`;
+            }
+            return itemDetails.sourceUrl;
+        }
+        return null;
+    })();
 
     const needsItemResolution =
         opType === "delete_material" ||
         opType === "delete_directory" ||
-        opType === "move_item";
+        opType === "move_item" ||
+        opType === "edit_material" ||
+        opType === "edit_directory";
 
     // Resolve target path for create/edit ops (shows location context)
     useEffect(() => {
@@ -481,6 +499,46 @@ function OperationRow({
                     }
 
                     if (!cancelled) setItemDetails({ itemName, sourcePath, sourceUrl, destPath, destUrl, materialId, mimeType, fileName });
+                } else if (opType === "edit_material") {
+                    if (!matId) return;
+                    const mat = await apiFetch<{
+                        title: string;
+                        directory_id: string | null;
+                        current_version_info?: { file_mime_type?: string; file_name?: string } | null;
+                    }>(`/materials/${matId}`);
+                    if (cancelled) return;
+                    let sourcePath: string | undefined;
+                    let sourceUrl: string | undefined;
+                    if (mat.directory_id) {
+                        const info = await resolveTargetPath(mat.directory_id);
+                        if (!cancelled) { sourcePath = info.label; sourceUrl = info.url; }
+                    } else {
+                        sourcePath = "Root";
+                        sourceUrl = "/browse";
+                    }
+                    if (!cancelled) setItemDetails({
+                        itemName: mat.title,
+                        sourcePath,
+                        sourceUrl,
+                        materialId: matId,
+                        mimeType: mat.current_version_info?.file_mime_type ?? undefined,
+                        fileName: mat.current_version_info?.file_name ?? undefined,
+                    });
+                } else if (opType === "edit_directory") {
+                    if (!dirId) return;
+                    const path = await apiFetch<{ name: string; slug: string }[]>(`/directories/${dirId}/path`);
+                    if (cancelled) return;
+                    const itemName = path.length > 0 ? path[path.length - 1].name : "Root";
+                    const parentSegs = path.slice(0, -1);
+                    const sourcePath = parentSegs.length > 0
+                        ? parentSegs.map((p) => p.name).join(" › ")
+                        : "Root";
+                    const parentSlugs = parentSegs.map((p) => p.slug).join("/");
+                    if (!cancelled) setItemDetails({
+                        itemName,
+                        sourcePath,
+                        sourceUrl: parentSlugs ? `/browse/${parentSlugs}` : "/browse",
+                    });
                 }
             } catch { /* Silently ignore — item may not exist (e.g., deleted after approval) */ }
         }
@@ -512,13 +570,19 @@ function OperationRow({
     // Derive summary text using resolved item name when available
     const displaySummary = (() => {
         const name = itemDetails?.itemName;
-        if (opType === "delete_material") return `Delete « ${name ?? (op.title as string) ?? "document"} »`;
-        if (opType === "delete_directory") return `Delete folder « ${name ?? "folder"} »`;
-        if (opType === "move_item") {
-            const isDir = op.target_type === "directory";
-            return `Move ${isDir ? "folder " : ""}« ${name ?? (isDir ? "folder" : "document")} »`;
+        const opName = (op.title || op.name) as string | undefined;
+        const finalName = name || opName;
+
+        switch (opType) {
+            case "delete_material": return `Deleted « ${finalName || "document"} »`;
+            case "delete_directory": return `Deleted folder « ${finalName || "folder"} »`;
+            case "edit_material":   return `Edited « ${finalName || "document"} »`;
+            case "edit_directory":   return `Renamed folder « ${finalName || "folder"} »`;
+            case "move_item":
+                const isDir = op.target_type === "directory";
+                return `Moved ${isDir ? "folder " : ""}« ${finalName || (isDir ? "folder" : "document")} »`;
+            default: return opSummary(op);
         }
-        return opSummary(op);
     })();
 
     // Visible metadata (type, tags, description only)
@@ -526,17 +590,8 @@ function OperationRow({
         ([k, v]) => VISIBLE_FIELDS.has(k) && v !== null && v !== undefined,
     );
 
-    const showBrowseLink = isApproved
-        ? Boolean(resultBrowsePath)
-        : targetInfo?.url;
-
-    const browseHref = isApproved ? resultBrowsePath : targetInfo?.url;
-    const browseLabel = isApproved ? "View" : "Browse";
-
-    // For approved move ops, link to the new location
-    const approvedMoveHref = isApproved && opType === "move_item" && resultBrowsePath
-        ? resultBrowsePath
-        : null;
+    const diffSummary = "diff_summary" in op ? (op as any).diff_summary : null;
+    const hasDiff = Boolean(diffSummary);
 
     const canPreviewExisting = Boolean(itemDetails?.materialId) && !previewLoading;
 
@@ -570,12 +625,15 @@ function OperationRow({
                             </p>
                             {/* Subtitle: location context */}
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 flex-wrap">
-                                <span className={colorClass.split(" ")[0]}>{OP_LABELS[opType] ?? opType}</span>
+                                {/* Hide operation label if it's already in the summary (most cases now) */}
+                                {(opType === "move_item" || opType.includes("delete")) ? null : (
+                                    <span className={colorClass.split(" ")[0]}>{OP_LABELS[opType] ?? opType}</span>
+                                )}
 
-                                {/* Create/edit: show target directory */}
-                                {targetInfo && (
+                                {/* Create: show target directory */}
+                                {opType.startsWith("create_") && targetInfo && (
                                     <>
-                                        <span className="opacity-40">·</span>
+                                        {!opType.includes("delete") && opType !== "move_item" && <span className="opacity-40">·</span>}
                                         <div className="flex items-center gap-1 max-w-[200px]">
                                             <MapPin className="h-3 w-3 shrink-0 opacity-60" />
                                             <span className="truncate">{targetInfo.label}</span>
@@ -583,10 +641,20 @@ function OperationRow({
                                     </>
                                 )}
 
+                                {/* Edit/Delete: show current path */}
+                                {(opType.startsWith("edit_") || opType.startsWith("delete_")) && itemDetails?.sourcePath && (
+                                    <>
+                                        {opType.startsWith("edit_") && <span className="opacity-40">·</span>}
+                                        <div className="flex items-center gap-1 max-w-[200px]">
+                                            <MapPin className="h-3 w-3 shrink-0 opacity-60" />
+                                            <span className="truncate">{itemDetails.sourcePath}</span>
+                                        </div>
+                                    </>
+                                )}
+
                                 {/* Move: show from → to */}
                                 {opType === "move_item" && itemDetails && (
                                     <>
-                                        <span className="opacity-40">·</span>
                                         {itemDetails.sourcePath && (
                                             <div className="flex items-center gap-1 shrink-0">
                                                 <MapPin className="h-3 w-3 shrink-0 opacity-60" />
@@ -597,21 +665,8 @@ function OperationRow({
                                         <div className="flex items-center gap-1 shrink-0">
                                             <MapPin className="h-3 w-3 shrink-0 opacity-60" />
                                             <span className="truncate max-w-[120px]">
-                                                {isApproved && resultBrowsePath
-                                                    ? itemDetails.destPath ?? "Root"
-                                                    : (itemDetails.destPath ?? "Root")}
+                                                {itemDetails.destPath ?? "Root"}
                                             </span>
-                                        </div>
-                                    </>
-                                )}
-
-                                {/* Delete: show current location */}
-                                {(opType === "delete_material" || opType === "delete_directory") && itemDetails?.sourcePath && (
-                                    <>
-                                        <span className="opacity-40">·</span>
-                                        <div className="flex items-center gap-1 max-w-[200px]">
-                                            <MapPin className="h-3 w-3 shrink-0 opacity-60" />
-                                            <span className="truncate">{itemDetails.sourcePath}</span>
                                         </div>
                                     </>
                                 )}
@@ -625,27 +680,27 @@ function OperationRow({
                         className="flex shrink-0 items-center gap-1.5 pr-4"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        {/* Preview staged upload (create/edit with file) */}
-                        {hasFile && (
+                        {/* Approved: show direct library link if available */}
+                        {isApproved && resultBrowsePath && !opType.includes("delete") && (
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 gap-1.5 text-xs"
+                                className="h-7 gap-1.5 text-xs text-primary font-medium"
                                 asChild
                             >
-                                <Link href={`/pull-requests/${prId}/preview/${index}`}>
+                                <Link href={resultBrowsePath}>
                                     <Eye className="h-3.5 w-3.5" />
                                     Preview
                                 </Link>
                             </Button>
                         )}
 
-                        {/* Preview existing material (for delete/move ops) */}
-                        {canPreviewExisting && (
+                        {/* Fallback for approved PRs without browse path (e.g. root items before fix or older PRs) */}
+                        {isApproved && !resultBrowsePath && canPreviewExisting && !opType.includes("delete") && (
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 gap-1.5 text-xs"
+                                className="h-7 gap-1.5 text-xs text-primary"
                                 onClick={handleExistingPreview}
                                 disabled={previewLoading}
                             >
@@ -656,68 +711,73 @@ function OperationRow({
                             </Button>
                         )}
 
-                        {/* Browse location link for non-approved create/edit */}
-                        {showBrowseLink && browseHref && !needsItemResolution && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 gap-1.5 text-xs"
-                                asChild
-                            >
-                                <Link href={browseHref}>
-                                    <ExternalLink className="h-3.5 w-3.5" />
-                                    {browseLabel}
-                                </Link>
-                            </Button>
-                        )}
-
-                        {/* Source link for delete ops */}
-                        {needsItemResolution && !isApproved && itemDetails?.sourceUrl && opType !== "move_item" && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 gap-1.5 text-xs"
-                                asChild
-                            >
-                                <Link href={itemDetails.sourceUrl}>
-                                    <ExternalLink className="h-3.5 w-3.5" />
-                                    Browse
-                                </Link>
-                            </Button>
-                        )}
-
-                        {/* For approved moves: link to final location */}
-                        {approvedMoveHref && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 gap-1.5 text-xs"
-                                asChild
-                            >
-                                <Link href={approvedMoveHref}>
-                                    <ExternalLink className="h-3.5 w-3.5" />
-                                    View
-                                </Link>
-                            </Button>
+                        {/* Open PR Case: Single Preview Button */}
+                        {!isApproved && !opType.includes("delete") && (
+                            <>
+                                {hasFile ? (
+                                    /* Prioritize NEW file preview if uploaded */
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 gap-1.5 text-xs"
+                                        asChild
+                                    >
+                                        <Link href={`/pull-requests/${prId}/preview/${index}`}>
+                                            <Eye className="h-3.5 w-3.5" />
+                                            Preview
+                                        </Link>
+                                    </Button>
+                                ) : canPreviewExisting ? (
+                                    /* Otherwise preview EXISTING material if available (e.g. metadata-only edit) */
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 gap-1.5 text-xs"
+                                        onClick={handleExistingPreview}
+                                        disabled={previewLoading}
+                                    >
+                                        {previewLoading
+                                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            : <Eye className="h-3.5 w-3.5" />}
+                                        Preview
+                                    </Button>
+                                ) : null}
+                            </>
                         )}
                     </div>
                 </AccordionPrimitive.Header>
 
-                {/* Expandable metadata */}
-                {entries.length > 0 && (
+                {/* Expandable metadata & Diffs */}
+                {(entries.length > 0 || hasDiff) && (
                     <AccordionContent className="px-4 pb-4">
-                        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
-                            {entries.map(([k, v]) => (
-                                <div key={k} className="contents">
-                                    <dt className="py-0.5 capitalize text-muted-foreground">
-                                        {k === "type" ? "Type" : k === "tags" ? "Tags" : k === "description" ? "Description" : k}
-                                    </dt>
-                                    <dd className="py-0.5">
-                                        {formatValue(v)}
-                                    </dd>
+                        {entries.length > 0 && (
+                            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
+                                {entries.map(([k, v]) => (
+                                    <div key={k} className="contents">
+                                        <dt className="py-0.5 capitalize text-muted-foreground">
+                                            {k === "type" ? "Type" : k === "tags" ? "Tags" : k === "description" ? "Description" : k}
+                                        </dt>
+                                        <dd className="py-0.5">
+                                            {formatValue(v)}
+                                        </dd>
+                                    </div>
+                                ))}
+                            </dl>
+                        )}
+                        {hasDiff && (
+                            <div className={entries.length > 0 ? "mt-4 pt-4 border-t" : ""}>
+                                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
+                                    <Clock className="h-3 w-3" />
+                                    Changes
                                 </div>
-                            ))}
-                        </dl>
+                                <MarkdownRenderer 
+                                    content={String(diffSummary)} 
+                                    className="prose prose-xs dark:prose-invert max-w-none 
+                                        prose-pre:p-0 prose-pre:bg-transparent prose-pre:border-0
+                                        [&_pre]:m-0 [&_code]:text-[11px] [&_code]:leading-relaxed [&_code]:bg-muted/30 [&_code]:p-3 [&_code]:block [&_code]:rounded-md"
+                                />
+                            </div>
+                        )}
                     </AccordionContent>
                 )}
             </AccordionItem>
@@ -737,7 +797,6 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
     const [pr, setPr] = useState<PullRequestDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [acting, setActing] = useState<"approve" | "reject" | null>(null);
-    const [showApproveConfirm, setShowApproveConfirm] = useState(false);
     const [showRejectDialog, setShowRejectDialog] = useState(false);
     const [rejectReason, setRejectReason] = useState("");
     const [expandedItems, setExpandedItems] = useState<string[]>([]);
@@ -796,7 +855,6 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
 
     const handleApprove = async () => {
         setActing("approve");
-        setShowApproveConfirm(false);
         try {
             await apiFetch(`/pull-requests/${id}/approve`, { method: "POST" });
             setPr((prev) => prev ? { ...prev, status: "approved" } : prev);
@@ -871,7 +929,10 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
     const expiresDate = new Date(updatedDate.getTime() + 7 * 24 * 60 * 60 * 1000);
     const isExpiringSoon = pr.status === "open" && (expiresDate.getTime() - Date.now() < 24 * 60 * 60 * 1000);
 
-    const previewUrl = previewPath ? `${previewPath}?preview_pr=${id}` : `/browse?preview_pr=${id}`;
+    const isApproved = pr.status === "approved";
+    const previewUrl = isApproved
+        ? (previewPath || "/browse")
+        : (previewPath ? `${previewPath}?preview_pr=${id}` : `/browse?preview_pr=${id}`);
 
     return (
         <div className="container mx-auto max-w-4xl space-y-6 px-4 py-6 pb-20 md:pb-6">
@@ -920,12 +981,16 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             </h1>
                         </div>
 
-                        {pr.status === "open" && (
+                        {(pr.status === "open" || pr.status === "approved") && (
                             <Button variant="outline" size="sm" className="gap-2 shrink-0 border-primary/20 hover:bg-primary/5 hover:text-primary transition-all" asChild>
                                 <Link href={previewUrl}>
                                     <Eye className="h-4 w-4" />
-                                    <span className="hidden sm:inline">Browse preview</span>
-                                    <span className="sm:hidden">Preview</span>
+                                    <span className="hidden sm:inline">
+                                        {isApproved ? "View in library" : "Browse preview"}
+                                    </span>
+                                    <span className="sm:hidden">
+                                        {isApproved ? "View" : "Preview"}
+                                    </span>
                                 </Link>
                             </Button>
                         )}
@@ -962,9 +1027,11 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
 
                     {/* Description */}
                     {pr.description && (
-                        <p className="text-sm leading-relaxed text-muted-foreground">
-                            {pr.description}
-                        </p>
+                        <ExpandableText 
+                            text={pr.description} 
+                            className="text-sm leading-relaxed text-muted-foreground" 
+                            clampedLines={3}
+                        />
                     )}
 
                     {/* Summary badges */}
@@ -993,7 +1060,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             <Button
                                 size="sm"
                                 className="gap-1.5 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                                onClick={() => setShowApproveConfirm(true)}
+                                onClick={handleApprove}
                                 disabled={acting !== null}
                             >
                                 {acting === "approve" ? (
@@ -1082,48 +1149,6 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                     <PRComments prId={pr.id} />
                 </div>
             </div>
-
-            {/* ─── Approve confirmation dialog ────────── */}
-            <Dialog open={showApproveConfirm} onOpenChange={setShowApproveConfirm}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Publish this contribution?</DialogTitle>
-                        <DialogDescription>
-                            {operations.length} change{operations.length !== 1 ? "s" : ""} will be applied permanently.
-                            This action cannot be undone.
-                        </DialogDescription>
-                    </DialogHeader>
-                    {/* Quick summary of operations */}
-                    <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm space-y-1 max-h-40 overflow-y-auto">
-                        {operations.slice(0, 10).map((op, i) => {
-                            const Icon = OP_ICONS[String(op.op ?? "")] ?? FilePlus;
-                            return (
-                                <div key={i} className="flex items-center gap-2 text-xs">
-                                    <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                    <span className="truncate">{opSummary(op)}</span>
-                                </div>
-                            );
-                        })}
-                        {operations.length > 10 && (
-                            <p className="text-xs text-muted-foreground">
-                                + {operations.length - 10} more changes
-                            </p>
-                        )}
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowApproveConfirm(false)}>
-                            Cancel
-                        </Button>
-                        <Button
-                            className="bg-green-600 hover:bg-green-700 text-white"
-                            onClick={handleApprove}
-                        >
-                            <Check className="mr-2 h-4 w-4" />
-                            Publish
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
 
             {/* ─── Reject dialog ──────────────────────── */}
             <Dialog open={showRejectDialog} onOpenChange={(open) => { setShowRejectDialog(open); if (!open) setRejectReason(""); }}>

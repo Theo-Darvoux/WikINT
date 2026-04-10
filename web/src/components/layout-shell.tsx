@@ -18,8 +18,11 @@ import { initAuthSync } from "@/lib/auth-sync";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import { useUIStore } from "@/lib/stores";
+
 export function LayoutShell({ children }: { children: ReactNode }) {
     const { isAuthenticated, isLoading, fetchMe } = useAuth();
+    const { hideFooter } = useUIStore();
     const pathname = usePathname();
     const router = useRouter();
 
@@ -73,7 +76,7 @@ export function LayoutShell({ children }: { children: ReactNode }) {
                     children
                 )}
             </main>
-            <Footer />
+            {!hideFooter && <Footer />}
             <MobileBottomBar />
             <ConfirmDialog />
             <GlobalFloatingSidebar />

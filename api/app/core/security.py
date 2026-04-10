@@ -42,4 +42,4 @@ def decode_token(token: str) -> dict[str, Any]:
 
 def get_jti(token: str) -> str:
     payload = decode_token(token)
-    return payload["jti"]
+    return str(payload["jti"])

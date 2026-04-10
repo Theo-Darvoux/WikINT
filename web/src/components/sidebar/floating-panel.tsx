@@ -42,7 +42,7 @@ export function FloatingPanel({ open, onClose, children }: FloatingPanelProps) {
                 >
                     <X className="h-5 w-5" />
                 </button>
-                <div className="flex-1 overflow-y-auto p-4 pt-10">
+                <div className="flex-1 min-h-0 pt-10">
                     {children}
                 </div>
             </div>

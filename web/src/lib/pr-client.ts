@@ -21,17 +21,17 @@ export function autoTitle(ops: Operation[]): string {
     const op = ops[0];
     switch (op.op) {
         case "create_material":
-            return op.title ? `Ajout : ${op.title}` : "Ajout d'un document";
+            return op.title ? `Ajout : « ${op.title} »` : "Ajout d'un document";
         case "edit_material":
             return op.title
-                ? `Modification : ${op.title}`
+                ? `Modification : « ${op.title} »`
                 : "Modification d'un document";
         case "delete_material":
             return "Suppression d'un document";
         case "create_directory":
-            return op.name ? `Nouveau dossier : ${op.name}` : "Création d'un dossier";
+            return op.name ? `Nouveau dossier : « ${op.name} »` : "Création d'un dossier";
         case "edit_directory":
-            return op.name ? `Renommage : ${op.name}` : "Modification d'un dossier";
+            return op.name ? `Renommage : « ${op.name} »` : "Modification d'un dossier";
         case "delete_directory":
             return "Suppression d'un dossier";
         case "move_item":

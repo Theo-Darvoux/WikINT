@@ -15,9 +15,11 @@ interface DirectoryLineItemProps {
     onToggleSelect?: () => void;
     /** When set, appended as ?preview_pr= to preserve preview mode across navigation */
     previewPrId?: string;
+    navIndex?: number;
+    focused?: boolean;
 }
 
-export function DirectoryLineItem({ directory, staged, selectMode, selected, onToggleSelect, previewPrId }: DirectoryLineItemProps) {
+export function DirectoryLineItem({ directory, staged, selectMode, selected, onToggleSelect, previewPrId, navIndex, focused }: DirectoryLineItemProps) {
     const isMobile = useIsMobile();
     const { openSidebar } = useUIStore();
     const pathname = usePathname();
@@ -67,7 +69,8 @@ export function DirectoryLineItem({ directory, staged, selectMode, selected, onT
     return (
         <div
             onClick={handleCardClick}
-            className={`flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50 cursor-pointer ${stagedBorder} ${selectMode && selected ? "bg-primary/5 dark:bg-primary/10" : ""}`}
+            data-nav-index={navIndex}
+            className={`flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50 cursor-pointer ${stagedBorder} ${selectMode && selected ? "bg-primary/5 dark:bg-primary/10" : ""} ${focused ? "bg-muted ring-2 ring-inset ring-primary/40" : ""}`}
         >
             {selectMode && (
                 <Checkbox

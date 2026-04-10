@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FlagButton } from "@/components/flags/flag-button";
-import { EditItemDialog } from "@/components/pr/edit-item-dialog";
+import { FileEditDialog } from "@/components/pr/file-edit-dialog";
 import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
 import { useStagingStore, type Operation } from "@/lib/staging-store";
@@ -89,11 +89,10 @@ function ActionRow({
     destructive?: boolean;
     iconClassName?: string;
 }) {
-    const cls = `flex w-full items-center gap-2.5 px-3 py-2.5 text-sm transition-colors hover:bg-accent/60 first:rounded-t-lg last:rounded-b-lg ${
-        destructive
-            ? "text-destructive hover:text-destructive"
-            : "text-foreground"
-    }`;
+    const cls = `flex w-full items-center gap-2.5 px-3 py-2.5 text-sm transition-colors hover:bg-accent/60 first:rounded-t-lg last:rounded-b-lg ${destructive
+        ? "text-destructive hover:text-destructive"
+        : "text-foreground"
+        }`;
 
     if (href) {
         return (
@@ -123,7 +122,6 @@ function ActionRow({
 function VersionHistoryList({ materialId }: { materialId: string }) {
     const [versions, setVersions] = useState<MaterialVersion[]>([]);
     const [loading, setLoading] = useState(true);
-    const [expanded, setExpanded] = useState(false);
     const { downloadMaterial, isDownloading } = useDownload();
 
     useEffect(() => {
@@ -146,73 +144,50 @@ function VersionHistoryList({ materialId }: { materialId: string }) {
         };
     }, [materialId]);
 
-    if (loading) return <Skeleton className="h-20 w-full rounded-lg" />;
+    if (loading) return <Skeleton className="h-24 w-full rounded-lg" />;
     if (versions.length === 0) {
         return (
             <p className="text-xs text-muted-foreground italic px-1">
-                No version history
+                No version history available.
             </p>
         );
     }
 
-    const visible = expanded ? versions : versions.slice(0, 3);
-
     return (
-        <div className="space-y-1.5">
-            {visible.map((v) => (
+        <div className="space-y-2">
+            {versions.map((v) => (
                 <div
                     key={v.id}
-                    className="flex items-start gap-2.5 rounded-md border bg-muted/20 px-3 py-2 text-sm dark:bg-muted/10"
+                    className="flex items-center gap-3 rounded-lg border bg-muted/20 px-3 py-2.5 text-sm dark:bg-muted/5 hover:bg-muted/30 transition-colors"
                 >
-                    <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-background border shadow-sm">
+                        <span className="text-[10px] font-bold">v{v.version_number}</span>
+                    </div>
                     <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-1.5">
-                            <span className="font-medium">
-                                v{v.version_number}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                                {new Date(v.created_at).toLocaleDateString()}
+                        <div className="flex flex-col">
+                            <span className="text-xs font-medium text-muted-foreground">
+                                {new Date(v.created_at).toLocaleDateString(undefined, {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric'
+                                })}
                             </span>
                         </div>
-                        {v.diff_summary && (
-                            <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
-                                {v.diff_summary}
-                            </p>
-                        )}
                     </div>
                     <button
                         onClick={() => downloadMaterial(materialId, v.version_number)}
                         disabled={isDownloading}
-                        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                        className="shrink-0 rounded-full p-1.5 text-muted-foreground transition-all hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
                         title={`Download v${v.version_number}`}
                     >
                         {isDownloading ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
-                            <Download className="h-3.5 w-3.5" />
+                            <Download className="h-4 w-4" />
                         )}
                     </button>
                 </div>
             ))}
-            {versions.length > 3 && (
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setExpanded(!expanded)}
-                    className="w-full text-xs"
-                >
-                    {expanded ? (
-                        <>
-                            <ChevronUp className="mr-1 h-3 w-3" /> Show less
-                        </>
-                    ) : (
-                        <>
-                            <ChevronDown className="mr-1 h-3 w-3" /> Show all (
-                            {versions.length})
-                        </>
-                    )}
-                </Button>
-            )}
         </div>
     );
 }
@@ -225,17 +200,19 @@ interface ActionsTabProps {
     target: SidebarTarget | null;
 }
 
+import { ScrollArea } from "@/components/ui/scroll-area";
+
 export function ActionsTab({ target }: ActionsTabProps) {
     const triggerBrowseRefresh = useBrowseRefreshStore((s) => s.triggerBrowseRefresh);
     const addOperation = useStagingStore((s) => s.addOperation);
     const [editDialogOpen, setEditDialogOpen] = useState(false);
-    
+
     // Delete Confirmation State
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
     const { downloadMaterial, isDownloading } = useDownload();
-    
+
     // Derive print capability early for unconditional hook call
     const isMaterial = target?.type === "material";
     const materialId = isMaterial ? target?.id : "";
@@ -253,7 +230,7 @@ export function ActionsTab({ target }: ActionsTabProps) {
 
     if (!target) {
         return (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="flex flex-col items-center justify-center h-full p-8 text-center">
                 <Settings className="mb-3 h-8 w-8 text-muted-foreground/30" />
                 <p className="text-sm text-muted-foreground">
                     Select an item to view actions.
@@ -280,7 +257,7 @@ export function ActionsTab({ target }: ActionsTabProps) {
 
     const handleDraftDelete = () => {
         addOperation(getDeleteOp());
-        toast.success(`Suppression de "${title}" ajoutée au brouillon`);
+        toast.success(`Deletion of "${title}" added to draft`);
         setDeleteDialogOpen(false);
     };
 
@@ -295,69 +272,75 @@ export function ActionsTab({ target }: ActionsTabProps) {
     };
 
     return (
-        <div className="space-y-4">
-            {/* Quick actions */}
-            <ActionGroup label="Actions Rapides">
-                {isMaterial && materialId && (
+        <div className="absolute inset-0 flex flex-col bg-background overflow-hidden">
+            <div className="p-4 space-y-6 shrink-0">
+                {/* Quick actions */}
+                <ActionGroup label="Quick Actions">
+                    {isMaterial && materialId && (
+                        <ActionRow
+                            icon={isDownloading ? Loader2 : Download}
+                            label="Download"
+                            onClick={() => downloadMaterial(materialId)}
+                            iconClassName={isDownloading ? "animate-spin" : ""}
+                        />
+                    )}
+                    {isMaterial && canPrint && (
+                        <ActionRow
+                            icon={isPrinting ? Loader2 : Printer}
+                            label="Print"
+                            onClick={print}
+                            iconClassName={isPrinting ? "animate-spin" : ""}
+                        />
+                    )}
                     <ActionRow
-                        icon={isDownloading ? Loader2 : Download}
-                        label="Télécharger"
-                        onClick={() => downloadMaterial(materialId)}
-                        iconClassName={isDownloading ? "animate-spin" : ""}
+                        icon={Share2}
+                        label="Copy Link"
+                        onClick={handleShare}
                     />
-                )}
-                {isMaterial && canPrint && (
+                </ActionGroup>
+
+                {/* Editing */}
+                <ActionGroup label="Organization">
                     <ActionRow
-                        icon={isPrinting ? Loader2 : Printer}
-                        label="Imprimer"
-                        onClick={print}
-                        iconClassName={isPrinting ? "animate-spin" : ""}
+                        icon={Edit}
+                        label="Edit Details"
+                        onClick={() => setEditDialogOpen(true)}
                     />
-                )}
-                <ActionRow
-                    icon={Share2}
-                    label="Copier le lien"
-                    onClick={handleShare}
-                />
-            </ActionGroup>
+                    <ActionRow
+                        icon={Trash2}
+                        label="Delete Item"
+                        onClick={() => setDeleteDialogOpen(true)}
+                        destructive
+                    />
+                </ActionGroup>
 
-            {/* Editing */}
-            <ActionGroup label="Organisation">
-                <ActionRow
-                    icon={Edit}
-                    label="Modifier les détails"
-                    onClick={() => setEditDialogOpen(true)}
-                />
-                <ActionRow
-                    icon={Trash2}
-                    label="Supprimer"
-                    onClick={() => setDeleteDialogOpen(true)}
-                    destructive
-                />
-            </ActionGroup>
-
-            {/* Moderation */}
-            <ActionGroup label="Modération">
-                <FlagButton
-                    targetType={isMaterial ? "material" : "comment"}
-                    targetId={target.id}
-                    variant="ghost"
-                    className="flex w-full items-center justify-start gap-2.5 px-3 py-2.5 text-sm font-normal rounded-lg hover:bg-accent/60"
-                    iconClassName="h-4 w-4 text-muted-foreground"
-                />
-            </ActionGroup>
+                {/* Moderation */}
+                <ActionGroup label="Moderation">
+                    <FlagButton
+                        targetType={isMaterial ? "material" : "comment"}
+                        targetId={target.id}
+                        variant="ghost"
+                        className="flex w-full items-center justify-start gap-2.5 px-3 py-2.5 text-sm font-normal rounded-lg hover:bg-accent/60 transition-colors"
+                        iconClassName="h-4 w-4 text-muted-foreground"
+                    />
+                </ActionGroup>
+            </div>
 
             {/* Version history */}
             {isMaterial && materialId && (
-                <div className="space-y-1.5">
-                    <span className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-0.5">
-                        Historique
+                <div className="flex-1 min-h-0 flex flex-col px-4 pb-4 overflow-hidden">
+                    <span className="mb-3 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-0.5 shrink-0">
+                        Version History
                     </span>
-                    <VersionHistoryList materialId={materialId} />
+                    <ScrollArea className="flex-1 min-h-0">
+                        <div className="pr-4 pb-4">
+                            <VersionHistoryList materialId={materialId} />
+                        </div>
+                    </ScrollArea>
                 </div>
             )}
 
-            <EditItemDialog
+            <FileEditDialog
                 open={editDialogOpen}
                 onOpenChange={setEditDialogOpen}
                 target={target}
@@ -368,44 +351,44 @@ export function ActionsTab({ target }: ActionsTabProps) {
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-destructive">
                             <Trash2 className="h-5 w-5" />
-                            Supprimer {isMaterial ? "le document" : "le dossier"}
+                            Delete {isMaterial ? "Material" : "Folder"}
                         </DialogTitle>
                         <DialogDescription>
-                            Voulez-vous supprimer définitivement{" "}
-                            <span className="font-medium text-foreground">{title}</span> ?
-                            Vous pouvez proposer cette suppression immédiatement ou l'ajouter à votre brouillon global.
+                            Are you sure you want to permanently delete{" "}
+                            <span className="font-semibold text-foreground">{title}</span>?
+                            You can propose this deletion immediately or add it to your global staging draft.
                         </DialogDescription>
                     </DialogHeader>
-                    <DialogFooter className="gap-2 sm:gap-0 mt-4">
+                    <DialogFooter className="gap-2 sm:gap-0 mt-6">
                         <Button
                             variant="ghost"
                             onClick={() => setDeleteDialogOpen(false)}
                             disabled={deleting}
                             className="sm:mr-auto"
                         >
-                            Annuler
+                            Cancel
                         </Button>
                         <Button
                             variant="outline"
                             onClick={handleDraftDelete}
                             disabled={deleting}
-                            className="gap-2 border-dashed border-destructive/50 text-destructive hover:bg-destructive/10"
+                            className="gap-2 border-dashed border-destructive/40 text-destructive hover:bg-destructive/5 hover:border-destructive/60"
                         >
                             <Plus className="h-4 w-4" />
-                            Brouillon
+                            Draft
                         </Button>
                         <Button
                             variant="destructive"
                             onClick={handleDirectDelete}
                             disabled={deleting}
-                            className="gap-2"
+                            className="gap-2 shadow-sm"
                         >
                             {deleting ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                                 <Send className="h-4 w-4" />
                             )}
-                            Supprimer
+                            Delete Now
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -413,3 +396,4 @@ export function ActionsTab({ target }: ActionsTabProps) {
         </div>
     );
 }
+

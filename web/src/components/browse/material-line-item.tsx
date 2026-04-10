@@ -89,9 +89,13 @@ interface MaterialLineItemProps {
     onToggleSelect?: () => void;
     /** When set, appended as ?preview_pr= to preserve preview mode across navigation */
     previewPrId?: string;
+    navIndex?: number;
+    focused?: boolean;
+    /** The index of the operation in the PR payload, if this is an external preview edit */
+    previewOpIndex?: number;
 }
 
-export function MaterialLineItem({ material, staged, selectMode, selected, onToggleSelect, previewPrId }: MaterialLineItemProps) {
+export function MaterialLineItem({ material, staged, selectMode, selected, onToggleSelect, previewPrId, navIndex, focused, previewOpIndex }: MaterialLineItemProps) {
     const isMobile = useIsMobile();
     const { openSidebar } = useUIStore();
     const pathname = usePathname();
@@ -113,6 +117,10 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
     }
 
     const buildPath = () => {
+        // If this is an external edit preview, link directly to the PR preview page
+        if (staged === "edited" && previewPrId && previewOpIndex !== undefined) {
+            return `/pull-requests/${previewPrId}/preview/${previewOpIndex}`;
+        }
         const base = pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
         const matPath = `${base}/${slug}`;
         return previewPrId ? `${matPath}?preview_pr=${previewPrId}` : matPath;
@@ -186,7 +194,8 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
     return (
         <div
             onClick={handleCardClick}
-            className={`flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50 cursor-pointer ${stagedBorder} ${selectMode && selected ? "bg-primary/5 dark:bg-primary/10" : ""}`}
+            data-nav-index={navIndex}
+            className={`flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50 cursor-pointer ${stagedBorder} ${selectMode && selected ? "bg-primary/5 dark:bg-primary/10" : ""} ${focused ? "bg-muted ring-2 ring-inset ring-primary/40" : ""}`}
         >
             {selectMode && (
                 <Checkbox

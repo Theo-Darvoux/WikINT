@@ -6,7 +6,8 @@ import { FlagButton } from "@/components/flags/flag-button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import Link from "next/link";
 import { toast } from "sonner";
 import type { AnnotationData, ThreadData } from "@/hooks/use-annotations";
 
@@ -19,6 +20,8 @@ function getInitials(name: string | null): string {
         .toUpperCase()
         .slice(0, 2);
 }
+
+import { ExpandableText } from "@/components/ui/expandable-text";
 
 function AnnotationItem({
     annotation,
@@ -49,31 +52,52 @@ function AnnotationItem({
     const date = new Date(annotation.created_at);
 
     return (
-        <div className="group flex gap-2 py-1.5">
-            <Avatar className="h-6 w-6 shrink-0">
-                <AvatarFallback className="text-[9px]">
-                    {getInitials(annotation.author?.display_name ?? null)}
-                </AvatarFallback>
-            </Avatar>
+        <div className="group flex gap-2 py-3">
+            {annotation.author_id ? (
+                <Link href={`/profile/${annotation.author_id}`} className="shrink-0 mt-0.5">
+                    <Avatar className="h-6 w-6 shrink-0 transition-opacity hover:opacity-80">
+                        <AvatarImage
+                            src={
+                                annotation.author?.avatar_url && annotation.author_id
+                                    ? `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api"}/users/${annotation.author_id}/avatar?v=${encodeURIComponent(annotation.author.avatar_url)}`
+                                    : undefined
+                            }
+                        />
+                        <AvatarFallback className="text-[9px]">
+                            {getInitials(annotation.author?.display_name ?? null)}
+                        </AvatarFallback>
+                    </Avatar>
+                </Link>
+            ) : (
+                <Avatar className="h-6 w-6 shrink-0 mt-0.5">
+                    <AvatarFallback className="text-[9px]">
+                        {getInitials(annotation.author?.display_name ?? null)}
+                    </AvatarFallback>
+                </Avatar>
+            )}
             <div className="min-w-0 flex-1">
                 {replyToAnnotation && (
-                    <p className="mb-0.5 text-xs text-muted-foreground">
+                    <p className="mb-0.5 text-[10px] text-muted-foreground italic">
                         Replying to @{replyToAnnotation.author?.display_name ?? "[deleted]"}
                     </p>
                 )}
                 <div className="flex items-baseline gap-2">
-                    <span className="text-xs font-medium">{authorName}</span>
-                    <span className="text-[10px] text-muted-foreground">
+                    {annotation.author_id ? (
+                        <Link href={`/profile/${annotation.author_id}`} className="text-xs font-semibold truncate hover:underline">
+                            {authorName}
+                        </Link>
+                    ) : (
+                        <span className="text-xs font-semibold truncate">{authorName}</span>
+                    )}
+                    <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums opacity-80">
                         {date.toLocaleDateString()}
                     </span>
                 </div>
-                <p className="mt-0.5 whitespace-pre-wrap break-words text-xs">
-                    {annotation.body}
-                </p>
-                <div className="mt-1 flex flex-wrap gap-1">
+                <ExpandableText text={annotation.body} threshold={180} clampedLines={5} className="text-xs text-foreground/90 leading-normal" />
+                <div className="mt-1.5 flex flex-wrap gap-2 items-center">
                     <button
                         onClick={() => onReply(annotation.id)}
-                        className="flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                        className="flex items-center gap-1.5 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                     >
                         <Reply className="h-3 w-3" />
                         Reply
@@ -81,24 +105,26 @@ function AnnotationItem({
                     {canEdit && (
                         <button
                             onClick={() => onEdit(annotation.id, annotation.body)}
-                            className="flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                            className="flex items-center gap-1.5 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                         >
                             <Edit2 className="h-3 w-3" />
                             Edit
                         </button>
                     )}
                     {canDelete ? (
-                        <ConfirmDeleteDialog
-                            onConfirm={() => onDelete(annotation.id)}
-                            title="Delete annotation"
-                            description="Are you sure you want to delete this annotation? This action cannot be undone."
-                        />
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
+                            <ConfirmDeleteDialog
+                                onConfirm={() => onDelete(annotation.id)}
+                                title="Delete annotation"
+                                description="Are you sure you want to delete this annotation? This action cannot be undone."
+                            />
+                        </div>
                     ) : (
                         <FlagButton
                             targetType="annotation"
                             targetId={annotation.id}
                             variant="ghost"
-                            className="h-auto p-0 px-1 py-0.5 text-[10px] font-normal text-muted-foreground hover:bg-muted hover:text-foreground"
+                            className="h-auto p-0 px-1.5 py-1 text-[10px] font-normal text-muted-foreground hover:bg-muted hover:text-foreground gap-1 transition-colors"
                             iconClassName="h-3 w-3"
                         />
                     )}
@@ -129,12 +155,16 @@ export function AnnotationThread({
     const annotationMap = new Map(allAnnotations.map((a) => [a.id, a]));
 
     return (
-        <div className="rounded-md border bg-muted/20 p-2">
+        <div className="rounded-lg border bg-muted/10 p-3 shadow-sm hover:border-primary/20 transition-colors">
             {thread.root.selection_text && (
-                <div className="mb-2 border-l-2 border-yellow-400/60 bg-yellow-50/50 px-2 py-1 dark:bg-yellow-900/20">
-                    <p className="text-xs italic text-muted-foreground">
-                        &ldquo;{thread.root.selection_text}&rdquo;
-                    </p>
+                <div className="mb-2.5 border-l-2 border-yellow-400 bg-yellow-400/5 px-2 py-1 rounded-r-md">
+                    <span className="block text-[9px] font-bold text-yellow-600 uppercase tracking-tight mb-0.5">Selection</span>
+                    <ExpandableText 
+                        text={thread.root.selection_text} 
+                        threshold={150} 
+                        clampedLines={3} 
+                        className="text-[10px] italic text-muted-foreground leading-relaxed"
+                    />
                 </div>
             )}
             <AnnotationItem
@@ -146,7 +176,7 @@ export function AnnotationThread({
                 onDelete={onDelete}
             />
             {thread.replies.length > 0 && (
-                <div className="ml-4 border-l pl-3">
+                <div className="ml-5 border-l-2 pl-3.5 space-y-1 mt-1 border-muted">
                     {thread.replies.map((reply) => (
                         <AnnotationItem
                             key={reply.id}
@@ -199,12 +229,12 @@ export function AnnotationForm({
     };
 
     return (
-        <div className="space-y-2">
+        <div className="space-y-2 group">
             <Textarea
                 value={body}
                 onChange={(e) => setBody(e.target.value.slice(0, maxLength))}
                 placeholder={placeholder}
-                className="min-h-[60px] text-sm"
+                className="min-h-[50px] text-xs bg-muted/30 focus-visible:bg-background transition-all py-2"
                 onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
@@ -213,13 +243,14 @@ export function AnnotationForm({
                 }}
             />
             <div className="flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground">
+                <span className={`text-[10px] ${body.length >= maxLength ? "text-destructive font-bold" : "text-muted-foreground"}`}>
                     {body.length}/{maxLength}
                 </span>
                 <Button
                     size="sm"
                     onClick={handleSubmit}
                     disabled={submitting || !body.trim()}
+                    className="h-8 shadow-sm"
                 >
                     {submitLabel ?? <Send className="h-3.5 w-3.5" />}
                 </Button>
@@ -227,3 +258,4 @@ export function AnnotationForm({
         </div>
     );
 }
+

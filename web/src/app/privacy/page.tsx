@@ -44,7 +44,7 @@ export default function PrivacyPage() {
                 <p className="text-muted-foreground leading-relaxed">
                     Your account data is retained for as long as your account is active. If you
                     delete your account, your personal data (name, email, bio, avatar) is
-                    anonymized immediately and permanently removed after a 30-day grace period.
+                    anonymized immediately and permanently removed.
                     Contributed content (materials, annotations, comments) is retained in
                     anonymized form as per the content license above.
                 </p>
@@ -56,7 +56,7 @@ export default function PrivacyPage() {
                     Under GDPR, you have the right to access, rectify, and delete your personal
                     data. You can export all your data from the Settings page at any time. You
                     can delete your account at any time, which will anonymize your personal data
-                    immediately and trigger permanent removal after a 30-day grace period. Note
+                    immediately and permanently. Note
                     that the right to erasure applies to personal data only; contributed materials
                     are retained under the content license granted upon upload.
                 </p>
