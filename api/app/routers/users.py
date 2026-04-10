@@ -22,8 +22,8 @@ from app.services.user import (
     get_user_by_id,
     get_user_contributions,
     get_user_stats,
-    onboard_user,
     hard_delete_user,
+    onboard_user,
     update_user_profile,
 )
 
@@ -118,10 +118,16 @@ async def get_user_profile(
 async def get_user_avatar(
     user_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-):
+) -> RedirectResponse:
     target = await get_user_by_id(db, user_id)
     if not target or not target.avatar_url:
         raise NotFoundError("Avatar not found")
+
+    if target.avatar_url.startswith("quarantine/"):
+        # Unscanned avatar from a stuck/stale upload.
+        # Refuse to serve to avoid 500 error in generate_presigned_get_url.
+        raise NotFoundError("Avatar still processing or invalid")
+
     url = await generate_presigned_get_url(target.avatar_url)
     return RedirectResponse(url)
 

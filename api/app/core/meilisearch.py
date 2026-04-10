@@ -23,14 +23,20 @@ async def setup_meilisearch() -> None:
         min_word_size_for_typos=MinWordSizeForTypos(one_typo=5, two_typos=9),
     )
 
+    # Get existing indexes to avoid unnecessary create_index calls
+    # that trigger "Index already exists" ERROR logs in Meilisearch.
+    indexes = await meili_client.get_indexes()
+    existing_uids = [idx.uid for idx in indexes] if indexes else []
+
     # 1. Materials index
-    try:
-        await meili_client.create_index("materials", primary_key="id")
-        logger.info("Created 'materials' index in Meilisearch")
-    except MeilisearchApiError as e:
-        if e.code != "index_already_exists":
-            logger.error(f"Error creating 'materials' index: {e}")
-            raise
+    if "materials" not in existing_uids:
+        try:
+            await meili_client.create_index("materials", primary_key="id")
+            logger.info("Created 'materials' index in Meilisearch")
+        except MeilisearchApiError as e:
+            if e.code != "index_already_exists":
+                logger.error(f"Error creating 'materials' index: {e}")
+                raise
 
     materials_settings = MeilisearchSettings(
         searchable_attributes=[
@@ -49,13 +55,14 @@ async def setup_meilisearch() -> None:
     await meili_client.index("materials").update_settings(materials_settings)
 
     # 2. Directories index
-    try:
-        await meili_client.create_index("directories", primary_key="id")
-        logger.info("Created 'directories' index in Meilisearch")
-    except MeilisearchApiError as e:
-        if e.code != "index_already_exists":
-            logger.error(f"Error creating 'directories' index: {e}")
-            raise
+    if "directories" not in existing_uids:
+        try:
+            await meili_client.create_index("directories", primary_key="id")
+            logger.info("Created 'directories' index in Meilisearch")
+        except MeilisearchApiError as e:
+            if e.code != "index_already_exists":
+                logger.error(f"Error creating 'directories' index: {e}")
+                raise
 
     directories_settings = MeilisearchSettings(
         searchable_attributes=[

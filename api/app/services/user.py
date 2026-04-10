@@ -6,21 +6,21 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.avatar_processor import process_avatar
 from app.core.exceptions import BadRequestError
+from app.core.storage import delete_object, download_file, upload_file
 from app.models.annotation import Annotation
 from app.models.comment import Comment
 from app.models.flag import Flag
 from app.models.material import Material
 from app.models.notification import Notification
 from app.models.pull_request import PRComment, PullRequest
+from app.models.upload import Upload
 from app.models.user import User
 from app.models.view_history import ViewHistory
 from app.services.material import material_orm_to_dict
-from app.models.upload import Upload
 
 logger = logging.getLogger("wikint")
-from app.core.storage import delete_object, download_file, upload_file
-from app.core.avatar_processor import process_avatar
 
 
 async def onboard_user(
@@ -189,7 +189,7 @@ async def update_user_profile(
 
     if avatar_url is not None and avatar_url != user.avatar_url:
         final_url = avatar_url
-        
+
         # Handle new avatar from quarantine
         if avatar_url.startswith("quarantine/"):
             # 1. Security check: Verify ownership and existence
@@ -199,30 +199,30 @@ async def update_user_profile(
             )
             res = await db.execute(stmt)
             upload_rec = res.scalar_one_or_none()
-            
+
             if not upload_rec:
                 raise BadRequestError("Invalid avatar upload key or unauthorized")
-            
+
             # 2. Process and Compress (Synchronous-ish)
             import tempfile
-            from pathlib import Path
             import uuid as uuid_pkg
-            
+            from pathlib import Path
+
             with tempfile.TemporaryDirectory() as tmp_dir:
                 local_input = Path(tmp_dir) / "input_avatar"
                 await download_file(avatar_url, local_input)
-                
+
                 try:
                     processed_path = process_avatar(local_input)
                     try:
                         # 3. Upload to permanent avatars/ prefix
                         avatar_uuid = uuid_pkg.uuid4()
                         new_key = f"avatars/{user.id}/{avatar_uuid}.webp"
-                        
+
                         with open(processed_path, "rb") as f:
                             await upload_file(
-                                f, 
-                                new_key, 
+                                f.read(),
+                                new_key,
                                 content_type="image/webp",
                                 content_disposition="inline" # Avatars should be viewable inline
                             )
@@ -244,6 +244,10 @@ async def update_user_profile(
             and user.avatar_url != final_url
         ):
             await delete_object(user.avatar_url)
+
+        if final_url.startswith("quarantine/"):
+            # Safety: never let a quarantine URL into the User model
+            raise BadRequestError("Cannot set avatar to unscanned quarantine key")
 
         user.avatar_url = final_url
 
