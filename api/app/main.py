@@ -9,6 +9,7 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.responses import JSONResponse
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import settings
 from app.core.exceptions import AppError
@@ -168,6 +169,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=settings.cors_headers_list,
 )
+
+# Trust X-Forwarded-* headers (S24)
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 
 @app.middleware("http")

@@ -1,6 +1,17 @@
 import { clearAccessToken, getAccessToken, setAccessToken, decodeToken } from "./auth-tokens";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+export const API_BASE = (() => {
+    const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+    if (typeof window !== "undefined") {
+        // Self-healing: Upgrade http to https if the page is HTTPS and it's the same host
+        const isHttps = window.location.protocol === "https:";
+        if (isHttps && base.startsWith("http://") && base.includes(window.location.host)) {
+            return base.replace("http://", "https://");
+        }
+    }
+    return base;
+})();
+
 
 type FetchOptions = RequestInit & {
     skipAuth?: boolean;
