@@ -23,17 +23,119 @@ import {
 import { useUIStore } from "@/lib/stores";
 // useUIStore provides: sidebarOpen, openSidebar, closeSidebar
 import { apiFetch } from "@/lib/api-client";
-import { PdfViewer } from "@/components/viewers/pdf-viewer";
-import { MarkdownViewer } from "@/components/viewers/markdown-viewer";
-import { ImageViewer } from "@/components/viewers/image-viewer";
-import { VideoPlayer } from "@/components/viewers/video-player";
-import { AudioPlayer } from "@/components/viewers/audio-player";
-import { CodeViewer } from "@/components/viewers/code-viewer";
-import { CsvViewer } from "@/components/viewers/csv-viewer";
-import { OfficeViewer } from "@/components/viewers/office-viewer";
-import { GenericViewer } from "@/components/viewers/generic-viewer";
-import { EpubViewer } from "@/components/viewers/epub-viewer";
-import { DjvuViewer } from "@/components/viewers/djvu-viewer";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
+
+// --- Dynamic Viewer Imports ---
+// This prevents large libraries (like react-pdf, mermaid, monaco) from being compiled
+// simultaneously when only one is needed, drastically reducing dev memory pressure.
+
+const PdfViewer = dynamic(
+  () => import("@/components/viewers/pdf-viewer").then((mod) => mod.PdfViewer),
+  {
+    loading: () => <Skeleton className="h-full w-full rounded-none" />,
+    ssr: false,
+  },
+);
+
+const MarkdownViewer = dynamic(
+  () =>
+    import("@/components/viewers/markdown-viewer").then(
+      (mod) => mod.MarkdownViewer,
+    ),
+  {
+    loading: () => <Skeleton className="h-full w-full rounded-none" />,
+    ssr: false,
+  },
+);
+
+const ImageViewer = dynamic(
+  () =>
+    import("@/components/viewers/image-viewer").then((mod) => mod.ImageViewer),
+  {
+    loading: () => <Skeleton className="h-full w-full rounded-none" />,
+    ssr: false,
+  },
+);
+
+const VideoPlayer = dynamic(
+  () =>
+    import("@/components/viewers/video-player").then((mod) => mod.VideoPlayer),
+  {
+    loading: () => <Skeleton className="h-full w-full rounded-none" />,
+    ssr: false,
+  },
+);
+
+const AudioPlayer = dynamic(
+  () =>
+    import("@/components/viewers/audio-player").then((mod) => mod.AudioPlayer),
+  {
+    loading: () => <Skeleton className="h-full w-full rounded-none" />,
+    ssr: false,
+  },
+);
+
+const CodeViewer = dynamic(
+  () =>
+    import("@/components/viewers/code-viewer").then((mod) => mod.CodeViewer),
+  {
+    loading: () => <Skeleton className="h-full w-full rounded-none" />,
+    ssr: false,
+  },
+);
+
+const CsvViewer = dynamic(
+  () => import("@/components/viewers/csv-viewer").then((mod) => mod.CsvViewer),
+  {
+    loading: () => <Skeleton className="h-full w-full rounded-none" />,
+    ssr: false,
+  },
+);
+
+const OfficeViewer = dynamic(
+  () =>
+    import("@/components/viewers/office-viewer").then(
+      (mod) => mod.OfficeViewer,
+    ),
+  {
+    loading: () => <Skeleton className="h-full w-full rounded-none" />,
+    ssr: false,
+  },
+);
+
+const EpubViewer = dynamic(
+  () =>
+    import("@/components/viewers/epub-viewer").then((mod) => mod.EpubViewer),
+  {
+    loading: () => <Skeleton className="h-full w-full rounded-none" />,
+    ssr: false,
+  },
+);
+
+const DjvuViewer = dynamic(
+  () =>
+    import("@/components/viewers/djvu-viewer").then((mod) => mod.DjvuViewer),
+  {
+    loading: () => <Skeleton className="h-full w-full rounded-none" />,
+    ssr: false,
+  },
+);
+
+const GenericViewer = dynamic(
+  () =>
+    import("@/components/viewers/generic-viewer").then(
+      (mod) => mod.GenericViewer,
+    ),
+  {
+    loading: () => <Skeleton className="h-full w-full rounded-none" />,
+    ssr: false,
+  },
+);
+
+const EpubViewerOld = EpubViewer; // keep for type tracking if needed
+const DjvuViewerOld = DjvuViewer;
+
 import { SharedSidebar } from "@/components/sidebar/shared-sidebar";
 import { ViewerFab } from "@/components/browse/viewer-fab";
 import { Breadcrumbs } from "@/components/browse/breadcrumbs";

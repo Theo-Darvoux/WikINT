@@ -139,11 +139,19 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost/api
       # ONLYOFFICE Document Server URL (browser-facing, routed through nginx)
       - NEXT_PUBLIC_ONLYOFFICE_URL=http://localhost/onlyoffice
+      # Ensure Node.js has enough heap space for large page compilation
+      - NODE_OPTIONS=--max-old-space-size=3072
     volumes:
       - ./web:/app
       - /app/node_modules
     ports:
       - "3000:3000"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
 
   # ONLYOFFICE Document Server — high-fidelity office file viewer (DOCX, XLSX, PPTX, etc.)
   # Requires ~1-2 GB RAM. Takes 30-60s to initialize on first start.

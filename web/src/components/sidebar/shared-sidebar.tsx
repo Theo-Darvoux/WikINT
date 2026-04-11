@@ -3,11 +3,37 @@
 import { useUIStore, type SidebarTab } from "@/lib/stores";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DetailsTab } from "@/components/sidebar/details-tab";
-import { ChatTab } from "@/components/sidebar/chat-tab";
-import { ActionsTab } from "@/components/sidebar/actions-tab";
-import { EditsTab } from "@/components/sidebar/edits-tab";
-import { AnnotationsTab } from "@/components/sidebar/annotations-tab";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
+
+// --- Dynamic Tab Imports ---
+// This ensures that heavy tab components (like Chat and Annotations) are only 
+// compiled when they are actually opened, reducing memory pressure in dev.
+
+const DetailsTab = dynamic(() => import("@/components/sidebar/details-tab").then(mod => mod.DetailsTab), {
+  loading: () => <div className="p-4 space-y-4"><Skeleton className="h-20 w-full" /><Skeleton className="h-40 w-full" /></div>,
+  ssr: false
+});
+
+const ChatTab = dynamic(() => import("@/components/sidebar/chat-tab").then(mod => mod.ChatTab), {
+  loading: () => <div className="flex-1 flex items-center justify-center p-8"><Skeleton className="h-full w-full" /></div>,
+  ssr: false
+});
+
+const ActionsTab = dynamic(() => import("@/components/sidebar/actions-tab").then(mod => mod.ActionsTab), {
+  loading: () => <div className="p-4 space-y-4"><Skeleton className="h-32 w-full" /><Skeleton className="h-20 w-full" /></div>,
+  ssr: false
+});
+
+const EditsTab = dynamic(() => import("@/components/sidebar/edits-tab").then(mod => mod.EditsTab), {
+  loading: () => <div className="p-4 space-y-4"><Skeleton className="h-40 w-full" /></div>,
+  ssr: false
+});
+
+const AnnotationsTab = dynamic(() => import("@/components/sidebar/annotations-tab").then(mod => mod.AnnotationsTab), {
+  loading: () => <div className="flex-1 flex items-center justify-center p-8"><Skeleton className="h-full w-full" /></div>,
+  ssr: false
+});
 import { X, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
