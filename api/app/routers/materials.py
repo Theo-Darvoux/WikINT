@@ -11,6 +11,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.exceptions import AppError
 from app.core.redis import get_redis
 from app.dependencies.auth import CurrentUser, security
 from app.dependencies.rate_limit import rate_limit_downloads
@@ -25,6 +26,8 @@ from app.services.material import (
     get_material_with_version,
     increment_download_count,
     record_view,
+    toggle_favourite,
+    toggle_like,
 )
 
 # Text MIME types that can be fetched / edited as plain text
@@ -59,7 +62,7 @@ async def get_material(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MaterialDetail:
-    data = await get_material_with_version(db, material_id)
+    data = await get_material_with_version(db, material_id, current_user_id=user.id)
     mat_dict = data["material"]  # already a plain dict
     if user is not None:
         check_material_access(user.id, mat_dict)
@@ -124,10 +127,14 @@ async def inline_material(
 
     from app.core.storage import generate_presigned_get_url
 
-    # Images and PDFs are safe to render inline; all other types are forced
+    # Images, PDFs, and Videos are safe to render inline; all other types are forced
     # to download so the browser never executes or parses unknown content.
     file_mime = getattr(version, "file_mime_type", "") or ""
-    inline_safe = file_mime.startswith("image/") or file_mime == "application/pdf"
+    inline_safe = (
+        file_mime.startswith("image/") or
+        file_mime.startswith("video/") or
+        file_mime == "application/pdf"
+    )
     url = await generate_presigned_get_url(
         version.file_key,
         force_download=not inline_safe,
@@ -137,12 +144,55 @@ async def inline_material(
     return {"url": url}
 
 
+@router.get("/{material_id}/thumbnail")
+async def thumbnail_material(
+    material_id: str,
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    """
+    Generate a presigned URL for a material version's thumbnail.
+    If no dedicated thumbnail exists, falls back to /inline for images/PDFs.
+    """
+    from app.services.material import check_material_access, get_material_with_version
+
+    data = await get_material_with_version(db, material_id)
+    check_material_access(user.id, data)
+
+    version = data["current_version_info"]
+    if not version:
+        raise AppError(404, "Material version not found")
+
+    from app.core.storage import generate_presigned_get_url
+
+    # 1. Prefer dedicated stored thumbnail
+    target_key = getattr(version, "thumbnail_key", None)
+    content_type = "image/webp"
+
+    # 2. Fallback to main file if it's an image (natively previewable)
+    if not target_key:
+        file_mime = getattr(version, "file_mime_type", "") or ""
+        if file_mime.startswith("image/"):
+            target_key = version.file_key
+            content_type = file_mime
+        else:
+            raise AppError(404, "Thumbnail not available for this file type")
+
+    url = await generate_presigned_get_url(
+        target_key,
+        force_download=False,
+        filename=f"thumb_{version.file_name or 'file'}.webp",
+        content_type=content_type,
+    )
+    return {"url": url}
+
+
 @router.get("/{material_id}/file")
 async def stream_material_file(
     material_id: str,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    user: Annotated[HTTPAuthorizationCredentials, Depends(security)] | None = None,
     token: Annotated[str | None, Query()] = None,
     redis: Annotated[Redis | None, Depends(get_redis)] = None,  # type: ignore[type-arg]
 ) -> Any:
@@ -268,7 +318,7 @@ async def list_attachments(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[MaterialDetail]:
-    attachments = await get_material_attachments(db, material_id)
+    attachments = await get_material_attachments(db, material_id, current_user_id=user.id)
     return [MaterialDetail.model_validate(a) for a in attachments]
 
 
@@ -280,6 +330,28 @@ async def view_material(
 ) -> dict[str, str]:
     await record_view(db, str(user.id), material_id)
     return {"status": "ok"}
+
+
+@router.post("/{material_id}/like")
+async def like_material(
+    material_id: str,
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, Any]:
+    liked = await toggle_like(db, user.id, uuid.UUID(material_id))
+    await db.commit()
+    return {"liked": liked}
+
+
+@router.post("/{material_id}/favourite")
+async def favourite_material(
+    material_id: str,
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, Any]:
+    favourited = await toggle_favourite(db, user.id, uuid.UUID(material_id))
+    await db.commit()
+    return {"favourited": favourited}
 
 
 # ---------------------------------------------------------------------------

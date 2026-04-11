@@ -24,7 +24,8 @@ class FinalizeInput:
     cas_key: str
     initial_size: int
     final_mime: str
-    content_encoding: str | None
+    content_encoding: str | None = None
+    thumbnail_path: str | None = None
 
 
 @dataclass
@@ -36,6 +37,7 @@ class FinalizeResult:
     new_cas_ref: int
     db_cas_key: str
     safe_name: str
+    thumbnail_key: str | None = None
 
 
 async def run_finalize_storage(
@@ -68,6 +70,23 @@ async def run_finalize_storage(
             ),
             timeout=60.0,
         )
+
+        thumbnail_key = None
+        if input_data.thumbnail_path:
+            thumbnail_key = f"thumbnails/{cas_id}.webp"
+            await asyncio.wait_for(
+                upload_file_multipart(
+                    Path(input_data.thumbnail_path),
+                    thumbnail_key,
+                    content_type="image/webp",
+                ),
+                timeout=30.0,
+            )
+            # Cleanup thumbnail temp file
+            try:
+                Path(input_data.thumbnail_path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
     final_size = input_data.pf.size
 
@@ -105,4 +124,5 @@ async def run_finalize_storage(
         new_cas_ref=new_cas_ref,
         db_cas_key=db_cas_key,
         safe_name=safe_name,
+        thumbnail_key=thumbnail_key,
     )

@@ -116,21 +116,26 @@ Regardless of the transfer method, the server performs a final validation after 
    - Skip directly to clean status.
 4. **If miss (or stale):** Continue to full processing.
 
-### Step 3.3: Malware Scanning & Metadata Stripping (Stages 0-1, wt 65%)
+### Step 3.3: Malware Scanning & Metadata Stripping (Stages 0-1, wt 55%)
 1. `run_scan_and_strip()`: Dispatches both tasks concurrently via `asyncio.gather`.
 2. **Malware Scan:** YARA + MalwareBazaar + PDF safety checks.
 3. **Metadata Stripping:** Format-specific stripping (Images, PDF, Video, Audio, OOXML).
 4. **Concurrency Logic:** If both fail, both are logged, but scan results (Detection/Malicious) always take precedence for the upload status.
 5. If the pipeline resumes from a checkpoint where only the scan was finished, `run_strip_only()` is used.
 
-### Step 3.4: Compression (Stage 2, weight 25%)
+### Step 3.4: Compression (Stage 2, weight 20%)
 1. `run_compress_stage()`: Applies category-specific compression (WEBP for images, Ghostscript for PDF, FFmpeg for A/V).
 2. **Fail-open:** If compression fails or times out, the uncompressed file is used.
 
-### Step 3.5: Finalization (Stage 3, weight 10%)
+### Step 3.5: Thumbnailing (Stage 3, weight 15%)
+1. `run_thumbnail_stage()`: Dispatches to LibreOffice (Office documents), Ghostscript (PDF), FFmpeg (Video), or Pillow (Image).
+2. **Artifact generated:** Resolves and outputs the WebP thumbnail, to be stored alongside the main file.
+3. **Fail-open:** If thumbnail gen fails, no thumbnail is set but the file continues to finalization.
+
+### Step 3.6: Finalization (Stage 4, weight 10%)
 1. `run_finalize_storage()`: Uploads the processed file directly to `cas/{hmac}` (protected by a distributed Redis lock). **No uploads/ copy is created** (CAS V2).
 2. Set Redis caches (Scan results, SHA-256 map, CAS entries, Quota).
-3. Update DB via `UploadWorkerRepository`: set status=`clean`, final_key=`cas/{hmac}`, and content_sha256.
+3. Update DB via `UploadWorkerRepository`: set status=`clean`, final_key=`cas/{hmac}`, `thumbnail_key` if generated, and content_sha256.
 4. Delete quarantine object and dispatch optional webhooks.
 
 **Data at this point:**

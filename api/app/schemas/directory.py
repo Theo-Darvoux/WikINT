@@ -15,6 +15,7 @@ class DirectoryOut(BaseModel):
     sort_order: int
     is_system: bool
     tags: list[str] = []
+    full_path: str | None = None
     created_at: datetime
 
     @field_validator("tags", mode="before")
@@ -30,6 +31,9 @@ class DirectoryOut(BaseModel):
 class DirectoryWithCounts(DirectoryOut):
     child_directory_count: int = 0
     child_material_count: int = 0
+    like_count: int = 0
+    is_liked: bool = False
+    is_favourited: bool = False
 
 
 class DirectoryBreadcrumb(BaseModel):

@@ -33,12 +33,13 @@ Worker jobs include:
 - `reconcile_multipart` - Aborts abandoned S3 multipart uploads
 - `dispatch_webhook` - Sends HMAC-signed webhook notifications
 - `index_material` / `index_directory` / `delete_indexed_item` - MeiliSearch sync
+- `reset_daily_views` - Daily reset of `views_today` counters on all materials (runs at 00:00 UTC)
 
 ### 4. PostgreSQL
 Primary data store. The schema consists of ~15 tables covering:
 - User accounts and roles
 - Directory tree (self-referential hierarchy)
-- Materials and their versions (with file metadata)
+- Materials and their versions (with file metadata, view counters)
 - Pull requests, votes, and comments
 - Tags (many-to-many)
 - Flags, notifications, annotations, comments, download audits, view history
@@ -56,6 +57,7 @@ Multi-purpose data store:
 - **Pub/Sub channels** for real-time upload progress SSE events
 - **Verification code storage** (OTP codes, magic link tokens)
 - **Idempotency keys** for upload deduplication
+- **View counters** (Real-time `total_views` and `views_today` hot-path tracking)
 
 ### 6. MinIO / S3
 Object storage with a single bucket organized by key prefix:

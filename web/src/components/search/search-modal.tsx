@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { FolderIcon, FileTextIcon, Loader2 } from "lucide-react";
+import { FolderIcon, FileTextIcon, Loader2, Eye, ThumbsUp } from "lucide-react";
 
 import { useSearch } from "./use-search";
 import {
@@ -85,6 +85,23 @@ export function SearchModal({
                                     )}
                                 </div>
                                 <div className="text-xs text-muted-foreground flex items-center gap-2">
+                                    {result.search_type === "material" && (
+                                        <div className="flex items-center gap-2 mr-1 border-r pr-2">
+                                            <span className="flex items-center gap-0.5">
+                                                <Eye className="h-3 w-3" />
+                                                {result.total_views || 0}
+                                                {(result.views_today || 0) > 0 && (
+                                                    <span className="text-[10px] font-bold text-orange-500">
+                                                        +{result.views_today}
+                                                    </span>
+                                                )}
+                                            </span>
+                                            <span className="flex items-center gap-0.5">
+                                                <ThumbsUp className={`h-3 w-3 ${(result.is_liked) ? "fill-primary text-primary" : ""}`} />
+                                                {result.like_count || 0}
+                                            </span>
+                                        </div>
+                                    )}
                                     {result.module && (
                                         <span className="bg-secondary px-1.5 py-0.5 rounded">
                                             {result.module}

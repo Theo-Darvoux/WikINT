@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.dependencies.auth import get_optional_user
+from app.models.user import User
 from app.schemas.directory import DirectoryBreadcrumb, DirectoryOut
 from app.schemas.material import MaterialDetail, MaterialOut
 from app.services.directory import (
@@ -20,8 +22,9 @@ router = APIRouter(prefix="/api", tags=["browse"])
 @router.get("/browse")
 async def browse_root(
     db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_user)] = None,
 ) -> dict:
-    result = await get_root_directories(db)
+    result = await get_root_directories(db, current_user_id=user.id if user else None)
     materials = [MaterialDetail.model_validate(m).model_dump() for m in result.get("materials", [])]
     return {
         "type": "directory_listing",
@@ -35,8 +38,9 @@ async def browse_root(
 async def browse_path(
     path: str,
     db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_user)] = None,
 ) -> dict:
-    result = await resolve_browse_path(db, path)
+    result = await resolve_browse_path(db, path, current_user_id=user.id if user else None)
 
     if result["type"] == "material":
         mat_data = result["material"]
@@ -76,7 +80,7 @@ async def browse_path(
     breadcrumbs = []
     if directory:
         dir_out = DirectoryOut.model_validate(directory).model_dump()
-        path_data = await get_directory_path(db, directory.id)
+        path_data = await get_directory_path(db, directory["id"])
         breadcrumbs = [DirectoryBreadcrumb(**p).model_dump() for p in path_data]
 
     materials = []
@@ -108,8 +112,11 @@ async def get_directory(
 async def get_children(
     directory_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_user)] = None,
 ) -> dict:
-    children = await get_directory_children(db, directory_id)
+    children = await get_directory_children(
+        db, directory_id, current_user_id=user.id if user else None
+    )
     materials = [MaterialDetail.model_validate(m).model_dump() for m in children["materials"]]
     return {"directories": children["directories"], "materials": materials}
 

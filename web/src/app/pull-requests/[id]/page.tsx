@@ -757,8 +757,16 @@ function OperationRow({
                                         <dt className="py-0.5 capitalize text-muted-foreground">
                                             {k === "type" ? "Type" : k === "tags" ? "Tags" : k === "description" ? "Description" : k}
                                         </dt>
-                                        <dd className="py-0.5">
-                                            {formatValue(v)}
+                                        <dd className="py-0.5 min-w-0">
+                                            {k === "description" ? (
+                                                <ExpandableText 
+                                                    text={String(v)} 
+                                                    clampedLines={2}
+                                                    className="text-sm"
+                                                />
+                                            ) : (
+                                                formatValue(v)
+                                            )}
                                         </dd>
                                     </div>
                                 ))}

@@ -37,6 +37,11 @@ class MaterialOut(BaseModel):
     author_id: uuid.UUID | None
     metadata: dict[str, object] = Field(validation_alias=AliasChoices("metadata_", "metadata"))
     download_count: int
+    total_views: int
+    views_today: int
+    like_count: int
+    is_liked: bool = False
+    is_favourited: bool = False
     attachment_count: int = 0
     tags: list[str] = []
     created_at: datetime

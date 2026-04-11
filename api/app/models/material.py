@@ -57,6 +57,13 @@ class Material(UUIDMixin, TimestampMixin, Base):
         "metadata", JSONB, default=dict, server_default="{}"
     )
     download_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    total_views: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    views_today: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    views_14d: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_view_reset: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), server_default=func.now()
+    )
+    like_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     directory: Mapped[Directory] = relationship(back_populates="materials")
     author: Mapped[User | None] = relationship(foreign_keys=[author_id])
@@ -73,6 +80,46 @@ class Material(UUIDMixin, TimestampMixin, Base):
     annotations: Mapped[list[Annotation]] = relationship(
         back_populates="material", cascade="all, delete-orphan", passive_deletes=True
     )
+    likes: Mapped[list[MaterialLike]] = relationship(
+        back_populates="material", cascade="all, delete-orphan"
+    )
+    favourites: Mapped[list[MaterialFavourite]] = relationship(
+        back_populates="material", cascade="all, delete-orphan"
+    )
+
+
+class MaterialLike(UUIDMixin, Base):
+    __tablename__ = "material_likes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "material_id", name="uq_material_like_user_material"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    material_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("materials.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    material: Mapped[Material] = relationship(back_populates="likes")
+
+
+class MaterialFavourite(UUIDMixin, Base):
+    __tablename__ = "material_favourites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "material_id", name="uq_material_favourite_user_material"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    material_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("materials.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    material: Mapped[Material] = relationship(back_populates="favourites")
 
 
 class MaterialVersion(UUIDMixin, Base):
@@ -95,6 +142,7 @@ class MaterialVersion(UUIDMixin, Base):
         ForeignKey("pull_requests.id", ondelete="SET NULL")
     )
     cas_sha256: Mapped[str | None] = mapped_column(String(64))
+    thumbnail_key: Mapped[str | None] = mapped_column(String(500))
     virus_scan_result: Mapped[VirusScanResult] = mapped_column(
         String(20),
         default=VirusScanResult.PENDING,

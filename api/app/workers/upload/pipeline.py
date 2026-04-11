@@ -39,6 +39,7 @@ from app.workers.upload.stages.scan_strip import (
     run_scan_and_strip,
     run_strip_only,
 )
+from app.workers.upload.stages.thumbnail import run_thumbnail_stage
 
 logger = logging.getLogger("wikint")
 
@@ -92,6 +93,7 @@ class UploadPipeline:
 
         self.completed_stage = 0
         self.tmp_path: Path | None = None
+        self.thumbnail_path: str | None = None
         self.pf: ProcessingFile | None = None
 
         self.initial_size = 0
@@ -214,7 +216,24 @@ class UploadPipeline:
 
         await self._check_cancellation("after compress stage")
 
-        # Checkpoint 3: Finalize
+        # Checkpoint 3: Thumbnailing
+        if self.completed_stage < 4:
+            await self._check_deadline("thumbnailing")
+            await self.emit_status(
+                UploadStatus.PROCESSING,
+                detail="Generating previews",
+                stage_name_or_label="thumbnailing",
+                stage_percent=0.0,
+            )
+            assert self.pf is not None
+            self.thumbnail_path = await run_thumbnail_stage(
+                self.pf, self.final_mime, self.original_filename, self.tracer
+            )
+            await self.repo.checkpoint_pipeline_stage(self.upload_id, 4)
+
+        await self._check_cancellation("after thumbnailing stage")
+
+        # Checkpoint 4: Finalize
         await self._check_deadline("finalizing")
         await self.emit_status(UploadStatus.PROCESSING, detail="Finalizing upload", stage_name_or_label="finalizing", stage_percent=0.0)
 
@@ -229,6 +248,7 @@ class UploadPipeline:
             initial_size=self.initial_size,
             final_mime=self.final_mime,
             content_encoding=self.content_encoding,
+            thumbnail_path=self.thumbnail_path,
         )
 
         final_res = await run_finalize_storage(final_input, self.redis, self.tracer)
@@ -296,6 +316,7 @@ class UploadPipeline:
             sha256=self.original_sha256,
             content_sha256=final_res.content_sha256,
             final_key=final_res.final_key,
+            thumbnail_key=final_res.thumbnail_key,
             cas_key=final_res.db_cas_key,
             cas_ref_count=final_res.new_cas_ref if final_res.new_cas_ref > 0 else None,
         )

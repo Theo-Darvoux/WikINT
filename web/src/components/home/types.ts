@@ -1,0 +1,69 @@
+export interface MaterialVersionInfo {
+    id: string;
+    material_id: string;
+    version_number: number;
+    file_key: string | null;
+    file_name: string | null;
+    file_size: number | null;
+    file_mime_type: string | null;
+    diff_summary: string | null;
+    author_id: string | null;
+    pr_id: string | null;
+    virus_scan_result: string;
+    created_at: string;
+}
+
+export interface MaterialDetail {
+    id: string;
+    directory_id: string | null;
+    directory_path: string | null;
+    title: string;
+    slug: string;
+    description: string | null;
+    type: string;
+    current_version: number;
+    parent_material_id: string | null;
+    author_id: string | null;
+    metadata: Record<string, unknown>;
+    download_count: number;
+    total_views: number;
+    views_today: number;
+    like_count: number;
+    is_liked: boolean;
+    is_favourited: boolean;
+    attachment_count: number;
+    tags: string[];
+    created_at: string;
+    updated_at: string;
+    current_version_info: MaterialVersionInfo | null;
+}
+
+export interface FeaturedItem {
+    id: string;
+    material: MaterialDetail;
+    title: string | null;
+    description: string | null;
+    start_at: string;
+    end_at: string;
+    priority: number;
+}
+
+export interface PullRequestOut {
+    id: string;
+    status: string;
+    title: string;
+    description: string | null;
+    author: { id: string; display_name: string | null; email: string } | null;
+    created_at: string;
+    vote_score: number;
+    user_vote: number;
+    summary_types?: string[];
+}
+
+export interface HomeData {
+    featured: FeaturedItem[];
+    popular_today: MaterialDetail[];
+    popular_14d: MaterialDetail[];
+    recent_prs: PullRequestOut[];
+    recent_favourites: MaterialDetail[];
+}

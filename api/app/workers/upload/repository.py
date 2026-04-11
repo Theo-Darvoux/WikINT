@@ -53,6 +53,7 @@ class UploadWorkerRepository:
         sha256: str | None = None,
         content_sha256: str | None = None,
         final_key: str | None = None,
+        thumbnail_key: str | None = None,
         error_detail: str | None = None,
         cas_key: str | None = None,
         cas_ref_count: int | None = None,
@@ -74,6 +75,8 @@ class UploadWorkerRepository:
                     values["content_sha256"] = content_sha256
                 if final_key is not None:
                     values["final_key"] = final_key
+                if thumbnail_key is not None:
+                    values["thumbnail_key"] = thumbnail_key
                 if error_detail is not None:
                     values["error_detail"] = error_detail
                 if cas_key is not None:

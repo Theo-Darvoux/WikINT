@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-    FileText, MessageSquare, Info, Eye,
+    FileText, MessageSquare, Info, Eye, ThumbsUp,
     FileImage, FileVideo, FileAudio, FileArchive, FileSpreadsheet, FileCode, File, Lightbulb, ClipboardCheck, Video,
     Paperclip,
 } from "lucide-react";
@@ -106,6 +106,10 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
     const id = String(material.id ?? "");
     const type = String(material.type ?? "other");
     const attachmentCount = Number(material.attachment_count ?? 0);
+    const totalViews = Number(material.total_views ?? 0);
+    const viewsToday = Number(material.views_today ?? 0);
+    const likeCount = Number(material.like_count ?? 0);
+    const isLiked = Boolean(material.is_liked);
 
     // Extract file name from current version info if available
     let fileName = "";
@@ -162,12 +166,6 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
     }
 
     const iconColorClass = badgeColor.split(" ").find(c => c.startsWith("text-")) || "text-muted-foreground";
-
-    const handleChat = (e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        openSidebar("chat", { type: "material", id, data: material });
-    };
 
     const handleDetails = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -233,6 +231,19 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
                 )}
             </div>
 
+            {!isMobile && (
+                <div className="flex flex-col items-end justify-center px-2 text-[11px] leading-tight text-muted-foreground opacity-80">
+                    <span className="flex items-center gap-1" title="Likes">
+                        {likeCount}
+                        <ThumbsUp className={`h-3 w-3 ${isLiked ? "fill-primary text-primary" : ""}`} />
+                    </span>
+                    <span className="flex items-center gap-1" title="Total views">
+                        {totalViews}
+                        <Eye className="h-3 w-3" />
+                    </span>
+                </div>
+            )}
+
             <div className="flex shrink-0 items-center gap-1">
                 {isMobile ? (
                     <Link
@@ -244,14 +255,6 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
                     </Link>
                 ) : (
                     <>
-                        <button
-                            onClick={handleChat}
-                            className="rounded-md p-2 hover:bg-muted"
-                            title="Chat"
-                            aria-label={`Open chat for ${title}`}
-                        >
-                            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                        </button>
                         <button
                             onClick={handleDetails}
                             className="rounded-md p-2 hover:bg-muted"

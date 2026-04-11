@@ -30,6 +30,7 @@ class Upload(UUIDMixin, Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     quarantine_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     final_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    thumbnail_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     mime_type: Mapped[str | None] = mapped_column(String(200), nullable=True)

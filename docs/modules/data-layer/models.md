@@ -49,15 +49,37 @@ See [Data Model](../../architecture/data-model.md) for full schema.
 - `parent_material_id` enables attachment hierarchies (materials can have child materials)
 - `metadata_` is a JSONB column aliased to `metadata` in the database (Python `metadata` conflicts with SQLAlchemy internals)
 - `download_count` is denormalized and incremented on each download
+- `views_today` is reset to 0 daily by the `reset_daily_views` worker after being accumulated into `views_14d`
+- `views_14d` is a rolling 14-day view counter, accumulated from `views_today` each midnight and zeroed on the 1st and 15th of each month by `reset_14d_views`
 
 **Unique constraints:**
 - `(directory_id, slug)` — standard uniqueness
 - Partial index: `slug` unique WHERE `directory_id IS NULL` — ensures root-level slugs don't collide
 
+### FeaturedItem (`featured.py`)
+
+Curated items surfaced on the Home page within a configurable time window:
+
+- `material_id` → Foreign key to `materials.id` (CASCADE delete)
+- `title` / `description` → Optional override copy shown on the home card (falls back to the material's own title/description on the frontend when `None`)
+- `start_at` / `end_at` → Timezone-aware window during which the item is active; the API filters `start_at <= now <= end_at`
+- `priority` → Integer sort key; higher values surface first
+- `created_by` → FK to `users.id` (SET NULL); audit trail of which moderator created the entry
+- `created_at` → Immutable creation timestamp
+
+**Relationships:**
+- `material` → Many-to-one with Material (`lazy="joined"` — always loaded in a single query)
+- `creator` → Many-to-one with User via `created_by`
+
+**Indexes:**
+- `ix_featured_items_window` on `(start_at, end_at)` — accelerates the active-window filter
+- `ix_featured_items_priority` on `priority` — accelerates ORDER BY priority DESC
+
 ### MaterialVersion (`material.py`)
 Tracks every version of a material's file:
 - `file_key` — S3 object key (e.g., `materials/user-id/upload-id/file.pdf`)
 - `file_size` — BigInteger (supports files > 2 GB)
+- `thumbnail_key` — S3 object key for generated preview thumbnail (WebP)
 - `virus_scan_result` — Enum: pending/clean/malicious (stored as VARCHAR(20) for flexibility)
 - `pr_id` — Which PR introduced this version (audit trail)
 

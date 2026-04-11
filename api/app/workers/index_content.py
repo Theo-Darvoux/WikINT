@@ -65,6 +65,9 @@ async def index_material(ctx: dict, material_id: uuid.UUID) -> None:
             "ancestor_path": ancestor_path,
             "extra_searchable": extra,
             "browse_path": browse_path,
+            "total_views": material.total_views,
+            "views_today": material.views_today,
+            "like_count": material.like_count,
         }
         await meili_client.index("materials").add_documents([doc])
         logger.info(f"Indexed material {material_id}")

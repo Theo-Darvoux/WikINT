@@ -1,5 +1,21 @@
 # Remaining API Endpoints
 
+## Home (`/api/home`)
+Aggregate home-page data endpoint. All routes require authentication (`CurrentUser`).
+
+- `GET /api/home/` — Returns a `HomeResponse` combining all home-page sections in one request:
+  - `featured` — Active `FeaturedItem`s (`start_at <= now <= end_at`), ordered by `priority` DESC. Each item embeds a full `MaterialDetail` including `current_version_info`.
+  - `popular_today` — Top 8 root materials (no attachments) ordered by `views_today` DESC.
+  - `popular_14d` — Top 8 root materials ordered by `views_14d` DESC (rolling 14-day counter).
+  - `recent_prs` — 5 most recently opened `open` pull requests, with author hydrated.
+  - `recent_favourites` — Current user's 6 most recently favourited materials, ordered by favourite `created_at` DESC.
+
+- `GET /api/home/popular` — Paginated "see all" view for popular materials.
+  - Query params: `period` (`"today"` | `"14d"`, default `"today"`), `limit` (1–50, default 20), `offset` (default 0)
+  - Returns `list[MaterialDetail]` ordered by the selected counter DESC.
+  - Only root materials (`parent_material_id IS NULL`) are included in both popularity endpoints.
+
+
 ## Comments (`/api/comments`)
 Polymorphic comment system supporting threaded replies:
 - `POST /api/comments` — Create comment on any target (material, directory, etc.)
@@ -42,7 +58,10 @@ User profile management:
 - `GET /api/users/me` — Current user profile
 - `PUT /api/users/me` — Update profile (display_name, bio, academic_year, avatar_url)
 - `POST /api/users/me/onboard` — Complete onboarding (set GDPR consent, onboarded=true)
+- `GET /api/users/me/recently-viewed` — List of user's recently viewed materials
+- `GET /api/users/me/favourites` — List of user's favourited materials
 - `GET /api/users/{id}` — Public user profile
+- `GET /api/users/{id}/contributions` — List a user's contributions (PRs)
 - `DELETE /api/users/me` — Soft-delete account (sets `deleted_at`)
 
 ## Admin (`/api/admin`)
@@ -51,6 +70,14 @@ Administrative endpoints (requires bureau/vieux role):
 - `PUT /api/admin/users/{id}/role` — Change user role
 - `PUT /api/admin/users/{id}/flag` — Flag/unflag a user
 - `DELETE /api/admin/users/{id}` — Hard delete a user
+
+### Featured Item Management (`/api/admin/featured`)
+CRUD endpoints for curated home-page featured items. Requires `moderator` role (moderator / bureau / vieux).
+
+- `GET /api/admin/featured` — List **all** featured items (no active-window filter), ordered by `start_at` DESC. Returns `list[FeaturedItemOut]`.
+- `POST /api/admin/featured` — Create a new featured item. Body: `FeaturedItemCreate` (`material_id`, `title?`, `description?`, `start_at`, `end_at`, `priority=0`). Validates that `end_at > start_at` and that the referenced material exists. Returns `FeaturedItemOut` (201).
+- `PATCH /api/admin/featured/{featured_id}` — Partially update a featured item. Body: `FeaturedItemUpdate` (all fields optional). Re-validates `end_at > start_at` after applying updates. Returns `FeaturedItemOut`.
+- `DELETE /api/admin/featured/{featured_id}` — Permanently delete a featured item. Returns `{"status": "ok"}`.
 
 ## Tags (`/api/tags`)
 Tag management:

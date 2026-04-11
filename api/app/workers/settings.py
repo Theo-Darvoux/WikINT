@@ -8,6 +8,7 @@ from app.workers.index_content import delete_indexed_item, index_directory, inde
 from app.workers.process_upload import process_upload
 from app.workers.reconcile_multipart import reconcile_multipart_uploads
 from app.workers.storage_ops import delete_storage_objects
+from app.workers.view_reset import reset_14d_views, reset_daily_views
 from app.workers.webhook_dispatch import dispatch_webhook
 from app.workers.year_rollover import year_rollover
 
@@ -75,12 +76,15 @@ class WorkerSettings:
         delete_storage_objects,
         process_upload,
         dispatch_webhook,
+        reset_14d_views,
     ]
     cron_jobs = [
         cron(cleanup_uploads, hour=3, minute=0),
         cron(gdpr_cleanup, hour=4, minute=0),
         cron(year_rollover, month={9}, day=1, hour=2, minute=0),
         cron(reconcile_multipart_uploads, hour={2, 14}, minute=0),
+        cron(reset_daily_views, hour=0, minute=0),
+        cron(reset_14d_views, day={1, 15}, hour=1, minute=0),
     ]
     on_startup = startup
     on_shutdown = shutdown

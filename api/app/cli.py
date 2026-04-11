@@ -322,5 +322,108 @@ async def _migrate_cas_v2(dry_run: bool, batch_size: int) -> None:
         typer.echo("Run with --no-dry-run to apply changes.")
 
 
+@app.command(name="recalculate-thumbnails")
+def recalculate_thumbnails(
+    batch_size: int = typer.Option(50, help="Number of files to process"),
+    dry_run: bool = typer.Option(True, help="Preview changes without writing"),
+    force: bool = typer.Option(False, help="Regenerate even if thumbnail exists"),
+) -> None:
+    """Regenerate missing thumbnails for all existing materials."""
+    asyncio.run(_recalculate_thumbnails(batch_size, dry_run, force))
+
+
+async def _recalculate_thumbnails(batch_size: int, dry_run: bool, force: bool) -> None:
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    from sqlalchemy import func, select, update
+
+    from app.core.database import async_session_factory
+    from app.core.processing import ProcessingFile
+    from app.core.storage import download_file, init_s3_client, upload_file
+    from app.models.material import MaterialVersion
+    from app.workers.upload.stages.thumbnail import run_thumbnail_stage
+
+    await init_s3_client()
+
+    async with async_session_factory() as db:
+        query = select(MaterialVersion)
+        if not force:
+            query = query.where(MaterialVersion.thumbnail_key.is_(None))
+
+        total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
+
+        typer.echo(f"Found {total} material(s) {'missing' if not force else 'queued for'} thumbnails.")
+        if total == 0:
+            return
+
+        rows = (await db.execute(query.limit(batch_size))).scalars().all()
+
+    processed = 0
+    generated = 0
+    errors = 0
+
+    for mv in rows:
+        typer.echo(f"Processing {mv.id} ({mv.file_name})...")
+        if dry_run:
+            processed += 1
+            continue
+
+        tmp_dir = Path(tempfile.mkdtemp())
+        try:
+            # 1. Download source
+            local_path = tmp_dir / mv.file_name
+            await download_file(mv.file_key, local_path)
+
+            # 2. Setup processing file
+            pf = ProcessingFile(local_path, local_path.stat().st_size)
+
+            # 3. Generate thumbnail
+            thumb_path_str = await run_thumbnail_stage(
+                pf,
+                mv.file_mime_type,
+                mv.file_name
+            )
+
+            if thumb_path_str:
+                thumb_path = Path(thumb_path_str)
+                # 4. Upload to S3
+                # We use a unique key for the thumbnail, usually thumbnails/{mv.id}.webp
+                s3_thumb_key = f"thumbnails/{mv.id}.webp"
+
+                with open(thumb_path, "rb") as f:
+                    await upload_file(
+                        f.read(),
+                        s3_thumb_key,
+                        content_type="image/webp"
+                    )
+
+                # 5. Update DB
+                async with async_session_factory() as db:
+                    await db.execute(
+                        update(MaterialVersion)
+                        .where(MaterialVersion.id == mv.id)
+                        .values(thumbnail_key=s3_thumb_key)
+                    )
+                    await db.commit()
+
+                generated += 1
+                typer.echo(f"  OK: {s3_thumb_key}")
+            else:
+                typer.echo("  SKIP: No thumbnail generated for this type.")
+
+            processed += 1
+        except Exception as e:
+            typer.echo(f"  ERROR: {e}")
+            errors += 1
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    typer.echo(f"\nDone. Processed: {processed}, Generated: {generated}, Errors: {errors}")
+    if dry_run:
+        typer.echo("Run with --no-dry-run to apply changes.")
+
+
 if __name__ == "__main__":
     app()

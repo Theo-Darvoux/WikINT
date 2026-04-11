@@ -22,6 +22,7 @@ from app.routers.browse import router as browse_router
 from app.routers.comments import router as comments_router
 from app.routers.directories import router as directories_router
 from app.routers.flags import router as flags_router
+from app.routers.home import router as home_router
 from app.routers.materials import router as materials_router
 from app.routers.notifications import router as notifications_router
 from app.routers.onlyoffice import router as onlyoffice_router
@@ -246,6 +247,7 @@ app.include_router(search_router)
 app.include_router(onlyoffice_router)
 app.include_router(tus_router)
 app.include_router(upload_api_router)
+app.include_router(home_router)
 app.include_router(users_router)
 
 if settings.is_dev:

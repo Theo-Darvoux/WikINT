@@ -1,5 +1,5 @@
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,3 +40,25 @@ async def get_directory_path(
 ) -> list[DirectoryBreadcrumb]:
     path = await directory_service.get_directory_path(db, id)
     return [DirectoryBreadcrumb.model_validate(p) for p in path]
+
+
+@router.post("/{id}/like")
+async def like_directory(
+    id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
+    liked = await directory_service.toggle_directory_like(db, user.id, id)
+    await db.commit()
+    return {"liked": liked}
+
+
+@router.post("/{id}/favourite")
+async def favourite_directory(
+    id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
+    favourited = await directory_service.toggle_directory_favourite(db, user.id, id)
+    await db.commit()
+    return {"favourited": favourited}

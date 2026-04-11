@@ -41,6 +41,7 @@
 │ (unique │ └────────┘ │ file_name      │
 │  per PR)│            │ file_size      │
 └─────────┘            │ file_mime_type │
+                       │ thumbnail_key  │
                        │ virus_scan     │
                        │ pr_id          │
                        └────────────────┘
@@ -112,6 +113,11 @@
 | `author_id` | UUID | FK(users.id) SET NULL | |
 | `metadata` | JSONB | default {} | Extensible properties |
 | `download_count` | INTEGER | default 0 | |
+| `total_views` | BIGINT | default 0 | Cumulative views |
+| `views_today` | INTEGER | default 0 | Views since last reset |
+| `views_14d` | INTEGER | default 0 | Rolling 14-day views |
+| `last_view_reset` | TIMESTAMP(tz) | server_default now() | When `views_today` was last reset |
+| `like_count` | INTEGER | default 0 | Total number of likes |
 | `created_at` | TIMESTAMP(tz) | | |
 | `updated_at` | TIMESTAMP(tz) | | |
 
@@ -131,6 +137,7 @@
 | `file_name` | VARCHAR(300) | nullable | Original filename |
 | `file_size` | BIGINT | nullable | Bytes |
 | `file_mime_type` | VARCHAR(100) | nullable | |
+| `thumbnail_key` | VARCHAR(500) | nullable | Generated preview thumbnail |
 | `diff_summary` | TEXT | nullable | Human-readable change description |
 | `author_id` | UUID | FK(users.id) SET NULL | Who uploaded this version |
 | `pr_id` | UUID | FK(pull_requests.id) SET NULL | Which PR introduced this version |
@@ -183,6 +190,10 @@
 | `size_bytes` | BIGINT | | |
 | `ref_count` | INTEGER | default 1 | Reference count for GC |
 | `scanned_at` | TIMESTAMP(tz) | | For YARA staleness checks |
+
+**MaterialLike** (`material_likes`): Many-to-many relationship tracking which users liked which materials. Unique per user+material pair.
+
+**MaterialFavourite** (`material_favourites`): Tracks user bookmarks/favourites for materials. Unique per user+material pair.
 
 **PRVote** (`pr_votes`): One vote per user per PR. `value` is a SmallInteger (typically +1 / -1).
 

@@ -48,6 +48,20 @@ async def get_current_user(
     return user
 
 
+async def get_optional_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> User | None:
+    if not credentials:
+        return None
+
+    try:
+        return await get_current_user(credentials, db, redis)
+    except UnauthorizedError:
+        return None
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 

@@ -12,12 +12,14 @@ import type { Components } from "react-markdown";
 import { Mermaid } from "./mermaid";
 import { AsyncMaterialImage } from "./async-material-image";
 import { Callout, CalloutType } from "./callout";
+import { cn } from "@/lib/utils";
 
 interface MarkdownRendererProps {
     content: string;
     materialId?: string;
     material?: Record<string, unknown>;
     className?: string;
+    previewMode?: boolean;
 }
 
 const sanitizeSchema = {
@@ -56,7 +58,7 @@ function getTextFromChildren(children: React.ReactNode, depth = 0): string {
     return "";
 }
 
-export function MarkdownRenderer({ content, materialId, material, className }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, materialId, material, className, previewMode }: MarkdownRendererProps) {
     const components: Components = useMemo(() => ({
         img: (props: any) => {
             const { src, alt } = props;
@@ -72,6 +74,13 @@ export function MarkdownRenderer({ content, materialId, material, className }: M
         a: (props: any) => {
             const { href, children, ...rest } = props;
             const isExternal = href?.startsWith("http");
+            if (previewMode) {
+                return (
+                    <span className="text-primary/80 underline decoration-dotted">
+                        {children}
+                    </span>
+                );
+            }
             return (
                 <a
                     href={href}
@@ -98,6 +107,7 @@ export function MarkdownRenderer({ content, materialId, material, className }: M
             const isMermaid = language === "mermaid" || (node?.properties?.className as string[])?.includes("language-mermaid");
             
             if (isMermaid) {
+                if (previewMode) return null; // Skip mermaid in preview mode
                 const chart = getTextFromChildren(children);
                 return <Mermaid chart={chart.trim()} />;
             }
@@ -228,10 +238,10 @@ export function MarkdownRenderer({ content, materialId, material, className }: M
 
             return <blockquote className="border-l-4 border-border pl-4 italic my-4">{children}</blockquote>;
         },
-    }), [material]);
+    }), [material, previewMode]);
 
     return (
-        <div className={className}>
+        <div className={cn(className, previewMode && "prose-sm pointer-events-none select-none")}>
             <ReactMarkdown
                 remarkPlugins={remarkPlugins as any}
                 rehypePlugins={rehypePlugins as any}

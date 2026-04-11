@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Folder, MessageSquare, Info, ChevronRight } from "lucide-react";
+import { Folder, Info, ChevronRight, ThumbsUp } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useUIStore } from "@/lib/stores";
@@ -31,17 +31,13 @@ export function DirectoryLineItem({ directory, staged, selectMode, selected, onT
     const childDirCount = Number(directory.child_directory_count ?? 0);
     const childMatCount = Number(directory.child_material_count ?? 0);
     const totalCount = childDirCount + childMatCount;
+    const likeCount = Number(directory.like_count ?? 0);
+    const isLiked = Boolean(directory.is_liked);
 
     const buildPath = () => {
         const base = pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
         const dirPath = `${base}/${slug}`;
         return previewPrId ? `${dirPath}?preview_pr=${previewPrId}` : dirPath;
-    };
-
-    const handleChat = (e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        openSidebar("chat", { type: "directory", id, data: directory });
     };
 
     const handleDetails = (e: React.MouseEvent) => {
@@ -104,6 +100,15 @@ export function DirectoryLineItem({ directory, staged, selectMode, selected, onT
                 )}
             </div>
 
+            {!isMobile && (
+                <div className="flex flex-col items-end justify-center px-2 text-[11px] leading-tight text-muted-foreground opacity-80">
+                    <span className="flex items-center gap-1" title="Likes">
+                        {likeCount}
+                        <ThumbsUp className={`h-3 w-3 ${isLiked ? "fill-primary text-primary" : ""}`} />
+                    </span>
+                </div>
+            )}
+
             <div className="flex shrink-0 items-center gap-1">
                 {isMobile ? (
                     <>
@@ -114,13 +119,6 @@ export function DirectoryLineItem({ directory, staged, selectMode, selected, onT
                     </>
                 ) : (
                     <>
-                        <button
-                            onClick={handleChat}
-                            className="rounded-md p-2 hover:bg-muted"
-                            title="Chat"
-                        >
-                            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                        </button>
                         <button
                             onClick={handleDetails}
                             className="rounded-md p-2 hover:bg-muted"

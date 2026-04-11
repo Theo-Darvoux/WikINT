@@ -100,7 +100,7 @@ async def get_recently_viewed(db: AsyncSession, user_id: str, limit: int = 10) -
 
     materials_out = []
     for material, version in result.all():
-        mat_dict = material_orm_to_dict(material)
+        mat_dict = material_orm_to_dict(material, current_user_id=uid)
         if version:
             mat_dict["current_version_info"] = version
         materials_out.append(mat_dict)
@@ -113,6 +113,7 @@ async def get_user_contributions(
     contribution_type: str,
     limit: int,
     offset: int,
+    current_user_id: uuid.UUID | None = None,
 ) -> tuple[list[PullRequest] | list[dict[str, typing.Any]] | list[Annotation], int]:
     uid = uuid.UUID(str(user_id))
     from sqlalchemy.orm import selectinload
@@ -149,7 +150,7 @@ async def get_user_contributions(
         )
         materials_out = []
         for material, version in result.all():
-            mat_dict = material_orm_to_dict(material)
+            mat_dict = material_orm_to_dict(material, current_user_id=current_user_id)
             if version:
                 mat_dict["current_version_info"] = version
             materials_out.append(mat_dict)
@@ -279,6 +280,13 @@ async def export_user_data(db: AsyncSession, user: User) -> dict[str, typing.Any
     view_history_result = await db.execute(select(ViewHistory).where(ViewHistory.user_id == uid))
     view_history = view_history_result.scalars().all()
 
+    from app.models.material import MaterialFavourite
+
+    favourites_result = await db.execute(
+        select(MaterialFavourite).where(MaterialFavourite.user_id == uid)
+    )
+    favourites = favourites_result.scalars().all()
+
     return {
         "profile": {
             "id": str(user.id),
@@ -332,6 +340,14 @@ async def export_user_data(db: AsyncSession, user: User) -> dict[str, typing.Any
                 "viewed_at": vh.viewed_at.isoformat(),
             }
             for vh in view_history
+        ],
+        "favourites": [
+            {
+                "id": str(fav.id),
+                "material_id": str(fav.material_id),
+                "created_at": fav.created_at.isoformat(),
+            }
+            for fav in favourites
         ],
     }
 

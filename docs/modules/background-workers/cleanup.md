@@ -1,8 +1,8 @@
-# Cleanup Workers
+# Cleanup Workers & View Reset Workers
 
 ## Overview
 
-Four background workers handle resource cleanup. They prevent storage bloat, quota exhaustion, and orphaned S3 objects, as well as ensure GDPR compliance.
+Six background workers handle resource cleanup and view-counter maintenance. They prevent storage bloat, quota exhaustion, and orphaned S3 objects, as well as ensure GDPR compliance and accurate popularity metrics.
 
 ## Worker Reliability Guards
 
@@ -12,6 +12,42 @@ WikINT workers include built-in safeguards to prevent system exhaustion:
 - **Orphan Cleanup:** The system periodically checks the `cas/` prefix against Redis ref counts to identify unreferenced objects. Legacy `materials/` and `uploads/` objects are also cleaned up.
 - **Pull Request Expiration:** Open Pull Requests that have not been updated for **7 days** are automatically marked as `REJECTED` by the cleanup worker.
 - **GDPR Compliance:** Users who are soft-deleted are automatically purged after a **30-day grace period**.
+
+## View Reset Workers (`api/app/workers/view_reset.py`)
+
+Two cron-driven functions maintain the per-material view counters used by the Home page popularity rankings.
+
+### `reset_daily_views`
+
+**Schedule:** Daily at 00:00 (midnight UTC)
+
+Accumulates each material's `views_today` counter into the 14-day rolling counter `views_14d`, then clears `views_today` back to zero. Only materials with `views_today > 0` are touched, keeping the UPDATE narrow.
+
+**Operation (single atomic SQL statement per row):**
+```sql
+UPDATE materials
+SET
+    views_14d        = views_14d + views_today,
+    views_today      = 0,
+    last_view_reset  = now()
+WHERE views_today > 0;
+```
+
+The accumulation and reset happen in the **same statement**, so there is no window where data can be lost if the process crashes between the two operations.
+
+### `reset_14d_views`
+
+**Schedule:** 1st and 15th of each month at 01:00 UTC (approximately every 14 days)
+
+Zeroes out `views_14d` for all materials so that the counter genuinely reflects a two-week window rather than accumulating indefinitely. Only materials with `views_14d > 0` are touched.
+
+```sql
+UPDATE materials SET views_14d = 0 WHERE views_14d > 0;
+```
+
+**Why two separate jobs?** `reset_daily_views` runs every night and keeps the 14d counter fresh; `reset_14d_views` provides the periodic hard reset that bounds the counter to a genuine 14-day window.
+
+---
 
 ## GDPR Cleanup (`api/app/workers/gdpr_cleanup.py`)
 

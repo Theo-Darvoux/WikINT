@@ -26,6 +26,12 @@ Returns a single directory with its children and materials.
 ### `GET /api/directories/{id}/path`
 Returns the full path from root to the given directory as an array of `{id, name, slug}` objects. Used for breadcrumb navigation.
 
+### `POST /api/directories/{id}/like`
+Toggles the current user's like status on the directory.
+
+### `POST /api/directories/{id}/favourite`
+Toggles the current user's favourite status on the directory.
+
 ## Directory Service (`api/app/services/directory.py`)
 
 ### `slugify(text)`
@@ -48,11 +54,32 @@ Returns material detail with current version info.
 ### `GET /api/materials/{id}/versions`
 Lists all versions of a material, ordered by version number.
 
-### `GET /api/materials/{id}/download`
+### `GET /api/materials/{id}/download-url`
 Generates a presigned download URL for the latest version.
 
-### `GET /api/materials/{id}/versions/{version_number}/download`
+### `GET /api/materials/{id}/inline`
+Generates a presigned download URL configured with inline content disposition for natively viewable formats (images, videos, PDFs).
+
+### `GET /api/materials/{id}/thumbnail`
+Generates a presigned download URL for the material's auto-generated thumbnail preview. Falls back to original file for natively web-renderable images.
+
+### `GET /api/materials/{id}/file`
+Redirects the client directly to the presigned S3 object URL, allowing browsers to perform HTTP Range requests natively. Handles custom auth via query parameter.
+
+### `GET /api/materials/{id}/versions/{version_number}/download-url`
 Download a specific version.
+
+### `GET /api/materials/{id}/attachments`
+Returns a list of materials conceptually attached as children to this material.
+
+### `POST /api/materials/{id}/view`
+Records a page view for the given material, bumping total and daily view counts.
+
+### `POST /api/materials/{id}/like`
+Toggles the current user's like status on the material.
+
+### `POST /api/materials/{id}/favourite`
+Toggles the current user's favourite status on the material.
 
 ### `GET /api/materials/{id}/text-content`
 Returns the raw UTF-8 text of the material's current version. Works for both plain-text files and gzip-compressed text files (`.gz`). Only available for text-based materials.
@@ -65,6 +92,6 @@ Accepts raw UTF-8 text in the request body, gzip-compresses it server-side, and 
 ### `GET /api/search`
 Full-text search across materials and directories via MeiliSearch.
 
-**Query parameters:** `q` (search text), `type` (material type filter), `limit`, `offset`
+**Query parameters:** `query` (search text, default `""`), `page` (default 1), `limit` (default 10)
 
 The search service queries MeiliSearch and enriches results with browse paths for navigation.

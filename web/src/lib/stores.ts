@@ -43,6 +43,7 @@ interface UIState {
     searchOpen: boolean;
     hideFooter: boolean;
     openSidebar: (tab: SidebarTab, target: SidebarTarget) => void;
+    updateSidebarData: (data: Record<string, unknown>) => void;
     closeSidebar: () => void;
     setSidebarTab: (tab: SidebarTab) => void;
     setSidebarOpen: (open: boolean) => void;
@@ -59,6 +60,12 @@ export const useUIStore = create<UIState>((set) => ({
     hideFooter: false,
     openSidebar: (tab, target) =>
         set({ sidebarOpen: true, sidebarTab: tab, sidebarTarget: target }),
+    updateSidebarData: (data) =>
+        set((state) => ({
+            sidebarTarget: state.sidebarTarget
+                ? { ...state.sidebarTarget, data: { ...state.sidebarTarget.data, ...data } }
+                : null
+        })),
     closeSidebar: () => set({ sidebarOpen: false }),
     setSidebarTab: (tab) => set({ sidebarTab: tab }),
     setSidebarOpen: (open) => set({ sidebarOpen: open }),

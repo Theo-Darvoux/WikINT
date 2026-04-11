@@ -11,6 +11,10 @@ export interface SearchResult {
     module?: string;
     type?: string;
     browse_path: string;
+    total_views?: number;
+    views_today?: number;
+    is_liked?: boolean;
+    like_count?: number;
 }
 
 export interface SearchResponse {

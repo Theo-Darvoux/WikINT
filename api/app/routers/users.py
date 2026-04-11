@@ -8,8 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.exceptions import NotFoundError
 from app.core.storage import generate_presigned_get_url
-from app.dependencies.auth import CurrentUser
+from app.dependencies.auth import CurrentUser, get_optional_user
 from app.dependencies.pagination import PaginationParams
+from app.models.user import User
 from app.schemas.annotation import AnnotationOut
 from app.schemas.common import PaginatedResponse
 from app.schemas.material import MaterialDetail
@@ -84,6 +85,45 @@ async def recently_viewed(
     ]
 
 
+@router.get("/me/favourites", response_model=list[MaterialDetail])
+async def get_my_favourites(
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[MaterialDetail]:
+    from sqlalchemy import select
+
+    from app.models.material import Material, MaterialFavourite, MaterialVersion
+    from app.services.material import material_orm_to_dict
+
+    stmt = (
+        select(Material, MaterialVersion)
+        .join(MaterialFavourite, MaterialFavourite.material_id == Material.id)
+        .outerjoin(
+            MaterialVersion,
+            (Material.id == MaterialVersion.material_id)
+            & (Material.current_version == MaterialVersion.version_number),
+        )
+        .where(MaterialFavourite.user_id == user.id)
+        .order_by(MaterialFavourite.created_at.desc())
+    )
+    result = await db.execute(stmt)
+
+    materials_out = []
+    for material, version in result.all():
+        mat_dict = material_orm_to_dict(material, current_user_id=user.id)
+        if version:
+            mat_dict["current_version_info"] = version
+        materials_out.append(mat_dict)
+
+    dir_ids = {m["directory_id"] for m in materials_out if m.get("directory_id") is not None}
+    paths = await get_directory_paths(db, dir_ids)
+
+    return [
+        MaterialDetail.model_validate({**m, "directory_path": paths.get(m["directory_id"])})
+        for m in materials_out
+    ]
+
+
 @router.get("/me/data-export")
 async def data_export(
     user: CurrentUser,
@@ -137,6 +177,7 @@ async def get_contributions(
     user_id: str,
     pagination: Annotated[PaginationParams, Depends()],
     db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_user)] = None,
     type: Annotated[str, Query()] = "prs",
 ) -> PaginatedResponse:
     target = await get_user_by_id(db, user_id)
@@ -148,6 +189,7 @@ async def get_contributions(
         contribution_type=type,
         limit=pagination.limit,
         offset=pagination.offset,
+        current_user_id=user.id if user else None,
     )
 
     directory_paths = {}

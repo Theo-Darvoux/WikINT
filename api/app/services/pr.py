@@ -702,7 +702,7 @@ async def _build_browse_path(db: AsyncSession, op_type: str, result_id: uuid.UUI
         if d:
             path_parts = await get_directory_path(db, result_id)
             return "/".join(p["slug"] for p in path_parts) if path_parts else ""
-        
+
         mat = await db.scalar(select(Material).where(Material.id == result_id))
         if mat:
             if mat.directory_id is None:

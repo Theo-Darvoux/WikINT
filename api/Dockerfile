@@ -23,6 +23,7 @@ WORKDIR /app
 
 # Install uv (for running the app) and runtime dependencies
 # ghostscript (PDF), ffmpeg (video), bubblewrap (sandbox), exiftool (metadata)
+# libreoffice-nogui: headless soffice for Office→PDF thumbnail generation
 RUN pip install --no-cache-dir uv && \
     apt-get update && apt-get install -y --no-install-recommends \
     libyara10 \
@@ -30,6 +31,7 @@ RUN pip install --no-cache-dir uv && \
     ffmpeg \
     bubblewrap \
     libimage-exiftool-perl \
+    libreoffice-nogui \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user first (must exist before --chown in COPY)

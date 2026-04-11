@@ -1,9 +1,16 @@
+import uuid
+
 from meilisearch_python_sdk.models.search import SearchParams
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.meilisearch import meili_client
+from app.models.material import MaterialLike
 
 
-async def perform_search(query: str, page: int = 1, limit: int = 10) -> dict:
+async def perform_search(
+    db: AsyncSession, query: str, page: int = 1, limit: int = 10, current_user_id: uuid.UUID | None = None
+) -> dict:
     offset = (page - 1) * limit
 
     # Perform a multi-search request to Meilisearch
@@ -20,27 +27,35 @@ async def perform_search(query: str, page: int = 1, limit: int = 10) -> dict:
     materials_res = res_any[0] if isinstance(results, list) else res_any.results[0]
     directories_res = res_any[1] if isinstance(results, list) else res_any.results[1]
 
+    # Fetch liked materials if user is logged in
+    liked_ids: set[uuid.UUID] = set()
+    if current_user_id:
+        stmt = select(MaterialLike.material_id).where(MaterialLike.user_id == current_user_id)
+        res = await db.execute(stmt)
+        liked_ids = {row[0] for row in res.all()}
+
     items = []
 
     for hit in materials_res.hits:
         hit["search_type"] = "material"
+        if "id" in hit:
+            try:
+                hit_id = uuid.UUID(hit["id"])
+                hit["is_liked"] = hit_id in liked_ids
+            except ValueError:
+                hit["is_liked"] = False
         items.append(hit)
 
     for hit in directories_res.hits:
         hit["search_type"] = "directory"
         items.append(hit)
 
-    # Sort simple merger by score logic.
-    # Meilisearch doesn't interleave them via multi_search, so we just return them sorted if we want to mix them.
-    # Alternatively, just append them since they are often queried separately or we want to show directories first.
-    # We'll just put directories first, then materials.
-
+    # Sort simple merger: directories first, then materials.
     sorted_items = [i for i in items if i["search_type"] == "directory"] + [
         i for i in items if i["search_type"] == "material"
     ]
 
-    # Apply pagination on the combined result. In a real highly-scaled system,
-    # you'd federate the limit/offset properly, but for this scale, limit applied to both is acceptable.
+    # Apply pagination on the combined result.
     combined = sorted_items[:limit]
 
     total_materials = (

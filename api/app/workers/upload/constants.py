@@ -12,9 +12,10 @@ _SHA256_CACHE_PREFIX = "upload:sha256:"
 
 # Pipeline stage definitions
 _STAGES = [
-    ("scanning", "Scanning for malware", 0.40),
-    ("stripping", "Removing private metadata", 0.25),
-    ("compressing", "Optimising file size", 0.25),
+    ("scanning", "Scanning for malware", 0.35),
+    ("stripping", "Removing private metadata", 0.20),
+    ("compressing", "Optimising file size", 0.20),
+    ("thumbnailing", "Generating previews", 0.15),
     ("finalizing", "Finalising upload", 0.10),
 ]
 _STAGE_TOTAL = len(_STAGES)

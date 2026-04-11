@@ -16,7 +16,9 @@
 ```
 web/src/app/
 ├── layout.tsx                      # Root layout (providers, navbar, footer)
-├── page.tsx                        # Landing page
+├── page.tsx                        # Home page (featured, popular, PRs, favourites)
+├── popular/
+│   └── page.tsx                    # "See all popular" with period tabs + pagination
 ├── login/
 │   ├── page.tsx                    # Email input for OTP
 │   └── verify/page.tsx             # OTP code entry + magic link handler
@@ -33,12 +35,13 @@ web/src/app/
 ├── settings/page.tsx               # User settings
 ├── privacy/page.tsx                # Privacy policy
 └── admin/
-    ├── layout.tsx                  # Admin layout (role guard)
+    ├── layout.tsx                  # Admin layout (role guard) — includes Featured tab
     ├── page.tsx                    # Admin dashboard
     ├── users/page.tsx              # User management
     ├── directories/page.tsx        # Directory management
     ├── pull-requests/page.tsx      # PR moderation
-    └── flags/page.tsx              # Content moderation flags
+    ├── flags/page.tsx              # Content moderation flags
+    └── featured/page.tsx           # Featured items management (home page curation)
 ```
 
 ### Key Route: Browse (`/browse/[[...path]]`)
@@ -53,10 +56,50 @@ The `[[...path]]` catch-all segment captures the full slug path (e.g., `/browse/
 ### Layout Components
 - `LayoutShell` — Main app shell with responsive sidebar
 - `Navbar` — Top navigation with search, notifications, user menu
-- `MobileBottomBar` — Bottom navigation for mobile
+- `MobileBottomBar` — Bottom navigation for mobile (Home / Notifications / Profile with active-state highlighting via `usePathname`)
 - `Footer` — Site footer
 - `AuthGuard` — Wraps authenticated pages, redirects to login if not authenticated
 - `CookieBanner` — GDPR cookie consent
+
+### Home Components (`components/home/`)
+
+These components power the home page, the `/popular` page, and the admin featured management page.
+
+#### Shared foundations
+- `types.ts` — TypeScript interfaces shared across home components: `MaterialDetail`, `MaterialVersionInfo`, `FeaturedItem`, `PullRequestOut`, `HomeData`
+- `file-type-display.tsx` — Pure utilities:
+  - `getFileTypeStyle(fileName, mimeType)` — Returns `{ gradient, iconColorClass, Icon }` for Tailwind gradient backgrounds and Lucide icons keyed by file extension / MIME type. Covers PDF, images, video, audio, code, documents, spreadsheets, presentations, markdown, and e-books.
+  - `getMaterialBrowsePath(material)` — Constructs `/browse/{directory_path}/{slug}` or `/browse/{slug}`.
+
+#### Display components
+- `SectionHeader` — Reusable section heading with optional subtitle and "See all →" link. Props: `title`, `subtitle?`, `seeAllHref?`, `seeAllLabel?`.
+- `MaterialCard` — Card component for a single `MaterialDetail`. Fixed `w-[220px]` (overridable via `className` for grid layouts). Shows a 4:3 gradient preview area with file-type icon, file-type badge, title, filename, file size, directory path, view count, and like count. Hover lifts the card.
+- `FeaturedSection` — Renders admin-curated featured materials. Empty array → renders nothing. Single item → full-width split hero card with gradient panel + content area. Multiple items → horizontally-scrollable row of `FeaturedScrollCard` components (300 px wide each). Each card shows gradient banner, "Featured" pill, title, description, tags, and a "View material" CTA.
+- `PopularSection` — Horizontally-scrollable row of up to 8 `MaterialCard`s with a "See all" dashed card appended when `materials.length >= 8`. Supports an `isLoading` skeleton state (4 placeholder cards).
+- `FavouritesSection` — Identical layout to `PopularSection` for the user's recently favourited materials. "See all" links to `/profile`. Hidden when empty.
+- `RecentPRsSection` — Compact list card of open pull requests. Each row shows: status icon, title, author, time-ago, "Open" badge, and vote score pill. Hidden when empty. Supports `isLoading` skeleton rows.
+
+#### Data flow — Home page (`app/page.tsx`)
+1. Fetches `GET /api/home` on mount → populates `HomeData`.
+2. Renders in order: welcome greeting (`Good morning/afternoon/evening, {name}!`), `FeaturedSection`, `PopularSection` (today), `PopularSection` (14 d), `RecentPRsSection`, `FavouritesSection`.
+3. Loading state: skeleton placeholders for each section.
+4. Error state: inline destructive banner.
+
+#### Data flow — Popular page (`app/popular/page.tsx`)
+- Uses `useSearchParams` (wrapped in `<Suspense>`) to read the `period` query param (`"today"` | `"14d"`).
+- Tab switcher updates the URL via `router.replace` without a full navigation.
+- Fetches `GET /api/home/popular?period={period}&limit=20&offset={offset}`.
+- Renders a responsive grid: 2 cols (mobile) → 3 cols (sm) → 4 cols (md) → 5 cols (lg).
+- "Load more" button appends the next page; a summary line is shown once all results are loaded.
+
+#### Admin — Featured management (`app/admin/featured/page.tsx`)
+- Lists all featured items from `GET /api/admin/featured`.
+- Sorts by status (active → scheduled → expired) then by priority descending.
+- **Add Featured dialog**: collects Material UUID, optional title/description overrides, `start_at`/`end_at` datetime inputs, and priority. Validates date ordering before submitting `POST /api/admin/featured`.
+- **Delete**: confirmation dialog → `DELETE /api/admin/featured/{id}`.
+- Status badges: animated green "Active" pill, blue "Scheduled", gray "Expired".
+- Summary line at the bottom shows counts per status.
+- Accessible via the **Featured** tab in the admin layout nav (Star icon).
 
 ### Browse Components
 - `DirectoryListing` — Renders a directory's children (folders + materials)
@@ -96,21 +139,30 @@ Each viewer handles a specific file type:
 - `NewFolderDialog` — Create directory inline
 - `FilePreview` — Preview of uploaded file before submission
 - `GlobalDropZone` — Drag-and-drop file upload anywhere on the page
+- `OperationRow` — Individual change row in the PR detail view, showing metadata changes and file diffs. Uses `ExpandableText` for descriptions.
 
 ### Sidebar Components (`components/sidebar/`)
-- `SharedSidebar` — Sidebar framework with tab navigation
+- `SharedSidebar` — Sidebar framework with tab navigation. On desktop it renders `SidebarContent` directly inside the page's bounded container. On mobile it uses a custom Sheet built from Radix `Dialog` primitives (`SheetPortal` + `SheetOverlay` + `SheetPrimitive.Content`) with slide-in-from-right animation — no separate `FloatingPanel` or `GlobalFloatingSidebar` needed.
 - `DetailsTab` — Material metadata display
 - `AnnotationsTab` — Document annotations
 - `EditsTab` — Version history
 - `ActionsTab` — Download, flag, share actions
 - `ChatTab` — Comments/discussion
-- `FloatingPanel` / `GlobalFloatingSidebar` — Detachable sidebar
+
+#### Layout fix: `absolute inset-0` on `TabsContent`
+Radix `ScrollAreaViewport` only activates `overflow-y: scroll` once a `ResizeObserver` fires and detects `offsetHeight < scrollHeight`. When the viewport has no concrete CSS height (only flex/percentage chains), `offsetHeight` always equals `scrollHeight` and scrolling never activates. The fix is to give each `TabsContent` panel `position: absolute; inset: 0` inside a `relative flex-1 min-h-0` container — this provides a concrete, positioned height without relying on CSS percentage resolution through flex chains. Scroll-heavy tabs (`details`, `edits`) use `overflow-y-auto` directly on the `TabsContent`; flex-column tabs (`chat`, `annotations`, `actions`) use `flex flex-col`.
 
 ### Profile Components
 - `ProfileView` — User profile display
 - `ContributionList` — User's PRs and contributions
 - `RecentlyViewed` — View history
 - `ReputationBadge` — Visual reputation indicator
+
+### Generic UI Components (`components/ui/`)
+- `ExpandableText` — Text component that clamps to a specific number of lines with a "Show more" toggle. Uses `overflow-wrap: anywhere` to handle long strings without spaces.
+- `TagInput` — Interactive tag selection and management component.
+- `ConfirmDeleteDialog` — Standardized confirmation dialog for destructive actions.
+- `Badge`, `Button`, `Dialog`, `Accordion`, etc. — Standardized shadcn/ui primitives.
 
 ## State Management
 

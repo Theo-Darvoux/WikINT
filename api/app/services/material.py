@@ -2,17 +2,21 @@ import typing
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
-from app.models.material import Material, MaterialVersion
+from app.models.material import Material, MaterialFavourite, MaterialLike, MaterialVersion
 from app.models.view_history import ViewHistory
 
 
 def material_orm_to_dict(
-    m: Material, *, attachment_count: int = 0, directory_path: str | None = None
+    m: Material,
+    *,
+    attachment_count: int = 0,
+    directory_path: str | None = None,
+    current_user_id: uuid.UUID | None = None,
 ) -> dict[str, typing.Any]:
     """Convert a Material ORM instance to a plain dict safe for Pydantic validation.
 
@@ -23,6 +27,15 @@ def material_orm_to_dict(
     path = directory_path
     if not path and "directory" in m.__dict__:
         path = m.directory.slug
+
+    # Determine if current user liked/favourited this
+    is_liked = False
+    is_favourited = False
+    if current_user_id:
+        if "likes" in m.__dict__:
+            is_liked = any(like.user_id == current_user_id for like in m.likes)
+        if "favourites" in m.__dict__:
+            is_favourited = any(fav.user_id == current_user_id for fav in m.favourites)
 
     return {
         "id": m.id,
@@ -37,6 +50,11 @@ def material_orm_to_dict(
         "author_id": m.author_id,
         "metadata": m.metadata_,
         "download_count": m.download_count,
+        "total_views": m.total_views,
+        "views_today": m.views_today,
+        "like_count": m.like_count,
+        "is_liked": is_liked,
+        "is_favourited": is_favourited,
         "tags": [t.name for t in m.tags] if "tags" in m.__dict__ else [],
         "created_at": m.created_at,
         "updated_at": m.updated_at,
@@ -96,7 +114,7 @@ async def get_material_file_info(db: AsyncSession, material_id: str | uuid.UUID)
 
 
 async def get_material_with_version(
-    db: AsyncSession, material_id: str | uuid.UUID
+    db: AsyncSession, material_id: str | uuid.UUID, current_user_id: uuid.UUID | None = None
 ) -> dict[str, typing.Any]:
 
     if isinstance(material_id, str):
@@ -124,7 +142,9 @@ async def get_material_with_version(
     )
 
     return {
-        "material": material_orm_to_dict(material, attachment_count=att_count),
+        "material": material_orm_to_dict(
+            material, attachment_count=att_count, current_user_id=current_user_id
+        ),
         "current_version_info": current_version,
         "attachment_count": att_count,
     }
@@ -167,7 +187,7 @@ async def get_material_version(
 
 
 async def get_material_attachments(
-    db: AsyncSession, material_id: str | uuid.UUID
+    db: AsyncSession, material_id: str | uuid.UUID, current_user_id: uuid.UUID | None = None
 ) -> list[dict[str, typing.Any]]:
 
     if isinstance(material_id, str):
@@ -188,7 +208,7 @@ async def get_material_attachments(
 
     attachments_out = []
     for material, version in result.all():
-        mat_dict = material_orm_to_dict(material)
+        mat_dict = material_orm_to_dict(material, current_user_id=current_user_id)
         if version:
             mat_dict["current_version_info"] = version
         attachments_out.append(mat_dict)
@@ -208,12 +228,23 @@ async def increment_download_count(db: AsyncSession, material_id: str | uuid.UUI
 
 
 async def record_view(db: AsyncSession, user_id: str, material_id: str) -> None:
+    from sqlalchemy import update
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     uid = uuid.UUID(str(user_id))
     mid = uuid.UUID(str(material_id))
-    await get_material_by_id(db, mid)
 
+    # 1. Update counters on the Material itself (Atomic increment in SQL)
+    await db.execute(
+        update(Material)
+        .where(Material.id == mid)
+        .values(
+            total_views=Material.total_views + 1,
+            views_today=Material.views_today + 1,
+        )
+    )
+
+    # 2. Record individual view in ViewHistory (Last viewed by this user)
     stmt = pg_insert(ViewHistory).values(
         id=uuid.uuid4(),
         user_id=uid,
@@ -225,4 +256,89 @@ async def record_view(db: AsyncSession, user_id: str, material_id: str) -> None:
         set_={"viewed_at": stmt.excluded.viewed_at},
     )
     await db.execute(stmt)
+
+    # 3. Best practice: Also increment in Redis for ultra-fast access if needed
+    # (Though for now we primarily read from DB, Redis can serve as a hot cache)
+    try:
+        from app.core.redis import redis_client
+
+        # We use a hash for all material totals to keep it clean
+        await redis_client.hincrby("material:views:total", str(mid), 1)
+        # For "today", we use a daily key that can be easily expired
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        daily_key = f"material:views:today:{today}"
+        await redis_client.hincrby(daily_key, str(mid), 1)
+        await redis_client.expire(daily_key, 86400 * 2)  # Keep for 2 days just in case
+    except Exception:
+        # Don't fail the request if Redis is down
+        pass
+
     await db.flush()
+
+
+async def toggle_like(db: AsyncSession, user_id: uuid.UUID, material_id: uuid.UUID) -> bool:
+    """Toggle a like for a material. Returns True if liked, False if unliked."""
+    # Check if exists
+    result = await db.execute(
+        select(MaterialLike).where(
+            MaterialLike.user_id == user_id,
+            MaterialLike.material_id == material_id
+        )
+    )
+    like = result.scalar_one_or_none()
+
+    if like:
+        # Unlike
+        await db.delete(like)
+        await db.execute(
+            update(Material)
+            .where(Material.id == material_id)
+            .values(like_count=Material.like_count - 1)
+        )
+        liked = False
+    else:
+        # Like
+        new_like = MaterialLike(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            material_id=material_id
+        )
+        db.add(new_like)
+        await db.execute(
+            update(Material)
+            .where(Material.id == material_id)
+            .values(like_count=Material.like_count + 1)
+        )
+        liked = True
+
+    await db.flush()
+    return liked
+
+
+async def toggle_favourite(db: AsyncSession, user_id: uuid.UUID, material_id: uuid.UUID) -> bool:
+    """Toggle a favourite for a material. Returns True if favourited, False if removed."""
+    # Check if exists
+    result = await db.execute(
+        select(MaterialFavourite).where(
+            MaterialFavourite.user_id == user_id,
+            MaterialFavourite.material_id == material_id
+        )
+    )
+    favourite = result.scalar_one_or_none()
+
+    if favourite:
+        # Remove favourite
+        await db.delete(favourite)
+        favourited = False
+    else:
+        # Add favourite
+        new_favourite = MaterialFavourite(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            material_id=material_id
+        )
+        db.add(new_favourite)
+        favourited = True
+
+    await db.flush()
+    return favourited

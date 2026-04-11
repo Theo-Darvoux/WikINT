@@ -20,29 +20,65 @@ The worker is now split into three layers:
   - `cas.py`: `try_cas_short_circuit`
   - `scan_strip.py`: `run_scan_and_strip`, `run_strip_only`, `run_post_strip_pdf_check`
   - `compress.py`: `run_compress_stage`
+  - `thumbnail.py`: `run_thumbnail_stage` — generates a WebP thumbnail server-side
   - `finalize.py`: `run_finalize_storage`
+
+### Thumbnail Generation (`stages/thumbnail.py`)
+
+`run_thumbnail_stage` runs after compression and before finalization. It dispatches
+on MIME type to produce a `640×360` WebP stored at `thumbnails/{version_id}.webp`:
+
+| File type | Tool used |
+|---|---|
+| Images (`image/*`) | Pillow resize + EXIF rotation |
+| Videos (`video/*`) | FFmpeg frame extraction at t=2s → WebP |
+| PDFs (`application/pdf`) | Ghostscript first-page render → WebP |
+| Office (OOXML, ODF, legacy OLE2) | **LibreOffice headless → PDF → Ghostscript → WebP** |
+
+#### Office rendering detail
+All Office formats (`.docx`, `.xlsx`, `.pptx`, `.doc`, `.xls`, `.ppt`, `.odt`,
+`.ods`, `.odp`) are handled by `_thumbnail_office`:
+
+1. `soffice --headless --convert-to pdf` converts the document to PDF in an
+   isolated temp directory (120 s timeout).
+2. The resulting PDF is piped through `_thumbnail_pdf` (Ghostscript at 150 dpi
+   → PNG → WebP).
+3. The temp directory is always cleaned up in `finally`.
+
+**MIME type routing** covers all three Office families:
+- OOXML: `officedocument` substring in MIME (e.g. `…wordprocessingml…`)
+- ODF: `opendocument` substring in MIME
+- Legacy OLE2: exact match against `{application/msword, application/vnd.ms-excel,
+  application/vnd.ms-powerpoint}` — these match neither substring above.
+
+**Lock avoidance**: each invocation sets `HOME` to a fresh tempdir so that
+concurrent worker processes do not collide on the same LibreOffice user profile.
+
+**Dependency**: requires `libreoffice-nogui` in the Docker image (already added
+to `api/Dockerfile`). Also used by the `recalculate-thumbnails` CLI command.
 
 These stages are functional and take explicit inputs, making them easier to test and maintain compared to the previous stateful implementation.
 
 ## Pipeline Stages
 
 ```
-┌─────────────────────────────────────┐    ┌───────────────┐    ┌───────────────┐
-│  0. Scanning  ║  1. Stripping       │───▶│ 2. Compressing│───▶│ 3. Finalizing │
-│   (40% wt)    ║   (25% wt)         │    │   (25% wt)    │    │   (10% wt)    │
-│               ║                    │    │               │    │               │
-│ YARA + Bazaar ║ EXIF, PDF          │    │ Ghostscript,  │    │ Upload to S3, │
-│ + PDF safety  ║ Info, tags         │    │ ffmpeg, gzip  │    │ CAS entry     │
-└─────────────────────────────────────┘    └───────────────┘    └───────────────┘
+┌─────────────────────────────────────┐    ┌───────────────┐    ┌───────────────┐    ┌───────────────┐
+│  0. Scanning  ║  1. Stripping       │───▶│ 2. Compressing│───▶│ 3. Thumbnails │───▶│ 4. Finalizing │
+│   (35% wt)    ║   (20% wt)         │    │   (20% wt)    │    │   (15% wt)    │    │   (10% wt)    │
+│               ║                    │    │               │    │               │    │               │
+│ YARA + Bazaar ║ EXIF, PDF          │    │ Ghostscript,  │    │ LibreOffice,  │    │ Upload to S3, │
+│ + PDF safety  ║ Info, tags         │    │ ffmpeg, gzip  │    │ FFmpeg, etc   │    │ CAS entry     │
+└─────────────────────────────────────┘    └───────────────┘    └───────────────┘    └───────────────┘
 ```
 
 **Stages 0 and 1 are typically run in parallel** by `run_scan_and_strip`. The scan result acts as a security gate. Metadata stripping is performed concurrently to reduce total wall-clock time. If the pipeline resumes from a checkpoint where the scan was finished but stripping wasn't, `run_strip_only` is used.
 
 Each stage contributes to the `overall_percent` progress:
 - Download & Validate: Part of initial setup.
-- Scanning & Stripping: Stages 0 & 1 (65% combined wt).
-- Compressing: Stage 2 (25% wt).
-- Finalizing: Stage 3 (10% wt).
+- Scanning & Stripping: Stages 0 & 1 (55% combined wt).
+- Compressing: Stage 2 (20% wt).
+- Thumbnailing: Stage 3 (15% wt).
+- Finalizing: Stage 4 (10% wt).
 
 ### Compression Optimizations
 
@@ -149,6 +185,7 @@ Each stage saves its completion to the DB via `_checkpoint_stage(ctx, upload_id,
 | Scan complete | 1 |
 | Strip complete | 2 |
 | Compress complete | 3 |
+| Thumbnail complete | 4 |
 | Finalize complete | — (status=clean) |
 
 On ARQ retry, `_get_pipeline_stage(ctx, upload_id)` reads the DB. Stages with index < `completed_stage` are skipped with a log message. This makes the pipeline idempotent: a crash after scan but before strip retries from the strip stage.
@@ -164,6 +201,7 @@ The worker calls `_check_cancelled(redis, upload_id)` at three points:
 2. After scan (between stages 0 and 1)
 3. After strip (between stages 1 and 2)
 4. After compress (between stages 2 and 3)
+5. After thumbnailing (between stages 3 and 4)
 
 On cancellation:
 - Status updated to `cancelled` in DB (`error_detail = "Cancelled by user"`)

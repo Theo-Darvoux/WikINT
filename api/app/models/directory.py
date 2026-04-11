@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import enum
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
+    DateTime,
     Enum,
     ForeignKey,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -47,6 +50,7 @@ class Directory(UUIDMixin, TimestampMixin, Base):
     )
     sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    like_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -61,3 +65,43 @@ class Directory(UUIDMixin, TimestampMixin, Base):
         back_populates="directory", cascade="all, delete-orphan", passive_deletes=True
     )
     tags: Mapped[list[Tag]] = relationship(secondary="directory_tags", back_populates="directories")
+    likes: Mapped[list[DirectoryLike]] = relationship(
+        back_populates="directory", cascade="all, delete-orphan"
+    )
+    favourites: Mapped[list[DirectoryFavourite]] = relationship(
+        back_populates="directory", cascade="all, delete-orphan"
+    )
+
+
+class DirectoryLike(UUIDMixin, Base):
+    __tablename__ = "directory_likes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "directory_id", name="uq_directory_like_user_directory"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    directory_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("directories.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    directory: Mapped[Directory] = relationship(back_populates="likes")
+
+
+class DirectoryFavourite(UUIDMixin, Base):
+    __tablename__ = "directory_favourites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "directory_id", name="uq_directory_favourite_user_directory"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    directory_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("directories.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    directory: Mapped[Directory] = relationship(back_populates="favourites")
