@@ -40,7 +40,7 @@ Primary data store. The schema consists of ~15 tables covering:
 - User accounts and roles
 - Directory tree (self-referential hierarchy)
 - Materials and their versions (with file metadata, view counters)
-- Pull requests, votes, and comments
+- Pull requests and comments
 - Tags (many-to-many)
 - Flags, notifications, annotations, comments, download audits, view history
 

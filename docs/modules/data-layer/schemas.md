@@ -36,7 +36,7 @@ Upload-related schemas dominate this file:
 
 ### `pull_request.py`
 - `PRCreateRequest` — `{ title, description?, payload: list[dict] }` — The payload is validated loosely (JSONB array of operation objects)
-- `PRResponse` — Full PR with author, votes, comments
+- `PRResponse` — Full PR with author, comments
 - `PRListItem` — Abbreviated PR for list views
 
 ### `common.py`

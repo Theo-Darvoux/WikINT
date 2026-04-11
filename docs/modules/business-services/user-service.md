@@ -8,7 +8,7 @@ Manages the full user lifecycle: onboarding, profile management, contribution tr
 
 ### `onboard_user(db, user, display_name, academic_year, gdpr_consent)`
 
-First-time setup after email verification. A user cannot interact with the platform (upload, create PRs, vote) until onboarded.
+First-time setup after email verification. A user cannot interact with the platform (upload, create PRs) until onboarded.
 
 **Requirements:**
 - `user.onboarded` must be `False` (prevents re-onboarding)
@@ -91,7 +91,6 @@ Returns a complete JSON export of all user data, fulfilling GDPR Article 20 (rig
 - **Consent:** GDPR consent status and timestamp
 - **Pull requests:** ID, title, type, status
 - **Annotations:** ID, body, material reference
-- **Votes:** ID, PR reference, value
 - **Comments:** ID, body, target type
 - **PR comments:** ID, body, PR reference
 - **Flags:** ID, target type, reason

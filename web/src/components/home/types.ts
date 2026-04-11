@@ -55,8 +55,6 @@ export interface PullRequestOut {
     description: string | null;
     author: { id: string; display_name: string | null; email: string } | null;
     created_at: string;
-    vote_score: number;
-    user_vote: number;
     summary_types?: string[];
 }
 

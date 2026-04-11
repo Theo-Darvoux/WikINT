@@ -29,22 +29,22 @@
    └──────┬───────┘ │ metadata JSONB│
           │         │ download_cnt │
           │         └──────┬───────┘
-    ┌─────┴─────┐          │
-    │           │          │ material_id
-    ▼           ▼          ▼
-┌─────────┐ ┌────────┐ ┌────────────────┐
-│ PRVote  │ │PRComment│ │MaterialVersion │
-│─────────│ │────────│ │────────────────│
-│ pr_id   │ │ pr_id  │ │ material_id    │
-│ user_id │ │body    │ │ version_number │
-│ value   │ │parent_id│ │ file_key       │
-│ (unique │ └────────┘ │ file_name      │
-│  per PR)│            │ file_size      │
-└─────────┘            │ file_mime_type │
-                       │ thumbnail_key  │
-                       │ virus_scan     │
-                       │ pr_id          │
-                       └────────────────┘
+          │                │
+          │                │ material_id
+          ▼                ▼
+   ┌────────┐ ┌────────────────┐
+   │PRComment│ │MaterialVersion │
+   │────────│ │────────────────│
+   │ pr_id  │ │ material_id    │
+   │body    │ │ version_number │
+   │parent_id│ │ file_key       │
+   └────────┘ │ file_name      │
+              │ file_size      │
+              │ file_mime_type │
+              │ thumbnail_key  │
+              │ virus_scan     │
+              │ pr_id          │
+              └────────────────┘
 ```
 
 ## Core Entities
@@ -195,7 +195,6 @@
 
 **MaterialFavourite** (`material_favourites`): Tracks user bookmarks/favourites for materials. Unique per user+material pair.
 
-**PRVote** (`pr_votes`): One vote per user per PR. `value` is a SmallInteger (typically +1 / -1).
 
 **PRComment** (`pr_comments`): Threaded comments on PRs. Self-referential `parent_id` for nested replies.
 
@@ -248,3 +247,4 @@ Migrations use Alembic with the async SQLAlchemy engine. Key migrations in order
 6. `138afbd354d9_add_download_audit_and_user_flagging` - Added download audit table and is_flagged to users
 7. `2447499a3966_make_material_directory_id_nullable` - Allow root-level materials (no directory)
 8. `a1b2c3d4e5f6_add_uploads_table` - Added the uploads lifecycle tracking table
+9. `c2d3e4f5a6b7_remove_votes_add_claims_applied_result` - Removed pull request voting system; added file claiming and applied result tracking

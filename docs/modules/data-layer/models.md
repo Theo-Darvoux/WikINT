@@ -91,14 +91,10 @@ The `payload` JSONB column stores an array of operation dicts. Each operation ha
 **PRStatus enum:** `open | approved | rejected`
 
 **Relationships:**
-- `votes` → One-to-many with PRVote (cascade delete-orphan)
 - `comments` → One-to-many with PRComment (cascade delete-orphan)
 - `author` → Many-to-one with User
 - `reviewer` → Many-to-one with User (who approved/rejected)
 
-### PRVote (`pull_request.py`)
-- `value` is SmallInteger (typically +1 or -1)
-- **Unique constraint:** `(pr_id, user_id)` — one vote per user per PR
 
 ### PRComment (`pull_request.py`)
 - `parent_id` → Self-referential for threaded replies

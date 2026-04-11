@@ -52,12 +52,12 @@ export function PRComments({ prId }: { prId: string }) {
         }
         setSubmitting(true);
         try {
-            await apiFetch(`/pull-requests/${prId}/comments`, {
+            const newComment = await apiFetch<PRComment>(`/pull-requests/${prId}/comments`, {
                 method: "POST",
                 body: JSON.stringify({ body }),
             });
             setBody("");
-            fetchComments();
+            setComments((prev) => [...prev, newComment]);
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to post comment");
         } finally {
@@ -72,13 +72,13 @@ export function PRComments({ prId }: { prId: string }) {
             return;
         }
         try {
-            await apiFetch(`/pr-comments/${id}`, {
+            const updated = await apiFetch<PRComment>(`/pr-comments/${id}`, {
                 method: "PATCH",
                 body: JSON.stringify({ body: editBody.trim() }),
             });
             setEditingId(null);
             setEditBody("");
-            fetchComments();
+            setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to edit comment");
         }
@@ -87,7 +87,7 @@ export function PRComments({ prId }: { prId: string }) {
     const handleDelete = async (id: string) => {
         try {
             await apiFetch(`/pr-comments/${id}`, { method: "DELETE" });
-            fetchComments();
+            setComments((prev) => prev.filter((c) => c.id !== id));
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to delete comment");
         }

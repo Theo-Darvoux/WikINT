@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns/formatDistanceToNow";
-import { Search, ExternalLink, ThumbsUp } from "lucide-react";
+import { Search, ExternalLink } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api-client";
@@ -14,7 +14,6 @@ interface PRItem {
     title: string;
     type: "new" | "update" | "delete";
     status: "open" | "approved" | "rejected";
-    vote_score: number;
     created_at: string;
     author: {
         id: string;
@@ -65,7 +64,6 @@ export default function AdminPRQueuePage() {
                         <tr>
                             <th className="p-4 font-medium min-w-[300px]">Title</th>
                             <th className="p-4 font-medium hidden sm:table-cell">Type</th>
-                            <th className="p-4 font-medium">Votes</th>
                             <th className="p-4 font-medium hidden sm:table-cell">Submitted</th>
                             <th className="p-4 font-medium text-right">Action</th>
                         </tr>
@@ -99,12 +97,6 @@ export default function AdminPRQueuePage() {
                                     <span className="bg-muted px-2 py-0.5 rounded text-xs font-medium">
                                         {pr.type}
                                     </span>
-                                </td>
-                                <td className="p-4">
-                                    <div className="flex items-center gap-1.5 font-medium text-muted-foreground">
-                                        <ThumbsUp className="h-3.5 w-3.5" />
-                                        {pr.vote_score}/5
-                                    </div>
                                 </td>
                                 <td className="p-4 text-muted-foreground hidden sm:table-cell">
                                     {formatDistanceToNow(new Date(pr.created_at), { addSuffix: true })}

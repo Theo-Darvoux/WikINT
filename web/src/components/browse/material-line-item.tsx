@@ -245,35 +245,23 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
             )}
 
             <div className="flex shrink-0 items-center gap-1">
-                {isMobile ? (
-                    <Link
-                        href={buildPath()}
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label={`View ${title}`}
-                    >
-                        <Eye className="h-5 w-5 text-muted-foreground" />
-                    </Link>
-                ) : (
-                    <>
-                        <button
-                            onClick={handleDetails}
-                            className="rounded-md p-2 hover:bg-muted"
-                            title="Details"
-                            aria-label={`View details for ${title}`}
-                        >
-                            <Info className="h-4 w-4 text-muted-foreground" />
-                        </button>
-                        <Link
-                            href={buildPath()}
-                            className="rounded-md p-2 hover:bg-muted"
-                            title="Preview"
-                            onClick={(e) => e.stopPropagation()}
-                            aria-label={`Preview ${title}`}
-                        >
-                            <Eye className="h-4 w-4 text-muted-foreground" />
-                        </Link>
-                    </>
-                )}
+                <button
+                    onClick={handleDetails}
+                    className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
+                    title="Details"
+                    aria-label={`View details for ${title}`}
+                >
+                    <Info className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
+                </button>
+                <Link
+                    href={buildPath()}
+                    className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
+                    title={isMobile ? "View" : "Preview"}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`${isMobile ? "View" : "Preview"} ${title}`}
+                >
+                    <Eye className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
+                </Link>
             </div>
         </div>
     );

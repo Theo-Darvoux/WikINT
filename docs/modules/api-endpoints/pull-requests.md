@@ -59,9 +59,15 @@ Returns `PullRequestOut` objects with author info and total count in `X-Total-Co
 
 ### `GET /api/pull-requests/for-item`
 
-**Query parameters:** `targetType` (`material` | `directory`), `targetId` (UUID string)
+**Query parameters:** `targetType` (`material` | `directory`), `targetId` (UUID string or `"root"`)
 
-Returns open PRs whose payload references the given item. Uses a JSONB `jsonb_array_elements` lateral query on PostgreSQL (covered by the GIN index on `payload`). Falls back to Python-level filtering on SQLite for development.
+Returns open PRs whose payload references the given item.
+
+- **For Materials**: Matches `material_id` or `parent_material_id`.
+- **For Directories**: Matches `directory_id`, `parent_id`, or `new_parent_id`.
+- **Special Case: Root**: Passing `targetId=root` returns PRs targeting the root directory (where parent/directory IDs are `null`). This includes new materials/directories created in root and items moved into root.
+
+Uses a JSONB `jsonb_array_elements` lateral query on PostgreSQL (covered by the GIN index on `payload`). Falls back to Python-level filtering on SQLite.
 
 ### `GET /api/pull-requests/{id}`
 

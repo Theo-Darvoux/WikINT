@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import delete, desc, func, select, text
@@ -221,10 +221,13 @@ async def list_pull_requests(
 
 @router.get("/for-item", response_model=list[PullRequestOut])
 async def list_pull_requests_for_item(
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     target_type: str = Query(alias="targetType"),
     target_id: str = Query(alias="targetId"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
 ) -> list[PullRequestOut]:
     """
     Search within the JSONB array payload for operations referencing
@@ -236,7 +239,7 @@ async def list_pull_requests_for_item(
 
     if db.bind.dialect.name == "sqlite":
         # SQLite fallback: fetch all open PRs and filter in Python
-        result = await db.execute(base_stmt)
+        result = await db.execute(base_stmt.order_by(desc(PullRequest.created_at)))
         prs = result.scalars().all()
         filtered = []
         for pr in prs:
@@ -250,12 +253,26 @@ async def list_pull_requests_for_item(
                         match = True
                         break
                 elif target_type == "directory":
-                    if op.get("directory_id") == target_id or op.get("parent_id") == target_id:
-                        match = True
-                        break
+                    if target_id == "root":
+                        if (
+                            (op.get("op") == "create_material" and op.get("directory_id") is None)
+                            or (op.get("op") == "create_directory" and op.get("parent_id") is None)
+                            or (op.get("op") == "move_item" and op.get("new_parent_id") is None)
+                        ):
+                            match = True
+                            break
+                    else:
+                        if (
+                            op.get("directory_id") == target_id
+                            or op.get("parent_id") == target_id
+                            or op.get("new_parent_id") == target_id
+                        ):
+                            match = True
+                            break
             if match:
                 filtered.append(pr)
-        prs = filtered
+        total_count = len(filtered)
+        prs = filtered[(page - 1) * limit : page * limit]
     else:
         if target_type == "material":
             stmt = base_stmt.where(
@@ -266,18 +283,40 @@ async def list_pull_requests_for_item(
                 ).bindparams(tid=target_id)
             )
         elif target_type == "directory":
-            stmt = base_stmt.where(
-                text(
-                    "EXISTS (SELECT 1 FROM jsonb_array_elements(payload) elem "
-                    "WHERE elem->>'directory_id' = :tid "
-                    "OR elem->>'parent_id' = :tid)"
-                ).bindparams(tid=target_id)
-            )
+            if target_id == "root":
+                stmt = base_stmt.where(
+                    text(
+                        "EXISTS (SELECT 1 FROM jsonb_array_elements(payload) elem "
+                        "WHERE (elem->>'op' = 'create_material' AND elem->>'directory_id' IS NULL) "
+                        "OR (elem->>'op' = 'create_directory' AND elem->>'parent_id' IS NULL) "
+                        "OR (elem->>'op' = 'move_item' AND elem->>'new_parent_id' IS NULL))"
+                    )
+                )
+            else:
+                stmt = base_stmt.where(
+                    text(
+                        "EXISTS (SELECT 1 FROM jsonb_array_elements(payload) elem "
+                        "WHERE elem->>'directory_id' = :tid "
+                        "OR elem->>'parent_id' = :tid "
+                        "OR elem->>'new_parent_id' = :tid)"
+                    ).bindparams(tid=target_id)
+                )
         else:
             raise BadRequestError("Invalid targetType")
 
-        result = await db.execute(stmt)
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_count = await db.scalar(count_stmt) or 0
+
+        paginated_stmt = (
+            stmt.order_by(desc(PullRequest.created_at))
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+        result = await db.execute(paginated_stmt)
         prs = result.scalars().all()
+
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["Access-Control-Expose-Headers"] = "X-Total-Count"
 
     return [PullRequestOut.model_validate(pr) for pr in prs]
 
@@ -439,9 +478,9 @@ async def get_pull_request_preview(
                 # Reference to a temp_id in the same PR (e.g. moving a newly created item)
                 source_op = next((o for o in pr.payload if o.get("temp_id") == target_id_str), None)
                 if source_op:
-                    file_key = source_op.get("file_key")
-                    file_name = source_op.get("file_name")
-                    file_mime_type = source_op.get("file_mime_type")
+                    file_key = cast(str | None, source_op.get("file_key"))
+                    file_name = cast(str | None, source_op.get("file_name"))
+                    file_mime_type = cast(str | None, source_op.get("file_mime_type"))
             else:
                 # Reference to a real material UUID
                 try:
@@ -465,23 +504,27 @@ async def get_pull_request_preview(
 
     from app.core.storage import generate_presigned_get
 
+    file_key_str = cast(str, file_key)
+    file_name_str = cast(str | None, file_name)
+    file_mime_type_str = cast(str | None, file_mime_type)
+
     # Legacy V1: after approval, files were moved from uploads/ to materials/
-    if pr.status == "approved" and file_key.startswith("uploads/"):
-        file_key = file_key.replace("uploads/", "materials/", 1)
+    if pr.status == "approved" and file_key_str.startswith("uploads/"):
+        file_key_str = file_key_str.replace("uploads/", "materials/", 1)
 
     # Refuse to serve unscanned quarantine files
-    if file_key.startswith("quarantine/"):
+    if file_key_str.startswith("quarantine/"):
         raise BadRequestError("File is still being processed and cannot be previewed yet.")
 
     url = await generate_presigned_get(
-        file_key,
-        filename=file_name,
-        content_type=file_mime_type,
+        file_key_str,
+        filename=file_name_str,
+        content_type=file_mime_type_str,
     )
     return {
         "url": url,
-        "file_name": file_name,
-        "file_mime_type": file_mime_type,
+        "file_name": file_name_str,
+        "file_mime_type": file_mime_type_str,
     }
 
 

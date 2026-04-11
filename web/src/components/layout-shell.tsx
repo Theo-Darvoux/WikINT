@@ -53,7 +53,7 @@ export function LayoutShell({ children }: { children: ReactNode }) {
   const isOffline = useOffline();
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-dvh">
       {/* Offline banner (U4) */}
       <div
         className={cn(
@@ -67,7 +67,7 @@ export function LayoutShell({ children }: { children: ReactNode }) {
         You appear to be offline. Some features may not work.
       </div>
       <Navbar />
-      <main className="flex-1 w-full flex flex-col">
+      <main className="flex-1 w-full flex flex-col overflow-x-hidden">
         {shouldHideContent ? (
           <div className="flex-1 flex flex-col items-center justify-center min-h-[50vh] animate-in fade-in duration-500">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4" />
@@ -79,7 +79,11 @@ export function LayoutShell({ children }: { children: ReactNode }) {
           children
         )}
       </main>
-      {!hideFooter && <Footer />}
+      {!hideFooter && (
+        <div className="hidden md:block">
+          <Footer />
+        </div>
+      )}
       <MobileBottomBar />
       <ConfirmDialog />
 

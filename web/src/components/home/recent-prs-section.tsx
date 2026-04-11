@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { GitPullRequest, ChevronRight, ThumbsUp, GitMerge } from "lucide-react";
+import { GitPullRequest, ChevronRight, GitMerge } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SectionHeader } from "./section-header";
 import { formatDistanceToNow } from "date-fns/formatDistanceToNow";
@@ -26,26 +26,6 @@ function PRRowSkeleton() {
     );
 }
 
-function VoteScorePill({ score }: { score: number }) {
-    if (score === 0) return null;
-
-    const positive = score > 0;
-    return (
-        <span
-            className={[
-                "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums shrink-0",
-                positive
-                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-            ].join(" ")}
-            title={`Vote score: ${score > 0 ? "+" : ""}${score}`}
-        >
-            <ThumbsUp className="h-3 w-3" />
-            {positive ? "+" : ""}
-            {score}
-        </span>
-    );
-}
 
 function PRRow({ pr }: { pr: PullRequestOut }) {
     const authorLabel =
@@ -85,9 +65,6 @@ function PRRow({ pr }: { pr: PullRequestOut }) {
                 <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
                     Open
                 </span>
-
-                {/* Vote score */}
-                <VoteScorePill score={pr.vote_score} />
             </div>
 
             {/* Chevron */}

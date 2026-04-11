@@ -47,7 +47,7 @@ export default function AdminLayout({
   ];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6 pb-20 sm:pb-6">
+    <div className="w-full mx-auto max-w-6xl space-y-6 p-4 sm:p-6 pb-20 sm:pb-6">
       <h1 className="text-3xl font-bold">Admin Area</h1>
       <div className="flex overflow-x-auto border-b pb-px">
         {navItems.map((item) => {

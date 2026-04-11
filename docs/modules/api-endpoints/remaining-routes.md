@@ -51,7 +51,6 @@ User notification system:
 Notifications are created by the system when:
 - A PR the user authored is approved/rejected
 - Someone comments on the user's PR
-- Someone votes on the user's PR
 
 ## Users (`/api/users`)
 User profile management:

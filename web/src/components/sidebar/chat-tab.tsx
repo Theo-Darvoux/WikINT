@@ -209,7 +209,7 @@ export function ChatTab({ target }: ChatTabProps) {
     }
     setSubmitting(true);
     try {
-      await apiFetch<Comment>("/comments", {
+      const newComment = await apiFetch<Comment>("/comments", {
         method: "POST",
         body: JSON.stringify({
           target_type: target.type,
@@ -218,7 +218,7 @@ export function ChatTab({ target }: ChatTabProps) {
         }),
       });
       setBody("");
-      fetchComments(page);
+      setComments((prev) => [...prev, newComment]);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to post comment",
@@ -237,13 +237,15 @@ export function ChatTab({ target }: ChatTabProps) {
       return;
     }
     try {
-      await apiFetch<Comment>(`/comments/${id}`, {
+      const updatedComment = await apiFetch<Comment>(`/comments/${id}`, {
         method: "PATCH",
         body: JSON.stringify({ body: editBody.trim() }),
       });
       setEditingId(null);
       setEditBody("");
-      fetchComments(page);
+      setComments((prev) =>
+        prev.map((c) => (c.id === id ? updatedComment : c)),
+      );
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to edit comment",
@@ -254,7 +256,7 @@ export function ChatTab({ target }: ChatTabProps) {
   const handleDelete = async (id: string) => {
     try {
       await apiFetch<void>(`/comments/${id}`, { method: "DELETE" });
-      fetchComments(page);
+      setComments((prev) => prev.filter((c) => c.id !== id));
     } catch {
       // silent
     }

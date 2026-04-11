@@ -49,14 +49,14 @@ export default function HomePage() {
     user?.display_name ?? user?.email?.split("@")[0] ?? "there";
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 pb-24 sm:px-6 sm:pb-10 lg:px-8">
+    <div className="w-full mx-auto max-w-7xl px-4 py-8 pb-24 sm:px-6 sm:pb-10 lg:px-8">
       {/* ── Welcome header ───────────────────────────────── */}
       <div className="mb-10">
         {isLoading && !data ? (
           <WelcomeHeaderSkeleton />
         ) : (
           <>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl wrap-break-word min-w-0">
               {greeting}, {displayName}!{" "}
               <span role="img" aria-label="wave">
                 👋

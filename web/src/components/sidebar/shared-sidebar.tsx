@@ -1,10 +1,8 @@
 "use client";
 
-import { Dialog as SheetPrimitive } from "radix-ui";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SheetPortal, SheetOverlay } from "@/components/ui/sheet";
 import { useUIStore, type SidebarTab } from "@/lib/stores";
 import { useIsDesktop } from "@/hooks/use-media-query";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DetailsTab } from "@/components/sidebar/details-tab";
 import { ChatTab } from "@/components/sidebar/chat-tab";
 import { ActionsTab } from "@/components/sidebar/actions-tab";
@@ -12,6 +10,11 @@ import { EditsTab } from "@/components/sidebar/edits-tab";
 import { AnnotationsTab } from "@/components/sidebar/annotations-tab";
 import { X, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 
 const TAB_CONFIG: { value: SidebarTab; label: string }[] = [
   { value: "details", label: "Details" },
@@ -24,25 +27,28 @@ const TAB_CONFIG: { value: SidebarTab; label: string }[] = [
 function SidebarContent() {
   const { sidebarTab, setSidebarTab, sidebarTarget, closeSidebar } =
     useUIStore();
+  const isDesktop = useIsDesktop();
 
   return (
     <div className="flex h-full flex-col bg-background">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-3 py-2 shrink-0 bg-muted/10">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-2">
-          <Info className="h-3 w-3" />
-          Item Inspector
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0 rounded-full hover:bg-destructive/10 hover:text-destructive"
-          onClick={closeSidebar}
-          title="Close sidebar"
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
+      {/* Header - Only visible on desktop as Drawer handles its own header/dismissal needs */}
+      {isDesktop && (
+        <div className="flex items-center justify-between border-b px-3 py-2 shrink-0 bg-muted/10">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-2">
+            <Info className="h-3 w-3" />
+            Item Inspector
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 rounded-full hover:bg-destructive/10 hover:text-destructive"
+            onClick={closeSidebar}
+            title="Close sidebar"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs
@@ -121,39 +127,15 @@ export function SharedSidebar() {
     return <SidebarContent />;
   }
 
-  // Mobile: custom Sheet built from Radix Dialog primitives.
-  // SidebarContent owns its own close button, so we skip SheetContent's
-  // built-in close button by composing the primitives manually.
+  // Mobile: Drawer for native feel and swipe-to-dismiss
   return (
-    <SheetPrimitive.Root
-      open={sidebarOpen}
-      onOpenChange={(open) => {
-        if (!open) closeSidebar();
-      }}
-    >
-      <SheetPortal>
-        <SheetOverlay />
-        <SheetPrimitive.Content
-          className={[
-            // Layout
-            "fixed inset-y-0 right-0 z-50 h-full w-full sm:max-w-sm",
-            // Visuals
-            "border-l bg-background shadow-xl",
-            // Animation
-            "transition ease-in-out",
-            "data-[state=open]:animate-in data-[state=closed]:animate-out",
-            "data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right",
-            "data-[state=open]:duration-500 data-[state=closed]:duration-300",
-          ].join(" ")}
-        >
-          {/* Visually hidden title for screen-reader accessibility */}
-          <SheetPrimitive.Title className="sr-only">
-            Item Inspector
-          </SheetPrimitive.Title>
-
+    <Drawer open={sidebarOpen} onOpenChange={(o) => !o && closeSidebar()}>
+      <DrawerContent className="h-[90vh] pb-0 outline-none">
+        <DrawerTitle className="sr-only">Item Inspector</DrawerTitle>
+        <div className="flex-1 overflow-hidden">
           <SidebarContent />
-        </SheetPrimitive.Content>
-      </SheetPortal>
-    </SheetPrimitive.Root>
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 }

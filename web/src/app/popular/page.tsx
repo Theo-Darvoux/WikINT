@@ -114,7 +114,7 @@ function PopularContent() {
       : "Most viewed materials over the last 14 days";
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 pb-24 sm:px-6 sm:pb-10 lg:px-8">
+    <div className="w-full mx-auto max-w-7xl px-4 py-8 pb-24 sm:px-6 sm:pb-10 lg:px-8">
       {/* ── Page header ─────────────────────────────── */}
       <div className="mb-6">
         <SectionHeader
@@ -209,7 +209,7 @@ export default function PopularPage() {
   return (
     <Suspense
       fallback={
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="w-full mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <Skeleton className="mb-6 h-8 w-48" />
           <Skeleton className="mb-6 h-9 w-48 rounded-lg" />
           <SkeletonGrid />

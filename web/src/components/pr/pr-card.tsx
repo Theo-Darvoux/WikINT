@@ -12,7 +12,6 @@ import {
     FolderPen,
     FolderX,
     ArrowRightLeft,
-    ThumbsUp,
     ChevronRight,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -40,7 +39,6 @@ interface PullRequestProps {
             display_name: string;
         } | null;
         created_at: string;
-        vote_score: number;
         summary_types?: string[];
         virus_scan_result?: string;
     };
@@ -121,20 +119,6 @@ export function PRCard({ pr }: PullRequestProps) {
                 </p>
             </div>
 
-            {/* Vote score pill */}
-            {pr.vote_score !== 0 && (
-                <span
-                    className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums shrink-0 ${
-                        pr.vote_score > 0
-                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                            : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                    }`}
-                >
-                    <ThumbsUp className="h-3 w-3" />
-                    {pr.vote_score > 0 ? "+" : ""}
-                    {pr.vote_score}
-                </span>
-            )}
 
             {/* Author avatar */}
             <Avatar size="sm">

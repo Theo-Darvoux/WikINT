@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
   Download,
+  MoreHorizontal,
   Paperclip,
   Loader2,
   PanelRight,
@@ -197,6 +198,7 @@ export function MaterialViewer({
   const pathname = usePathname();
   const isMobile = useIsMobile();
   const isDesktop = useIsDesktop();
+  const [actionsOpen, setActionsOpen] = useState(false);
   const { openSidebar, closeSidebar, sidebarOpen, setHideFooter } =
     useUIStore();
   const viewerContainerRef = useRef<HTMLDivElement>(null);
@@ -294,17 +296,8 @@ export function MaterialViewer({
 
   return (
     <AnnotationsContext.Provider value={annotationsData}>
-      <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden gap-0">
-        <div className="flex-1 flex flex-col min-w-0 min-h-0 p-4 md:p-6 gap-3">
-          {isMobile && (
-            <button
-              onClick={() => router.back()}
-              className="fixed left-4 top-16 z-50 rounded-full bg-background/80 p-2 shadow-md backdrop-blur"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-          )}
-
+      <div className="flex h-[calc(100vh-7rem)] md:h-[calc(100vh-3.5rem)] overflow-hidden gap-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 p-2 sm:p-4 md:p-6 gap-3">
           {/* Breadcrumbs */}
           {breadcrumbs.length > 0 && !isMobile && (
             <div>
@@ -326,7 +319,9 @@ export function MaterialViewer({
               </Button>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-lg font-semibold truncate">{title}</h1>
+                  <h1 className="text-base sm:text-lg font-semibold truncate">
+                    {title}
+                  </h1>
                   <span
                     className={`inline-block shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${getFileBadgeColor(fileName)}`}
                   >
@@ -340,7 +335,17 @@ export function MaterialViewer({
                 )}
               </div>
             </div>
-            {!isMobile && (
+            {isMobile ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                onClick={() => setActionsOpen(true)}
+                aria-label="Document actions"
+              >
+                <MoreHorizontal className="h-5 w-5" />
+              </Button>
+            ) : (
               <div className="flex items-center gap-2 shrink-0">
                 <Button
                   variant={sidebarOpen ? "secondary" : "outline"}
@@ -479,24 +484,29 @@ export function MaterialViewer({
           </div>
         </div>
 
-        {isDesktop && sidebarOpen && (
-          <div className="sticky top-0 h-[calc(100vh-3.5rem)] w-80 shrink-0 border-l bg-background">
-            <SharedSidebar />
-          </div>
+        {isDesktop ? (
+          sidebarOpen && (
+            <div className="sticky top-0 h-[calc(100vh-3.5rem)] w-80 shrink-0 border-l bg-background">
+              <SharedSidebar />
+            </div>
+          )
+        ) : (
+          <SharedSidebar />
         )}
         {isMobile && (
-          <div>
-            <ViewerFab
-              materialId={materialId}
-              materialTitle={title}
-              directoryId={directoryId}
-              attachmentCount={attachmentCount}
-              isAttachment={!!parentMaterialId}
-              viewerType={viewerType}
-              mimeType={mimeType}
-              fileName={fileName}
-            />
-          </div>
+          <ViewerFab
+            material={material}
+            materialId={materialId}
+            materialTitle={title}
+            directoryId={directoryId}
+            attachmentCount={attachmentCount}
+            isAttachment={!!parentMaterialId}
+            viewerType={viewerType}
+            mimeType={mimeType}
+            fileName={fileName}
+            open={actionsOpen}
+            onOpenChange={setActionsOpen}
+          />
         )}
       </div>
     </AnnotationsContext.Provider>

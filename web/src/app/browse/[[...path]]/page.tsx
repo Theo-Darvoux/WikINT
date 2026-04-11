@@ -249,6 +249,7 @@ function BrowseContent() {
           />
         )}
       </div>
+      {!isDesktop && <SharedSidebar />}
       {isDesktop && sidebarOpen && isDirectoryView && (
         <div className="w-80 shrink-0 border-l bg-background">
           <SharedSidebar />

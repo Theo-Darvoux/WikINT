@@ -70,8 +70,6 @@ interface PullRequestDetail {
     author: { id: string; display_name: string } | null;
     created_at: string;
     updated_at: string;
-    vote_score: number;
-    user_vote: number;
     payload: Record<string, unknown>[] | Record<string, unknown>;
     applied_result?: Record<string, unknown>[] | null;
     summary_types?: string[];
@@ -612,7 +610,7 @@ function OperationRow({
                 {/* Row: trigger + action buttons side by side */}
                 <AccordionPrimitive.Header className="flex items-center">
                     <AccordionPrimitive.Trigger
-                        className="flex flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40 [&[data-state=open]>svg.chevron]:rotate-180"
+                        className="flex flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40 [&[data-state=open]>svg.chevron]:rotate-180 min-w-0"
                     >
                         <div
                             className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border ${colorClass}`}

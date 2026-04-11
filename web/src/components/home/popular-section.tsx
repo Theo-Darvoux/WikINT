@@ -20,7 +20,7 @@ interface PopularSectionProps {
 
 function SkeletonCard() {
   return (
-    <div className="w-55 flex-none rounded-xl border bg-card shadow-sm overflow-hidden">
+    <div className="w-55 flex-none sm:w-full rounded-xl border bg-card shadow-sm overflow-hidden">
       {/* Preview skeleton */}
       <Skeleton className="aspect-4/3 w-full rounded-none" />
       {/* Body skeleton */}
@@ -47,7 +47,7 @@ function SeeAllCard({
   return (
     <Link
       href={href}
-      className="block w-45 flex-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-xl"
+      className="block w-45 flex-none sm:w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-xl"
       aria-label="See all materials"
     >
       <div className="flex h-full min-h-50 flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 p-4 text-center transition-colors hover:bg-muted/60">
@@ -86,9 +86,8 @@ export function PopularSection({
         seeAllLabel="See all"
       />
 
-      {/* Horizontal scroll container — negative margin bleeds to viewport edge on mobile */}
-      <div className="mt-4 -mx-4 px-4 sm:mx-0 sm:px-0">
-        <div className="flex gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <div className="mt-4">
+        <div className="flex gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-3 sm:overflow-x-visible sm:pb-0 lg:grid-cols-4 xl:grid-cols-5">
           {isLoading ? (
             Array.from({ length: SKELETON_COUNT }).map((_, i) => (
               <SkeletonCard key={i} />

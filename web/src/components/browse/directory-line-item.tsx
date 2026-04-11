@@ -110,27 +110,24 @@ export function DirectoryLineItem({ directory, staged, selectMode, selected, onT
             )}
 
             <div className="flex shrink-0 items-center gap-1">
-                {isMobile ? (
-                    <>
-                        <span className="text-xs text-muted-foreground">{totalCount}</span>
-                        <Link href={buildPath()} onClick={(e) => e.stopPropagation()}>
-                            <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                        </Link>
-                    </>
-                ) : (
-                    <>
-                        <button
-                            onClick={handleDetails}
-                            className="rounded-md p-2 hover:bg-muted"
-                            title="Details"
-                        >
-                            <Info className="h-4 w-4 text-muted-foreground" />
-                        </button>
-                        <Link href={buildPath()} className="rounded-md p-2 hover:bg-muted" title="Open" onClick={(e) => e.stopPropagation()}>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                        </Link>
-                    </>
-                )}
+                {isMobile && <span className="text-xs text-muted-foreground">{totalCount}</span>}
+                <button
+                    onClick={handleDetails}
+                    className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
+                    title="Details"
+                    aria-label={`View details for ${name}`}
+                >
+                    <Info className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
+                </button>
+                <Link
+                    href={buildPath()}
+                    className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
+                    title="Open"
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Open ${name}`}
+                >
+                    <ChevronRight className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
+                </Link>
             </div>
         </div>
     );

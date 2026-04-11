@@ -198,9 +198,7 @@ export function FeaturedSection({ items }: FeaturedSectionProps) {
         {items.length === 1 ? (
           <FeaturedHeroCard item={items[0]} />
         ) : (
-          /* Horizontal scroll row — negative margin trick lets cards bleed to the
-                       viewport edge on mobile while maintaining normal padding on desktop */
-          <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
+          <div>
             <div className="flex gap-4 overflow-x-auto pb-3 scrollbar-none [scrollbar-width:none] [-ms-overflow-style:none]">
               {items.map((item) => (
                 <FeaturedScrollCard key={item.id} item={item} />
