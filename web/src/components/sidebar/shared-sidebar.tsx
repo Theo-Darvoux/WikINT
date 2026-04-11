@@ -130,7 +130,7 @@ export function SharedSidebar() {
   // Mobile: Drawer for native feel and swipe-to-dismiss
   return (
     <Drawer open={sidebarOpen} onOpenChange={(o) => !o && closeSidebar()}>
-      <DrawerContent className="h-[90vh] pb-0 outline-none">
+      <DrawerContent className="h-[90dvh] pb-0 outline-none">
         <DrawerTitle className="sr-only">Item Inspector</DrawerTitle>
         <div className="flex-1 overflow-hidden">
           <SidebarContent />

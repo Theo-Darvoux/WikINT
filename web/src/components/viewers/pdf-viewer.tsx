@@ -340,6 +340,7 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
     return (
         <div ref={containerRef} className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}>
             <ViewerToolbar 
+                isFullscreen={isFullscreen}
                 left={
                     <button
                         onClick={() => setTwoPageView(!twoPageView)}

@@ -125,6 +125,7 @@ export function CsvViewer({ materialId }: CsvViewerProps) {
             className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
         >
             <ViewerToolbar 
+                isFullscreen={isFullscreen}
                 left={
                     <span className="text-xs font-medium text-muted-foreground">
                         {rows.length.toLocaleString()} rows · {headers.length} columns

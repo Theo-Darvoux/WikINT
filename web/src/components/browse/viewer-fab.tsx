@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Download,
   Share2,
@@ -14,12 +14,19 @@ import {
   MessageSquare,
   Highlighter,
   GitPullRequest,
+  Edit,
+  Trash2,
+  ThumbsUp,
 } from "lucide-react";
 import { FlagButton } from "@/components/flags/flag-button";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { useDropZoneStore } from "@/components/pr/global-drop-zone";
 import { useDownload } from "@/hooks/use-download";
 import { usePrint } from "@/hooks/use-print";
 import { useUIStore } from "@/lib/stores";
+import { FileEditDialog } from "@/components/pr/file-edit-dialog";
+import { useStagingStore } from "@/lib/staging-store";
+import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
   Drawer,
@@ -38,7 +45,7 @@ interface ActionCellProps {
   disabled?: boolean;
   href?: string;
   badge?: number;
-  tint?: "default" | "violet" | "destructive";
+  tint?: "default" | "violet" | "destructive" | "primary";
 }
 
 function ActionCell({
@@ -53,9 +60,10 @@ function ActionCell({
   const tileClass = cn(
     "relative flex h-16 w-16 items-center justify-center rounded-2xl transition-transform active:scale-90",
     {
-      "bg-secondary": tint === "default",
-      "bg-violet-500/15 dark:bg-violet-500/20": tint === "violet",
-      "bg-destructive/10": tint === "destructive",
+      "bg-secondary hover:bg-secondary/80": tint === "default",
+      "bg-violet-500/15 dark:bg-violet-500/20 text-violet-500 hover:bg-violet-500/20 dark:hover:bg-violet-500/30": tint === "violet",
+      "bg-blue-500/15 dark:bg-blue-500/20 text-blue-500 hover:bg-blue-500/20 dark:hover:bg-blue-500/30": tint === "primary",
+      "bg-destructive/10 text-destructive hover:bg-destructive/20": tint === "destructive",
     },
   );
 
@@ -130,8 +138,9 @@ export function ViewerFab({
   onOpenChange,
 }: ViewerFabProps) {
   const pathname = usePathname();
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const requestUpload = useDropZoneStore((s) => s.requestUpload);
-  const { openSidebar } = useUIStore();
+  const { openSidebar, updateSidebarData } = useUIStore();
   const { downloadMaterial, isDownloading } = useDownload();
   const { print, isPrinting, canPrint } = usePrint({
     viewerType,
@@ -139,11 +148,50 @@ export function ViewerFab({
     fileName,
     mimeType,
   });
+  const [isLiked, setIsLiked] = useState(Boolean(material.is_liked));
+  const [likeCount, setLikeCount] = useState(Number(material.like_count ?? 0));
+  const [isLiking, setIsLiking] = useState(false);
+  const addOperation = useStagingStore((s) => s.addOperation);
 
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href).then(() => {
-      toast.success("Link copied to clipboard");
-    });
+  const handleShare = async () => {
+    const shareUrl = window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: materialTitle || "Share document",
+          url: shareUrl,
+        });
+      } catch (err) {
+        if (err instanceof Error && err.name !== "AbortError") {
+          toast.error("Sharing failed");
+        }
+      }
+    } else {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        toast.success("Link copied to clipboard");
+      });
+    }
+  };
+  
+  const handleLike = async () => {
+    if (isLiking) return;
+    const next = !isLiked;
+    const nextCount = likeCount + (next ? 1 : -1);
+    
+    setIsLiked(next);
+    setLikeCount(nextCount);
+    setIsLiking(true);
+    
+    try {
+      await apiFetch(`/materials/${materialId}/like`, { method: "POST" });
+      updateSidebarData({ is_liked: next, like_count: nextCount });
+    } catch {
+      setIsLiked(!next);
+      setLikeCount(likeCount);
+      toast.error("Failed to update like");
+    } finally {
+      setIsLiking(false);
+    }
   };
 
   const handleUpload = () => {
@@ -153,10 +201,20 @@ export function ViewerFab({
       parentMaterialId: materialId,
     });
   };
+  
+  const handleDelete = () => {
+    addOperation({
+        op: "delete_material",
+        material_id: materialId,
+    });
+    toast.success("Added deletion to draft");
+    close();
+  };
 
   const close = () => onOpenChange(false);
 
   return (
+    <>
     <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent
         className={cn(
@@ -253,17 +311,6 @@ export function ViewerFab({
             }}
           />
 
-          {/* ── View attachments ── */}
-          {!isAttachment && (
-            <ActionCell
-              icon={<Paperclip className="h-5 w-5 text-violet-500" />}
-              label="Attachments"
-              tint="violet"
-              href={`${pathname}/attachments`}
-              badge={attachmentCount}
-            />
-          )}
-
           {/* ── Annotations ── */}
           <ActionCell
             icon={<Highlighter className="h-5 w-5" />}
@@ -292,16 +339,38 @@ export function ViewerFab({
             }}
           />
 
-          {/* ── Upload attachment ── */}
+          {/* ── Edit (Metadata & Content) ── */}
+          <ActionCell
+            icon={<Edit className="h-5 w-5" />}
+            label="Edit"
+            onClick={() => {
+              close();
+              setEditDialogOpen(true);
+            }}
+          />
+
+          {/* ── Like ── */}
+          <ActionCell
+            icon={
+              isLiking ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <ThumbsUp className={cn("h-5 w-5", isLiked && "fill-blue-500")} />
+              )
+            }
+            label={isLiked ? "Liked" : "Like"}
+            tint={isLiked ? "primary" : "default"}
+            onClick={handleLike}
+          />
+
+          {/* ── View attachments ── */}
           {!isAttachment && (
             <ActionCell
-              icon={<UploadCloud className="h-5 w-5 text-violet-500" />}
-              label="Upload"
+              icon={<Paperclip className="h-5 w-5" />}
+              label="Attachments"
               tint="violet"
-              onClick={() => {
-                close();
-                handleUpload();
-              }}
+              href={`${pathname}/attachments`}
+              badge={attachmentCount}
             />
           )}
 
@@ -320,8 +389,29 @@ export function ViewerFab({
               Report
             </span>
           </div>
+
+          {/* ── Delete ── */}
+          <ConfirmDeleteDialog
+            onConfirm={handleDelete}
+            title="Delete Document"
+            description={`Are you sure you want to request the deletion of "${materialTitle || "this document"}"? This will be added to your current draft.`}
+            trigger={
+                <ActionCell
+                    icon={<Trash2 className="h-5 w-5" />}
+                    label="Delete"
+                    tint="destructive"
+                />
+            }
+          />
         </div>
       </DrawerContent>
     </Drawer>
+    {/* Explicitly modal dialog triggered from the FAB grid */}
+    <FileEditDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        target={{ type: "material", id: materialId, data: material }}
+    />
+    </>
   );
 }

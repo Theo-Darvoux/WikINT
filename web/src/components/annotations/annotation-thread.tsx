@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import Link from "next/link";
+import { useIsMobile } from "@/hooks/use-media-query";
 import { toast } from "sonner";
 import type { AnnotationData, ThreadData } from "@/hooks/use-annotations";
 
@@ -212,6 +213,7 @@ export function AnnotationForm({
     placeholder = "Write an annotation...",
     submitLabel,
 }: AnnotationFormProps) {
+    const isMobile = useIsMobile();
     const [body, setBody] = useState("");
     const [submitting, setSubmitting] = useState(false);
 
@@ -236,16 +238,23 @@ export function AnnotationForm({
                 placeholder={placeholder}
                 className="min-h-[50px] text-xs bg-muted/30 focus-visible:bg-background transition-all py-2"
                 onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
+                    if (e.key === "Enter" && !e.shiftKey && !isMobile) {
                         e.preventDefault();
                         handleSubmit();
                     }
                 }}
             />
             <div className="flex items-center justify-between">
-                <span className={`text-[10px] ${body.length >= maxLength ? "text-destructive font-bold" : "text-muted-foreground"}`}>
-                    {body.length}/{maxLength}
-                </span>
+                <div className="flex flex-col gap-0.5">
+                    <span className={`text-[10px] ${body.length >= maxLength ? "text-destructive font-bold" : "text-muted-foreground"}`}>
+                        {body.length}/{maxLength}
+                    </span>
+                    {!isMobile && (
+                        <span className="text-[9px] text-muted-foreground italic opacity-70">
+                            Shift+Enter for new line
+                        </span>
+                    )}
+                </div>
                 <Button
                     size="sm"
                     onClick={handleSubmit}

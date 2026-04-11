@@ -11,6 +11,7 @@ import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/stores";
+import { useIsMobile } from "@/hooks/use-media-query";
 import { toast } from "sonner";
 
 interface CommentAuthor {
@@ -163,6 +164,7 @@ interface ChatTabProps {
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function ChatTab({ target }: ChatTabProps) {
+  const isMobile = useIsMobile();
   const { user } = useAuthStore();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
@@ -364,7 +366,7 @@ export function ChatTab({ target }: ChatTabProps) {
             placeholder="Write a comment..."
             className="min-h-[40px] flex-1 text-xs bg-muted/40 focus-visible:bg-background transition-all resize-none overflow-hidden py-2"
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey && !isMobile) {
                 e.preventDefault();
                 handleSubmit();
               }
@@ -394,9 +396,11 @@ export function ChatTab({ target }: ChatTabProps) {
             {body.length.toLocaleString()} /{" "}
             {MAX_COMMENT_LENGTH.toLocaleString()}
           </span>
-          <span className="text-[9px] text-muted-foreground italic opacity-70">
-            Shift+Enter for new line
-          </span>
+          {!isMobile && (
+            <span className="text-[9px] text-muted-foreground italic opacity-70">
+              Shift+Enter for new line
+            </span>
+          )}
         </div>
       </div>
     </div>

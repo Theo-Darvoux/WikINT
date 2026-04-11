@@ -56,7 +56,7 @@ The `[[...path]]` catch-all segment captures the full slug path (e.g., `/browse/
 ### Layout Components
 - `LayoutShell` — Main app shell with responsive sidebar
 - `Navbar` — Top navigation with search, notifications, user menu. On mobile (`< md`), the Bell and Send/Contributions icons are hidden (`hidden md:flex` / `hidden md:block`) since those routes are covered by the bottom bar. On mobile the right side shows only a search icon button + the avatar (for logout/settings access). On `md+` (desktop/tablet) the full icon set is visible: Browse link, centred search bar, Send, Bell popover, and avatar with display name.
-- `MobileBottomBar` — Bottom navigation for mobile with 5 tabs: **Home / Browse / PRs / Notifications / Profile**. The PRs tab (Send icon, `/pull-requests`) was added to ensure the contributions flow is reachable on mobile without the top navbar. Features a top-edge pill indicator (`w-6 h-0.5 rounded-full bg-foreground`) on the active tab. Respects iOS safe-area insets via `style={{ paddingBottom: "env(safe-area-inset-bottom)" }}`, enabled by `viewportFit: "cover"` in `layout.tsx`.
+- `MobileBottomBar` — Bottom navigation for mobile with 5 tabs: **Home / Browse (Folder icon) / PRs / Notifications / Profile**. The PRs tab (Send icon, `/pull-requests`) was added to ensure the contributions flow is reachable on mobile without the top navbar. Features a top-edge pill indicator (`w-6 h-0.5 rounded-full bg-foreground`) on the active tab. Respects iOS safe-area insets via `style={{ paddingBottom: "env(safe-area-inset-bottom)" }}`, enabled by `viewportFit: "cover"` in `layout.tsx`.
 - `Footer` — Site footer
 - `AuthGuard` — Wraps authenticated pages, redirects to login if not authenticated
 - `CookieBanner` — GDPR cookie consent

@@ -116,11 +116,11 @@ async def add_security_headers(
     # - inline styles/scripts are blocked by default.
     csp = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "img-src 'self' data: blob:; "
         "font-src 'self'; "
-        "connect-src 'self' " + settings.frontend_url + "; "
+        "connect-src 'self' " + settings.frontend_url + " https://unpkg.com https://cdn.jsdelivr.net; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self';"

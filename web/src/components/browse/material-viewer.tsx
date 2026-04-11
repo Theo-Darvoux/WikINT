@@ -198,9 +198,14 @@ export function MaterialViewer({
   const pathname = usePathname();
   const isMobile = useIsMobile();
   const isDesktop = useIsDesktop();
-  const [actionsOpen, setActionsOpen] = useState(false);
-  const { openSidebar, closeSidebar, sidebarOpen, setHideFooter } =
-    useUIStore();
+  const {
+    openSidebar,
+    closeSidebar,
+    sidebarOpen,
+    setHideFooter,
+    materialActionsOpen,
+    setMaterialActionsOpen,
+  } = useUIStore();
   const viewerContainerRef = useRef<HTMLDivElement>(null);
 
   // Hide footer and prevent page scroll while previewer is active
@@ -296,7 +301,7 @@ export function MaterialViewer({
 
   return (
     <AnnotationsContext.Provider value={annotationsData}>
-      <div className="flex h-[calc(100vh-7rem)] md:h-[calc(100vh-3.5rem)] overflow-hidden gap-0">
+      <div className="flex h-[calc(100dvh-7rem)] md:h-[calc(100dvh-3.5rem)] overflow-hidden gap-0">
         <div className="flex-1 flex flex-col min-w-0 min-h-0 p-2 sm:p-4 md:p-6 gap-3">
           {/* Breadcrumbs */}
           {breadcrumbs.length > 0 && !isMobile && (
@@ -340,7 +345,7 @@ export function MaterialViewer({
                 variant="ghost"
                 size="icon"
                 className="shrink-0"
-                onClick={() => setActionsOpen(true)}
+                onClick={() => setMaterialActionsOpen(true)}
                 aria-label="Document actions"
               >
                 <MoreHorizontal className="h-5 w-5" />
@@ -504,8 +509,8 @@ export function MaterialViewer({
             viewerType={viewerType}
             mimeType={mimeType}
             fileName={fileName}
-            open={actionsOpen}
-            onOpenChange={setActionsOpen}
+            open={materialActionsOpen}
+            onOpenChange={setMaterialActionsOpen}
           />
         )}
       </div>

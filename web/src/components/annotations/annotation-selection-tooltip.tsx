@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useIsMobile } from "@/hooks/use-media-query";
 import { MessageSquarePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +34,7 @@ export function AnnotationSelectionTooltip({
     containerRef,
     onSubmit,
 }: AnnotationSelectionTooltipProps) {
+    const isMobile = useIsMobile();
     const [selection, setSelection] = useState<SelectionPosition | null>(null);
     const [showForm, setShowForm] = useState(false);
     const [body, setBody] = useState("");
@@ -192,17 +194,22 @@ export function AnnotationSelectionTooltip({
                         className="min-h-[60px] text-sm focus-visible:ring-1"
                         autoFocus
                         onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
+                            if (e.key === "Enter" && !e.shiftKey && !isMobile) {
                                 e.preventDefault();
                                 handleSubmit();
                             }
                         }}
                     />
-                    <div className="mt-1 flex items-center justify-between">
-                        <span className="text-[10px] text-muted-foreground">
-                            {body.length}/1,000
-                        </span>
-                    </div>
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] text-muted-foreground">
+                                {body.length.toLocaleString()}/1,000
+                            </span>
+                            {!isMobile && (
+                                <span className="text-[9px] text-muted-foreground italic opacity-70">
+                                    Shift+Enter for newline
+                                </span>
+                            )}
+                        </div>
                     <div className="mt-1 flex gap-2">
                         <Button
                             size="sm"

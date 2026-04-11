@@ -56,6 +56,7 @@ export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
             className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
         >
             <ViewerToolbar 
+                isFullscreen={isFullscreen}
                 right={
                     <FullscreenToggle 
                         isFullscreen={isFullscreen} 

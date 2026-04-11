@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Edit2, MessageSquare, Send } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/lib/stores";
+import { useIsMobile } from "@/hooks/use-media-query";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { FlagButton } from "@/components/flags/flag-button";
 
@@ -23,6 +24,7 @@ interface PRComment {
 const MAX_COMMENT_LENGTH = 10000;
 
 export function PRComments({ prId }: { prId: string }) {
+    const isMobile = useIsMobile();
     const { user } = useAuthStore();
     const [comments, setComments] = useState<PRComment[]>([]);
     const [body, setBody] = useState("");
@@ -229,13 +231,31 @@ export function PRComments({ prId }: { prId: string }) {
                     placeholder="Leave a comment…"
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
-                    rows={2}
-                    className="resize-none"
+                    className="flex-1 text-sm bg-muted/40 focus-visible:bg-background transition-all resize-none overflow-hidden py-2"
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey && !isMobile) {
+                            e.preventDefault();
+                            handleSubmit();
+                        }
+                    }}
+                    style={{ height: "auto" }}
+                    onInput={(e) => {
+                        const target = e.target as HTMLTextAreaElement;
+                        target.style.height = "auto";
+                        target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
+                    }}
                 />
-                <div className="flex items-center justify-between">
-                    <span className={`text-[10px] ${body.length > MAX_COMMENT_LENGTH ? "text-destructive font-medium" : "text-muted-foreground"}`}>
-                        {body.length.toLocaleString()}/{MAX_COMMENT_LENGTH.toLocaleString()}
-                    </span>
+                <div className="flex items-center justify-between px-0.5">
+                    <div className="flex flex-col gap-0.5">
+                        <span className={`text-[10px] ${body.length > MAX_COMMENT_LENGTH ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                            {body.length.toLocaleString()}/{MAX_COMMENT_LENGTH.toLocaleString()}
+                        </span>
+                        {!isMobile && (
+                            <span className="text-[9px] text-muted-foreground italic opacity-70">
+                                Shift+Enter for new line
+                            </span>
+                        )}
+                    </div>
                     <Button
                         size="sm"
                         disabled={!body.trim() || submitting || body.length > MAX_COMMENT_LENGTH}

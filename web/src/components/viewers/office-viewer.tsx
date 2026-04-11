@@ -357,6 +357,7 @@ export function OfficeViewer({ materialId, fileName }: OfficeViewerProps) {
             )}
         >
             <ViewerToolbar 
+                isFullscreen={isFullscreen}
                 left={
                     <div className="flex items-center gap-2 overflow-hidden">
                         {!loading && fileName && (

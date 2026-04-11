@@ -40,11 +40,7 @@ import { cn } from "@/lib/utils";
 
 // Monaco is lazy-loaded to keep initial bundle tight
 const MonacoEditor = dynamic(
-    () => import("@monaco-editor/react").then((m) => {
-        // Configure monaco loader to use the local /vs files instead of the CDN
-        m.loader.config({ paths: { vs: '/vs' } });
-        return m.default;
-    }),
+    () => import("@monaco-editor/react").then((m) => m.default),
     { ssr: false, loading: () => <EditorSkeleton /> },
 );
 
@@ -394,7 +390,9 @@ export function FileEditDialog({
         : currentFileName;
 
     // ── Tab state ─────────────────────────────────────────────────────────
-    const [activeTab, setActiveTab] = useState<"metadata" | "content">("metadata");
+    const [activeTab, setActiveTab] = useState<"metadata" | "content">(
+        isMaterial ? "content" : "metadata",
+    );
 
     // ── Metadata form state ───────────────────────────────────────────────
     const [title, setTitle] = useState(currentTitle);
@@ -426,7 +424,7 @@ export function FileEditDialog({
             setTitle(currentTitle);
             setDescription(currentDescription);
             setTags(currentTags);
-            setActiveTab("metadata");
+            setActiveTab(isMaterial ? "content" : "metadata");
             setEditorText("");
             setLoadError("");
             setDiffSummary("");
@@ -667,13 +665,13 @@ export function FileEditDialog({
                     className="flex min-h-0 flex-1 flex-col"
                 >
                     <TabsList className="shrink-0 self-start">
-                        <TabsTrigger value="metadata">Metadata</TabsTrigger>
                         {isMaterial && (
                             <TabsTrigger value="content" className="gap-1.5">
                                 <FileCode2 className="h-3.5 w-3.5" />
                                 {canEditText ? "Edit text" : "Replace file"}
                             </TabsTrigger>
                         )}
+                        <TabsTrigger value="metadata">Metadata</TabsTrigger>
                     </TabsList>
 
                     {/* ── Metadata tab ──────────────────────────────────── */}

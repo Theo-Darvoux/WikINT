@@ -8,6 +8,7 @@ interface ViewerToolbarProps {
     center?: React.ReactNode;
     right?: React.ReactNode;
     className?: string;
+    isFullscreen?: boolean;
 }
 
 /**
@@ -19,10 +20,12 @@ export function ViewerToolbar({
     center,
     right,
     className,
+    isFullscreen,
 }: ViewerToolbarProps) {
     return (
         <div className={cn(
             "sticky top-0 z-10 flex-none flex items-center justify-between gap-1 rounded-t-lg bg-background/80 px-2 py-1 backdrop-blur border-b",
+            isFullscreen && "pt-[max(4px,env(safe-area-inset-top))] pb-1 sm:pt-1",
             className
         )}>
             <div className="flex items-center gap-1 overflow-hidden">

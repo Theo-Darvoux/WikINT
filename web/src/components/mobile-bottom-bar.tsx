@@ -1,15 +1,16 @@
 "use client";
 
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useAuth } from "@/hooks/use-auth";
-import { useNotificationStore } from "@/lib/stores";
+import { useNotificationStore, useUIStore } from "@/lib/stores";
 import { cn } from "@/lib/utils";
 import {
   Home,
-  LayoutGrid,
+  Folder,
   Send,
   Bell,
   User,
@@ -34,7 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     href: "/browse",
     label: "Browse",
-    Icon: LayoutGrid,
+    Icon: Folder,
     match: (p) => p.startsWith("/browse"),
   },
   {
@@ -62,11 +63,35 @@ export function MobileBottomBar() {
   const isMobile = useIsMobile();
   const { isAuthenticated } = useAuth();
   const { unreadCount } = useNotificationStore();
+  const { hideFooter, setMaterialActionsOpen } = useUIStore();
   const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
+  const touchStartY = useRef<number | null>(null);
 
-  if (!isMobile || !isAuthenticated) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  const bar = (
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartY.current === null) return;
+    const touchEndY = e.changedTouches[0].clientY;
+    const deltaY = touchStartY.current - touchEndY;
+    const threshold = 30; // Min pixels for swipe up
+
+    // We only trigger when hideFooter is true (viewer context)
+    if (deltaY > threshold && hideFooter) {
+      setMaterialActionsOpen(true);
+    }
+    touchStartY.current = null;
+  };
+
+  if (!mounted || !isMobile || !isAuthenticated) return null;
+
+  return (
     <div
       className="fixed bottom-0 left-0 right-0 z-[60] flex justify-center px-4"
       style={{
@@ -74,6 +99,8 @@ export function MobileBottomBar() {
         transform: "translateZ(0)",
         WebkitTransform: "translateZ(0)",
       }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
     >
       <nav
         aria-label="Main navigation"
@@ -117,6 +144,7 @@ export function MobileBottomBar() {
               {/* ── Icon (with optional badge) ── */}
               <span className="relative shrink-0">
                 <Icon
+                  key={isActive ? "active" : "inactive"}
                   style={{ width: 19, height: 19 }}
                   strokeWidth={isActive ? 2.3 : 1.75}
                 />
@@ -144,6 +172,4 @@ export function MobileBottomBar() {
       </nav>
     </div>
   );
-
-  return createPortal(bar, document.body);
 }

@@ -51,7 +51,10 @@ function CommandDialog({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <DialogContent
-        className={cn("overflow-hidden p-0", className)}
+        className={cn(
+          "overflow-hidden p-0 top-0 translate-y-0 sm:top-[50%] sm:translate-y-[-50%] max-w-full sm:max-w-lg rounded-none sm:rounded-lg border-x-0 sm:border-x",
+          className
+        )}
         showCloseButton={showCloseButton}
       >
         <Command shouldFilter={shouldFilter} className="[&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
@@ -88,13 +91,24 @@ function CommandList({
   className,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.List>) {
+  // Dismiss keyboard on scroll (mobile only)
+  const onScroll = React.useCallback(() => {
+    if (window.innerWidth < 640) {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
+        activeElement.blur();
+      }
+    }
+  }, []);
+
   return (
     <CommandPrimitive.List
       data-slot="command-list"
       className={cn(
-        "max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto",
+        "max-h-[calc(100vh-200px)] sm:max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto",
         className
       )}
+      onScroll={onScroll}
       {...props}
     />
   )

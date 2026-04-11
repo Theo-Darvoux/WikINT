@@ -88,6 +88,7 @@ export function EpubViewer({ materialId }: EpubViewerProps) {
             className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
         >
             <ViewerToolbar 
+                isFullscreen={isFullscreen}
                 right={
                     <FullscreenToggle 
                         isFullscreen={isFullscreen} 

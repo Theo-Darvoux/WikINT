@@ -42,12 +42,14 @@ interface UIState {
     sidebarTarget: SidebarTarget | null;
     searchOpen: boolean;
     hideFooter: boolean;
+    materialActionsOpen: boolean;
     openSidebar: (tab: SidebarTab, target: SidebarTarget) => void;
     updateSidebarData: (data: Record<string, unknown>) => void;
     closeSidebar: () => void;
     setSidebarTab: (tab: SidebarTab) => void;
     setSidebarOpen: (open: boolean) => void;
     setSearchOpen: (open: boolean) => void;
+    setMaterialActionsOpen: (open: boolean) => void;
     setHideFooter: (hide: boolean) => void;
     toggleSidebar: () => void;
 }
@@ -58,6 +60,7 @@ export const useUIStore = create<UIState>((set) => ({
     sidebarTarget: null,
     searchOpen: false,
     hideFooter: false,
+    materialActionsOpen: false,
     openSidebar: (tab, target) =>
         set({ sidebarOpen: true, sidebarTab: tab, sidebarTarget: target }),
     updateSidebarData: (data) =>
@@ -70,6 +73,7 @@ export const useUIStore = create<UIState>((set) => ({
     setSidebarTab: (tab) => set({ sidebarTab: tab }),
     setSidebarOpen: (open) => set({ sidebarOpen: open }),
     setSearchOpen: (open) => set({ searchOpen: open }),
+    setMaterialActionsOpen: (open) => set({ materialActionsOpen: open }),
     setHideFooter: (hide) => set({ hideFooter: hide }),
     toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 }));

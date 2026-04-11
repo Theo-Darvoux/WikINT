@@ -10,7 +10,7 @@ import {
   User,
   Settings,
   LogOut,
-  LayoutGrid,
+  Folder,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { SearchModal } from "@/components/search/search-modal";
@@ -125,7 +125,7 @@ export function Navbar() {
                 size="sm"
                 className={`gap-2 rounded-lg font-medium ${pathname.startsWith("/browse") ? "text-foreground bg-accent" : "text-muted-foreground hover:text-foreground"}`}
               >
-                <LayoutGrid className="h-4 w-4" />
+                <Folder className="h-4 w-4" />
                 <span>Browse</span>
               </Button>
             </Link>

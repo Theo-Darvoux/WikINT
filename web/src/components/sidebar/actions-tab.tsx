@@ -254,7 +254,7 @@ export function ActionsTab({ target }: ActionsTabProps) {
     }
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     let path = "";
     if (isMaterial) {
       const dirPath = String(target.data.directory_path ?? "");
@@ -265,9 +265,24 @@ export function ActionsTab({ target }: ActionsTabProps) {
     }
 
     const shareUrl = `${window.location.origin}/browse/${path}`;
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      toast.success("Link copied to clipboard");
-    });
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title,
+          url: shareUrl,
+        });
+      } catch (err) {
+        // Only show error if it's not a user cancellation
+        if (err instanceof Error && err.name !== "AbortError") {
+          toast.error("Sharing failed");
+        }
+      }
+    } else {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        toast.success("Link copied to clipboard");
+      });
+    }
   };
 
   const handleDraftDelete = () => {
