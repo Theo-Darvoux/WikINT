@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { Bell, Send, Search, User, Settings, LogOut } from "lucide-react";
+import { Bell, Send, Search, User, Settings, LogOut, LayoutGrid } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { SearchModal } from "@/components/search/search-modal";
 import { useNotificationStore } from "@/lib/stores";
@@ -93,13 +93,25 @@ export function Navbar() {
         <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md supports-backdrop-filter:bg-background/60">
             <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6 relative">
                 {/* Left: Brand */}
-                <div className="flex w-1/3 justify-start">
+                <div className="flex w-1/3 justify-start items-center gap-4">
                     <Link
                         href="/"
                         className="text-xl font-extrabold tracking-tight bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
                     >
                         WikINT
                     </Link>
+                    {isAuthenticated && (
+                        <Link href="/browse" className="hidden sm:block">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className={`gap-2 rounded-lg font-medium ${pathname.startsWith("/browse") ? "text-foreground bg-accent" : "text-muted-foreground hover:text-foreground"}`}
+                            >
+                                <LayoutGrid className="h-4 w-4" />
+                                <span>Browse</span>
+                            </Button>
+                        </Link>
+                    )}
                 </div>
 
                 {/* Center: Search */}
