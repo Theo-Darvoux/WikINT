@@ -52,7 +52,7 @@ async def unread_count(
     return {"count": count}
 
 
-@router.post("/{notification_id}/read")
+@router.patch("/{notification_id}/read")
 async def read_notification(
     notification_id: uuid.UUID,
     user: CurrentUser,

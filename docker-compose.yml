@@ -47,11 +47,12 @@ services:
     image: getmeili/meilisearch:v1.12
     environment:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_LOG_LEVEL: warn
     volumes:
       - meilisearch_data:/meili_data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
       retries: 5
     networks:

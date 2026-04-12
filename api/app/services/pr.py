@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
@@ -146,6 +146,73 @@ async def _unique_directory_slug(
         if candidate not in existing:
             return candidate
     return f"{base}-{uuid.uuid4().hex[:8]}"
+
+
+async def _enqueue_deindex_material_recursive(db: AsyncSession, material_id: uuid.UUID) -> None:
+    """Recursively find all material attachments and their system directories to de-index them."""
+    # 1. Find all descendant materials (recursive attachments)
+    mat_cte = (
+        select(Material.id)
+        .where(Material.id == material_id)
+        .cte(name="descendant_mats", recursive=True)
+    )
+    mat_alias = aliased(Material)
+    mat_cte = mat_cte.union_all(
+        select(mat_alias.id).join(mat_cte, mat_alias.parent_material_id == mat_cte.c.id)
+    )
+
+    all_mat_ids = (await db.scalars(select(mat_cte.c.id))).all()
+
+    # 2. Find all associated system directories (attachments folders)
+    # These directories are named "attachments:{material_id}"
+    sys_dir_names = [f"attachments:{mid}" for mid in all_mat_ids]
+    sys_dir_ids = (
+        await db.scalars(select(Directory.id).where(Directory.name.in_(sys_dir_names)))
+    ).all()
+
+    # 3. Enqueue all discovered items
+    for mid in all_mat_ids:
+        db.info.setdefault("post_commit_jobs", []).append(
+            ("delete_indexed_item", "materials", str(mid))
+        )
+    for did in sys_dir_ids:
+        db.info.setdefault("post_commit_jobs", []).append(
+            ("delete_indexed_item", "directories", str(did))
+        )
+
+
+async def _enqueue_deindex_directory_recursive(db: AsyncSession, directory_id: uuid.UUID) -> None:
+    """Recursively find all subdirectories and materials (including attachments) to de-index them."""
+    # 1. Find all descendant directories (recursive subfolders)
+    dir_cte = (
+        select(Directory.id)
+        .where(Directory.id == directory_id)
+        .cte(name="descendant_dirs", recursive=True)
+    )
+    dir_alias = aliased(Directory)
+    dir_cte = dir_cte.union_all(
+        select(dir_alias.id).join(dir_cte, dir_alias.parent_id == dir_cte.c.id)
+    )
+
+    all_dir_ids = (await db.scalars(select(dir_cte.c.id))).all()
+
+    # 2. Find all materials directly in these directories
+    mat_ids = (
+        await db.scalars(select(Material.id).where(Material.directory_id.in_(all_dir_ids)))
+    ).all()
+
+    # 3. For each material, perform recursive de-indexing (handles attachments in system dirs)
+    for mid in mat_ids:
+        await _enqueue_deindex_material_recursive(db, mid)
+
+    # 4. Enqueue the directories themselves
+    for did in all_dir_ids:
+        # Skip if already enqueued by _enqueue_deindex_material_recursive (unlikely but safe)
+        existing_jobs = db.info.get("post_commit_jobs", [])
+        if not any(j == ("delete_indexed_item", "directories", str(did)) for j in existing_jobs):
+            db.info.setdefault("post_commit_jobs", []).append(
+                ("delete_indexed_item", "directories", str(did))
+            )
 
 
 def topo_sort_operations(operations: list[dict[str, typing.Any]]) -> list[dict[str, typing.Any]]:
@@ -514,9 +581,8 @@ async def _exec_delete_material(
 
         await db.delete(sys_dir)
 
-    db.info.setdefault("post_commit_jobs", []).append(
-        ("delete_indexed_item", "materials", str(deleted_id))
-    )
+    # Recursive de-indexing (Issue #GhostSearch)
+    await _enqueue_deindex_material_recursive(db, deleted_id)
 
     # CAS V2: delete_storage_objects already handles cas/ keys via ref
     # counting (decrement, only delete S3 object at ref_count=0).
@@ -603,11 +669,11 @@ async def _exec_delete_directory(
         raise NotFoundError("Directory not found")
 
     deleted_id = dir_obj.id
-    await db.delete(dir_obj)
 
-    db.info.setdefault("post_commit_jobs", []).append(
-        ("delete_indexed_item", "directories", str(deleted_id))
-    )
+    # Recursive de-indexing for all descendant subdirectories and materials (Issue #GhostSearch)
+    await _enqueue_deindex_directory_recursive(db, deleted_id)
+
+    await db.delete(dir_obj)
 
     return deleted_id
 

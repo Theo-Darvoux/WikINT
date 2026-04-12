@@ -44,7 +44,7 @@ Content moderation reporting:
 ## Notifications (`/api/notifications`)
 User notification system:
 - `GET /api/notifications` — List notifications for the current user
-- `PUT /api/notifications/{id}/read` — Mark as read
+- `PATCH /api/notifications/{id}/read` — Mark as read
 - `POST /api/notifications/read-all` — Mark all as read
 - `GET /api/notifications/unread-count` — Quick count for badge display
 

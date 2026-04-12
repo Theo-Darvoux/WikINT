@@ -80,8 +80,9 @@ Provides in-browser viewing and editing of Office documents. Integration uses:
 The FastAPI app uses the async `lifespan` context manager:
 
 **Startup sequence:**
-1. Initialize OpenTelemetry instrumentation
-2. Setup MeiliSearch indexes (soft-fail)
+1. Wait for PostgreSQL to be ready for queries (via `wait_for_db.py` in `start.sh`)
+2. Initialize OpenTelemetry instrumentation
+3. Setup MeiliSearch indexes (soft-fail)
 3. Initialize ARQ Redis pool (soft-fail)
 4. Initialize S3 client (hard-fail - required)
 5. Initialize MalwareScanner with YARA rules (hard-fail - required)

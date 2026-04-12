@@ -207,7 +207,7 @@ After successful commit, jobs are dispatched via ARQ:
 |-----|---------|
 | `index_material` | Add/update material in MeiliSearch |
 | `index_directory` | Add/update directory in MeiliSearch |
-| `delete_indexed_item` | Remove from MeiliSearch (for deletes) |
+| delete_indexed_item | Remove from MeiliSearch (for deletes). Recursive for parent items. |
 | `delete_storage_objects` | Delete `uploads/` staging files (legacy V1) |
 
 These are fire-and-forget. If a post-commit job fails, the cleanup worker catches it later.
