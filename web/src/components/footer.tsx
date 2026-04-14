@@ -8,7 +8,7 @@ export function Footer() {
                     <Link href="/privacy" className="hover:text-foreground transition-colors">
                         Privacy Policy
                     </Link>
-                    <span>·</span>
+                    <span>•</span>
                     <a
                         href="https://github.com/Theo-Darvoux/WikINT"
                         target="_blank"
@@ -18,7 +18,7 @@ export function Footer() {
                         GitHub
                     </a>
                 </div>
-                <p>WikINT — Telecom SudParis / IMT-BS</p>
+                <p>Telecom SudParis • WikINT • IMT-Business School</p>
             </div>
         </footer>
     );

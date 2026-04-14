@@ -166,6 +166,18 @@ function BrowseContent() {
   }, [path, fetchData, closeSidebar]);
 
   useEffect(() => {
+    if (data) {
+      if (data.type === "material" && data.material) {
+        document.title = `${data.material.title} • WikINT`;
+      } else if (data.directory) {
+        document.title = `${data.directory.name as string} • WikINT`;
+      } else if (path === "") {
+        document.title = "Course Materials • WikINT";
+      }
+    }
+  }, [data, path]);
+
+  useEffect(() => {
     // If refreshCount changed but path didn't, it's a background refresh
     if (refreshCount > 0) {
       browseCache.delete(path);

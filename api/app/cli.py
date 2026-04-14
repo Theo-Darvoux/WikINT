@@ -68,7 +68,11 @@ async def _reindex() -> None:
     async with async_session_factory() as session:
         # Reindex Materials
         m_result = await session.execute(
-            select(Material).options(selectinload(Material.tags), selectinload(Material.author))
+            select(Material).options(
+                selectinload(Material.tags), 
+                selectinload(Material.author),
+                selectinload(Material.versions)
+            )
         )
         materials = m_result.scalars().all()
 
@@ -84,8 +88,17 @@ async def _reindex() -> None:
 
             browse_path += f"/{mat.slug}"
 
+            # Find current version metadata
+            file_name = None
+            file_mime_type = None
+            for v in mat.versions:
+                if v.version_number == mat.current_version:
+                    file_name = v.file_name
+                    file_mime_type = v.file_mime_type
+                    break
+
             # Build extra searchable fields (identifiers)
-            extra = f"{split_identifiers(mat.title)} {split_identifiers(ancestor_path)}"
+            extra = f"{split_identifiers(mat.title)} {split_identifiers(ancestor_path)} {split_identifiers(file_name or '')}"
 
             m_docs.append(
                 {

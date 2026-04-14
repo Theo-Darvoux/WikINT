@@ -280,8 +280,8 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
     <div className="space-y-3">
       {/* Header */}
       <div className="flex items-start gap-3 min-w-0">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/40">
-          <Folder className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/40">
+          <Folder className="h-6 w-6 text-blue-600 dark:text-blue-400" />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="font-semibold leading-tight break-all">{name}</h3>
@@ -447,8 +447,8 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
     <div className="space-y-3">
       {/* Header */}
       <div className="flex items-start gap-3 min-w-0">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <FileText className="h-4.5 w-4.5 text-muted-foreground" />
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-muted">
+          <FileText className="h-6 w-6 text-muted-foreground" />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="font-semibold leading-tight break-all">{title}</h3>

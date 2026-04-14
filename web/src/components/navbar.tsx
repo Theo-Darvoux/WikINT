@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import {
   Bell,
-  Send,
+  Inbox,
   Search,
   User,
   Settings,
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { SearchModal } from "@/components/search/search-modal";
+import { SearchInline } from "@/components/search/search-inline";
 import { useNotificationStore } from "@/lib/stores";
 import { useSSE } from "@/hooks/use-sse";
 import { usePathname } from "next/navigation";
@@ -63,8 +64,11 @@ export function Navbar() {
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setSearchOpen((open) => !open);
+        // Only trigger modal on mobile. On desktop, SearchInline handles focusing the input.
+        if (window.innerWidth < 640) {
+          e.preventDefault();
+          setSearchOpen((open) => !open);
+        }
       }
     };
     document.addEventListener("keydown", down);
@@ -108,8 +112,8 @@ export function Navbar() {
     : user?.email?.slice(0, 2).toUpperCase() || "?";
 
   return (
-    <nav className="sticky top-0 z-[60] border-b bg-background/80 backdrop-blur-md supports-backdrop-filter:bg-background/60">
-      <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6 relative">
+    <nav className="sticky top-0 z-[60] h-14 border-b bg-background/80 backdrop-blur-md supports-backdrop-filter:bg-background/60">
+      <div className="flex h-full w-full items-center justify-between px-4 sm:px-6 relative">
         {/* Left: Brand */}
         <div className="flex w-1/3 justify-start items-center gap-4">
           <Link
@@ -135,19 +139,7 @@ export function Navbar() {
         {/* Center: Search */}
         {pathname !== "/login" && (
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md px-4 pointer-events-none sm:pointer-events-auto hidden sm:block">
-            <Button
-              variant="outline"
-              className="w-full justify-between text-sm text-muted-foreground bg-white/50 dark:bg-black/20 hover:bg-white/80 dark:hover:bg-black/40 backdrop-blur-md border-white/20 dark:border-white/10 shadow-sm transition-all h-9 px-3 pointer-events-auto rounded-xl"
-              onClick={() => setSearchOpen(true)}
-            >
-              <span className="flex items-center gap-2">
-                <Search className="h-4 w-4 opacity-70" />
-                <span className="font-normal">Search materials...</span>
-              </span>
-              <kbd className="hidden h-5 select-none items-center gap-1 rounded bg-muted/80 px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex border shadow-sm">
-                <span className="text-xs">⌘</span>K
-              </kbd>
-            </Button>
+            <SearchInline />
           </div>
         )}
 
@@ -174,7 +166,7 @@ export function Navbar() {
                   title="Contributions"
                   className={`rounded-full ${pathname.startsWith("/pull-requests") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
                 >
-                  <Send className="h-4 w-4" />
+                  <Inbox className="h-4 w-4" />
                 </Button>
               </Link>
 

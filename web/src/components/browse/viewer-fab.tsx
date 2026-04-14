@@ -13,7 +13,7 @@ import {
   Info,
   MessageSquare,
   Highlighter,
-  GitPullRequest,
+  Inbox,
   Edit,
   Trash2,
   ThumbsUp,
@@ -327,7 +327,7 @@ export function ViewerFab({
 
           {/* ── Edits ── */}
           <ActionCell
-            icon={<GitPullRequest className="h-5 w-5" />}
+            icon={<Inbox className="h-5 w-5" />}
             label="Edits"
             onClick={() => {
               close();

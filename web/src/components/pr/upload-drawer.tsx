@@ -20,7 +20,7 @@ import {
     AlertCircle,
     Loader2,
     RotateCcw,
-    Package,
+    PackagePlus,
     Folder,
     ShieldX,
     FileText,
@@ -547,7 +547,7 @@ export function UploadDrawer({
 
     const stageLabel =
         doneFiles.length === files.length
-            ? `Continue to draft (${doneFiles.length})`
+            ? `Add to draft (${doneFiles.length})`
             : `Add to draft (${doneFiles.length}/${files.length})`;
 
     const handleStage = () => {
@@ -882,9 +882,6 @@ export function UploadDrawer({
                                             placeholder="Title"
                                         />
                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                            <span className="truncate">
-                                                {f.correctedName ?? f.fileName}
-                                            </span>
                                             <span className="shrink-0">
                                                 {f.serverSize != null
                                                     ? fileSize(f.serverSize)
@@ -1034,7 +1031,7 @@ export function UploadDrawer({
                         disabled={!canStage}
                         className="w-full gap-2"
                     >
-                        <Package className="h-4 w-4" />
+                        <PackagePlus className="h-4 w-4" />
                         {stageLabel}
                     </Button>
                 </SheetFooter>

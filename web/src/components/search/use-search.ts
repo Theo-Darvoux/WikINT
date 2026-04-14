@@ -15,6 +15,8 @@ export interface SearchResult {
     views_today?: number;
     is_liked?: boolean;
     like_count?: number;
+    file_name?: string;
+    file_mime_type?: string;
 }
 
 export interface SearchResponse {

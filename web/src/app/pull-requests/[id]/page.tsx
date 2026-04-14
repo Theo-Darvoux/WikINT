@@ -12,7 +12,6 @@ import {
     FolderPen,
     FolderX,
     ArrowRightLeft,
-    Upload,
     CheckCircle2,
     XCircle,
     Check,
@@ -29,6 +28,7 @@ import {
     Video,
     MapPin,
     ArrowRight,
+    Inbox,
 } from "lucide-react";
 import { PreviewDialog } from "@/components/pr/preview-dialog";
 import { MarkdownRenderer } from "@/components/viewers/markdown-renderer";
@@ -128,7 +128,7 @@ const STATUS_CONFIG: Record<
     { Icon: React.ElementType; color: string; bg: string; label: string }
 > = {
     open: {
-        Icon: Upload,
+        Icon: Inbox,
         color: "text-blue-600",
         bg: "bg-blue-500/10",
         label: "Pending",

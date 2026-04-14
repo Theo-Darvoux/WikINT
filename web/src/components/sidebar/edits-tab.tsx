@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, GitPullRequest } from "lucide-react";
+import { Loader2, Inbox } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { PRCard } from "@/components/pr/pr-card";
 
@@ -53,7 +53,7 @@ export function EditsTab({ target }: EditsTabProps) {
     if (prs.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-                <GitPullRequest className="mb-3 h-8 w-8 text-muted-foreground/50" />
+                <Inbox className="mb-3 h-8 w-8 text-muted-foreground/50" />
                 <p className="text-sm text-muted-foreground">
                     No active contributions for this {target.type}.
                 </p>

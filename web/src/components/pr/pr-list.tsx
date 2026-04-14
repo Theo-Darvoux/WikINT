@@ -5,10 +5,9 @@ import { apiFetch, apiFetchWithResponse } from "@/lib/api-client";
 import { PRCard } from "./pr-card";
 import {
   Loader2,
-  Send,
+  Inbox,
   CheckCircle2,
   XCircle,
-  Inbox,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -33,7 +32,7 @@ type StatusFilter = "open" | "approved" | "rejected" | null;
 
 const TABS: { value: StatusFilter; label: string; icon: React.ElementType }[] =
   [
-    { value: "open", label: "Pending", icon: Send },
+    { value: "open", label: "Pending", icon: Inbox },
     { value: "approved", label: "Approved", icon: CheckCircle2 },
     { value: "rejected", label: "Rejected", icon: XCircle },
   ];
@@ -119,7 +118,7 @@ export function PRList() {
 
   const EmptyIcon =
     filterStatus === "open"
-      ? Send
+      ? Inbox
       : filterStatus === "approved"
         ? CheckCircle2
         : filterStatus === "rejected"

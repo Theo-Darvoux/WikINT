@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import {
-    Send,
+    Inbox,
     CheckCircle2,
     XCircle,
     FilePlus,
@@ -63,7 +63,7 @@ export function PRCard({ pr }: PullRequestProps) {
         : "?";
 
     const StatusIcon = isOpen
-        ? Send
+        ? Inbox
         : isApproved
           ? CheckCircle2
           : XCircle;

@@ -5,9 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import {
     FileText, MessageSquare, Info, Eye, ThumbsUp,
     FileImage, FileVideo, FileAudio, FileArchive, FileSpreadsheet, FileCode, File, Lightbulb, ClipboardCheck, Video,
-    Paperclip,
+    Paperclip, MoreVertical
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ItemActionsMenu, ItemActionsDropdownTrigger } from "./item-actions-menu";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useUIStore } from "@/lib/stores";
 import { EXT_BADGE_COLORS, getFileBadgeLabel, getFileExtension } from "@/lib/file-utils";
@@ -34,7 +35,7 @@ const TYPE_LABELS: Record<string, string> = {
     other: "Other",
 };
 
-const TYPE_ICONS: Record<string, React.ElementType> = {
+export const TYPE_ICONS: Record<string, React.ElementType> = {
     polycopie: FileText,
     annal: FileText,
     cheatsheet: FileText,
@@ -46,7 +47,7 @@ const TYPE_ICONS: Record<string, React.ElementType> = {
     document: FileText,
 };
 
-const EXT_ICONS: Record<string, React.ElementType> = {
+export const EXT_ICONS: Record<string, React.ElementType> = {
     pdf: FileText,
     doc: FileText,
     docx: FileText,
@@ -83,19 +84,40 @@ const EXT_ICONS: Record<string, React.ElementType> = {
 
 interface MaterialLineItemProps {
     material: Record<string, unknown>;
-    staged?: "edited" | "deleted" | "moved" | null;
+    staged?: "edited" | "deleted" | "moved" | "created" | null;
+    isExternal?: boolean;
     selectMode?: boolean;
     selected?: boolean;
-    onToggleSelect?: () => void;
+    onToggleSelect?: (e?: React.MouseEvent) => void;
     /** When set, appended as ?preview_pr= to preserve preview mode across navigation */
     previewPrId?: string;
     navIndex?: number;
     focused?: boolean;
     /** The index of the operation in the PR payload, if this is an external preview edit */
     previewOpIndex?: number;
+    /** Special override for clicking on ghost materials (creations) */
+    onNavigate?: () => void;
+    /** Request attachment upload for this material (draft only) */
+    onAddAttachment?: () => void;
+    /** Cached attachment count for drafts */
+    draftAttachmentCount?: number;
 }
 
-export function MaterialLineItem({ material, staged, selectMode, selected, onToggleSelect, previewPrId, navIndex, focused, previewOpIndex }: MaterialLineItemProps) {
+export function MaterialLineItem({
+    material,
+    staged,
+    isExternal,
+    selectMode,
+    selected,
+    onToggleSelect,
+    previewPrId,
+    navIndex,
+    focused,
+    previewOpIndex,
+    onNavigate,
+    onAddAttachment,
+    draftAttachmentCount,
+}: MaterialLineItemProps) {
     const isMobile = useIsMobile();
     const { openSidebar } = useUIStore();
     const pathname = usePathname();
@@ -105,9 +127,7 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
     const slug = String(material.slug ?? "");
     const id = String(material.id ?? "");
     const type = String(material.type ?? "other");
-    const attachmentCount = Number(material.attachment_count ?? 0);
-    const totalViews = Number(material.total_views ?? 0);
-    const viewsToday = Number(material.views_today ?? 0);
+    const attachmentCount = draftAttachmentCount ?? Number(material.attachment_count ?? 0);
     const likeCount = Number(material.like_count ?? 0);
     const isLiked = Boolean(material.is_liked);
 
@@ -165,104 +185,184 @@ export function MaterialLineItem({ material, staged, selectMode, selected, onTog
         }
     }
 
-    const iconColorClass = badgeColor.split(" ").find(c => c.startsWith("text-")) || "text-muted-foreground";
-
     const handleDetails = (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
         openSidebar("details", { type: "material", id, data: material });
     };
 
-    const handleCardClick = () => {
-        if (selectMode && onToggleSelect) {
-            onToggleSelect();
-            return;
-        }
-        router.push(buildPath());
+    const handleChat = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openSidebar("chat", { type: "material", id, data: material });
     };
 
-    const stagedBorder = staged === "deleted"
-        ? "border-l-2 border-l-red-400 bg-red-50/50 dark:bg-red-950/20"
-        : staged === "edited"
-          ? "border-l-2 border-l-green-400 bg-green-50/50 dark:bg-green-950/20"
-          : staged === "moved"
-            ? "border-l-2 border-l-amber-400 bg-amber-50/50 dark:bg-amber-950/20"
-            : "";
+    const handleCardClick = (e: React.MouseEvent) => {
+        if (selectMode && onToggleSelect) {
+            onToggleSelect(e);
+            return;
+        }
+        if (onNavigate) {
+            onNavigate();
+        } else {
+            router.push(buildPath());
+        }
+    };
+
+    const themeColor =
+        staged === "deleted"
+            ? "red"
+            : staged === "moved"
+                ? "amber"
+                : isExternal
+                    ? "blue"
+                    : "green";
+
+    const borderStyle = isExternal ? "border-solid" : "border-dashed";
+
+    const stagedBorder = staged
+        ? `border-l-2 ${borderStyle} border-l-${themeColor}-400 bg-${themeColor}-50/50 dark:bg-${themeColor}-950/20`
+        : "";
+
+    const iconColorClass = staged
+        ? `text-${themeColor}-500`
+        : badgeColor.split(" ").find(c => c.startsWith("text-")) || "text-muted-foreground";
+
+    const textColor =
+        staged === "deleted"
+            ? "line-through text-red-700 dark:text-red-400"
+            : staged === "moved"
+                ? "text-amber-700 dark:text-amber-400"
+                : (staged === "created" || staged === "edited")
+                    ? `text-${themeColor}-700 dark:text-${themeColor}-400`
+                    : "";
 
     return (
-        <div
-            onClick={handleCardClick}
-            data-nav-index={navIndex}
-            className={`flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50 cursor-pointer ${stagedBorder} ${selectMode && selected ? "bg-primary/5 dark:bg-primary/10" : ""} ${focused ? "bg-muted ring-2 ring-inset ring-primary/40" : ""}`}
+        <ItemActionsMenu 
+            item={{ id, type: "material", data: material, staged, isExternal }}
+            onAddAttachment={onAddAttachment}
         >
-            {selectMode && (
-                <Checkbox
-                    checked={!!selected}
-                    onCheckedChange={() => onToggleSelect?.()}
-                    onClick={(e) => e.stopPropagation()}
-                    className="shrink-0"
-                />
-            )}
-            <Icon className={`h-5 w-5 shrink-0 ${staged === "deleted" ? "text-red-500" : staged === "moved" ? "text-amber-500" : iconColorClass}`} />
-
-            <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                    <span className={`block truncate font-medium ${staged === "deleted" ? "line-through text-red-700 dark:text-red-400" : staged === "moved" ? "text-amber-700 dark:text-amber-400" : ""}`}>{title}</span>
-                    {staged && (
-                        <span className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${
-                            staged === "deleted"
-                                ? "text-red-600 border-red-300"
-                                : staged === "moved"
-                                  ? "text-amber-600 border-amber-300"
-                                  : "text-green-600 border-green-300"
-                        }`}>
-                            {staged === "deleted" ? "Deleting" : staged === "moved" ? "Moving" : "Edited"}
-                        </span>
-                    )}
-                </div>
-                <span className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${badgeColor}`}>
-                    {badgeLabel}
-                </span>
-                {attachmentCount > 0 && (
-                    <span className="mt-0.5 ml-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
-                        <Paperclip className="h-3 w-3" />
-                        {attachmentCount}
-                    </span>
+            <div
+                onClick={handleCardClick}
+                data-nav-index={navIndex}
+                className={`flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50 cursor-pointer ${stagedBorder} ${selectMode && selected ? "bg-primary/5 dark:bg-primary/10" : ""} ${focused ? "bg-muted ring-2 ring-inset ring-primary/40" : ""}`}
+            >
+                {selectMode && (
+                    <Checkbox
+                        checked={!!selected}
+                        onCheckedChange={() => {}}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleSelect?.(e);
+                        }}
+                        className="shrink-0"
+                    />
                 )}
-            </div>
+                <Icon className={`h-6 w-6 shrink-0 ${iconColorClass}`} />
 
-            {!isMobile && (
-                <div className="flex flex-col items-end justify-center px-2 text-[11px] leading-tight text-muted-foreground opacity-80">
-                    <span className="flex items-center gap-1" title="Likes">
-                        {likeCount}
-                        <ThumbsUp className={`h-3 w-3 ${isLiked ? "fill-primary text-primary" : ""}`} />
-                    </span>
-                    <span className="flex items-center gap-1" title="Total views">
-                        {totalViews}
-                        <Eye className="h-3 w-3" />
-                    </span>
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                        <span className={`block truncate font-medium ${textColor}`}>
+                            {title}
+                        </span>
+                        {staged && (
+                            <span
+                                className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+                                    staged === "deleted"
+                                        ? "text-red-600 border-red-300"
+                                        : staged === "moved"
+                                            ? "text-amber-600 border-amber-300"
+                                            : isExternal
+                                                ? "text-blue-600 border-blue-300"
+                                                : "text-green-600 border-green-300"
+                                }`}
+                            >
+                                {staged === "deleted"
+                                    ? "Deleting"
+                                    : staged === "moved"
+                                        ? "Moving"
+                                        : staged === "created"
+                                            ? isExternal
+                                                ? "Contribution"
+                                                : "Draft"
+                                            : "Edited"}
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${badgeColor}`}>
+                            {badgeLabel}
+                        </span>
+                        {attachmentCount > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                                <Paperclip className="h-3 w-3" />
+                                {attachmentCount}
+                            </span>
+                        )}
+                    </div>
                 </div>
-            )}
 
-            <div className="flex shrink-0 items-center gap-1">
-                <button
-                    onClick={handleDetails}
-                    className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                    title="Details"
-                    aria-label={`View details for ${title}`}
-                >
-                    <Info className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
-                </button>
-                <Link
-                    href={buildPath()}
-                    className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                    title={isMobile ? "View" : "Preview"}
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label={`${isMobile ? "View" : "Preview"} ${title}`}
-                >
-                    <Eye className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
-                </Link>
+                {!isMobile && likeCount > 0 && (
+                    <div className="flex flex-col items-end justify-center px-2 text-[11px] leading-tight text-muted-foreground opacity-80">
+                        <span className="flex items-center gap-1" title="Likes">
+                            {likeCount}
+                            <ThumbsUp className={`h-3 w-3 ${isLiked ? "fill-primary text-primary" : ""}`} />
+                        </span>
+                    </div>
+                )}
+                <div className="flex shrink-0 items-center gap-1">
+                    {!staged && (
+                        <>
+                            <button
+                                onClick={handleChat}
+                                className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
+                                title="Chat"
+                                aria-label={`Chat about ${title}`}
+                            >
+                                <MessageSquare className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
+                            </button>
+                            <button
+                                onClick={handleDetails}
+                                className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
+                                title="Details"
+                                aria-label={`View details for ${title}`}
+                            >
+                                <Info className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
+                            </button>
+                        </>
+                    )}
+                    {staged === "created" && onAddAttachment && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onAddAttachment();
+                            }}
+                            className="rounded-md p-2 hover:bg-violet-50 text-violet-600 dark:hover:bg-violet-950/40 dark:text-violet-400 active:scale-95 transition-transform"
+                            title="Add attachment"
+                        >
+                            <Paperclip className={`${isMobile ? "h-5 w-5" : "h-4 w-4"}`} />
+                        </button>
+                    )}
+                    <ItemActionsDropdownTrigger />
+                    <Link
+                        href={buildPath()}
+                        className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
+                        title={isMobile ? "View" : "Preview"}
+                        onClick={(e) => {
+                            if (onNavigate) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onNavigate();
+                            } else {
+                                e.stopPropagation();
+                            }
+                        }}
+                        aria-label={`${isMobile ? "View" : "Preview"} ${title}`}
+                    >
+                        <Eye className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
+                    </Link>
+                </div>
             </div>
-        </div>
+        </ItemActionsMenu>
     );
 }

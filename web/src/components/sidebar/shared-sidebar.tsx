@@ -20,10 +20,6 @@ const ChatTab = dynamic(() => import("@/components/sidebar/chat-tab").then(mod =
   ssr: false
 });
 
-const ActionsTab = dynamic(() => import("@/components/sidebar/actions-tab").then(mod => mod.ActionsTab), {
-  loading: () => <div className="p-4 space-y-4"><Skeleton className="h-32 w-full" /><Skeleton className="h-20 w-full" /></div>,
-  ssr: false
-});
 
 const EditsTab = dynamic(() => import("@/components/sidebar/edits-tab").then(mod => mod.EditsTab), {
   loading: () => <div className="p-4 space-y-4"><Skeleton className="h-40 w-full" /></div>,
@@ -47,7 +43,6 @@ const TAB_CONFIG: { value: SidebarTab; label: string }[] = [
   { value: "chat", label: "Chat" },
   { value: "annotations", label: "Annots" },
   { value: "edits", label: "Edits" },
-  { value: "actions", label: "Actions" },
 ];
 
 function SidebarContent() {
@@ -84,13 +79,13 @@ function SidebarContent() {
       >
         <TabsList
           variant="line"
-          className="w-full shrink-0 justify-start gap-0 border-b bg-transparent px-1 overflow-x-auto"
+          className="w-full shrink-0 border-b bg-transparent px-1"
         >
           {TAB_CONFIG.map((tab) => (
             <TabsTrigger
               key={tab.value}
               value={tab.value}
-              className="px-2.5 py-2 text-xs shrink-0"
+              className="px-2.5 py-2 text-xs"
             >
               {tab.label}
             </TabsTrigger>
@@ -131,12 +126,6 @@ function SidebarContent() {
             </div>
           </TabsContent>
 
-          <TabsContent
-            value="actions"
-            className="absolute inset-0 m-0 flex flex-col"
-          >
-            <ActionsTab target={sidebarTarget} />
-          </TabsContent>
         </div>
       </Tabs>
     </div>
