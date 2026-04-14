@@ -136,7 +136,7 @@ export function AnnotationSelectionTooltip({
         }
 
         // Horizontal adjustment to keep within container bounds (with 10px padding)
-        let translateX = "-50%";
+        const translateX = "-50%";
         if (relativeX - tw / 2 < 10) {
             const overflow = 10 - (relativeX - tw / 2);
             left += overflow;
@@ -151,7 +151,7 @@ export function AnnotationSelectionTooltip({
             transform: `translate(${translateX}, ${transformY})`,
             visibility: "visible",
         });
-    }, [selection, showForm]);
+    }, [selection, showForm, containerRef]);
 
     const handleSubmit = async () => {
         if (!selection || !body.trim() || submitting) return;

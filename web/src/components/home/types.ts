@@ -50,12 +50,14 @@ export interface FeaturedItem {
 
 export interface PullRequestOut {
     id: string;
+    type: string;
     status: string;
     title: string;
     description: string | null;
-    author: { id: string; display_name: string | null; email: string } | null;
+    author: { id: string; display_name: string | null; email?: string } | null;
     created_at: string;
     summary_types?: string[];
+    virus_scan_result?: string;
 }
 
 export interface HomeData {

@@ -30,6 +30,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",
           "--border-radius": "var(--radius)",
+          // Push toasts up on mobile to avoid overlapping with the bottom navigation bar (approx 80px)
+          "--mobile-offset": "80px",
         } as React.CSSProperties
       }
       {...props}

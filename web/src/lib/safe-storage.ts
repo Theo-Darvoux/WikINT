@@ -6,6 +6,12 @@
 
 import { toast } from "sonner";
 
+declare global {
+    interface Window {
+        _lastQuotaToast?: number;
+    }
+}
+
 export const safeLocalStorage = {
     getItem: (name: string): string | null => {
         try {
@@ -24,10 +30,10 @@ export const safeLocalStorage = {
             )) {
                 console.error("Storage quota exceeded!", err);
                 // Throttle toast to avoid spamming
-                const lastToast = (window as any)._lastQuotaToast || 0;
+                const lastToast = window._lastQuotaToast || 0;
                 if (Date.now() - lastToast > 10000) {
                     toast.error("Storage limit reached. Some changes might not be saved.");
-                    (window as any)._lastQuotaToast = Date.now();
+                    window._lastQuotaToast = Date.now();
                 }
             }
         }

@@ -8,7 +8,7 @@ import {
   getFileBadgeLabel,
   getFileBadgeColor,
 } from "@/lib/file-utils";
-import { getFileTypeStyle, getMaterialBrowsePath } from "./file-type-display";
+import { getMaterialBrowsePath } from "./file-type-display";
 import { MaterialPreview } from "./material-preview";
 import type { MaterialDetail } from "./types";
 

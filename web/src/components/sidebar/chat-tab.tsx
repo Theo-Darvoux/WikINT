@@ -168,15 +168,13 @@ export function ChatTab({ target }: ChatTabProps) {
   const { user } = useAuthStore();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pages, setPages] = useState(1);
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
 
   const fetchComments = useCallback(
-    async (p: number) => {
+    async () => {
       if (!target) return;
       setLoading(true);
       try {
@@ -184,8 +182,6 @@ export function ChatTab({ target }: ChatTabProps) {
           `/comments?targetType=${target.type}&targetId=${target.id}&page=1&limit=1000`,
         );
         setComments(data.items);
-        setPage(1);
-        setPages(1);
       } catch {
         // silent
       } finally {
@@ -197,8 +193,7 @@ export function ChatTab({ target }: ChatTabProps) {
 
   useEffect(() => {
     setComments([]);
-    setPage(1);
-    if (target) fetchComments(1);
+    if (target) fetchComments();
   }, [target, fetchComments]);
 
   const handleSubmit = async () => {

@@ -9,8 +9,6 @@ import {
   Sun,
   Moon,
   Zap,
-  Check,
-  X,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -21,6 +19,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { apiFetch } from "@/lib/api-client";
 import { performLogout } from "@/lib/auth-sync";
@@ -41,7 +40,7 @@ export default function SettingsPage() {
     setUpdating(true);
     const newValue = !user.auto_approve;
     try {
-      const updated = await apiFetch<any>("/users/me", {
+      const updated = await apiFetch<{ auto_approve: boolean }>("/users/me", {
         method: "PATCH",
         body: JSON.stringify({ auto_approve: newValue }),
       });
@@ -155,23 +154,11 @@ export default function SettingsPage() {
                   une contribution (PR) en attente.
                 </p>
               </div>
-              <Button
-                variant={user?.auto_approve ? "default" : "outline"}
-                size="sm"
-                onClick={handleToggleAutoApprove}
+              <Switch
+                checked={!!user?.auto_approve}
+                onCheckedChange={handleToggleAutoApprove}
                 disabled={updating}
-                className="shrink-0 gap-2"
-              >
-                {user?.auto_approve ? (
-                  <>
-                    <Check className="h-4 w-4" /> Activée
-                  </>
-                ) : (
-                  <>
-                    <X className="h-4 w-4" /> Désactivée
-                  </>
-                )}
-              </Button>
+              />
             </div>
           </CardContent>
         </Card>

@@ -29,7 +29,11 @@ async def index_material(ctx: dict, material_id: uuid.UUID) -> None:
     async with async_session_factory() as db:
         result = await db.execute(
             select(Material)
-            .options(selectinload(Material.tags), selectinload(Material.author))
+            .options(
+                selectinload(Material.tags), 
+                selectinload(Material.author),
+                selectinload(Material.versions)
+            )
             .where(Material.id == material_id)
         )
         material = result.scalar_one_or_none()
@@ -49,8 +53,17 @@ async def index_material(ctx: dict, material_id: uuid.UUID) -> None:
 
         browse_path += f"/{material.slug}"
 
+        # Find current version metadata
+        file_name = None
+        file_mime_type = None
+        for v in material.versions:
+            if v.version_number == material.current_version:
+                file_name = v.file_name
+                file_mime_type = v.file_mime_type
+                break
+
         # Build extra searchable fields (identifiers)
-        extra = f"{split_identifiers(material.title)} {split_identifiers(ancestor_path)}"
+        extra = f"{split_identifiers(material.title)} {split_identifiers(ancestor_path)} {split_identifiers(file_name or '')}"
 
         doc = {
             "id": str(material.id),
@@ -68,6 +81,8 @@ async def index_material(ctx: dict, material_id: uuid.UUID) -> None:
             "total_views": material.total_views,
             "views_today": material.views_today,
             "like_count": material.like_count,
+            "file_name": file_name,
+            "file_mime_type": file_mime_type,
         }
         await meili_client.index("materials").add_documents([doc])
         logger.info(f"Indexed material {material_id}")
@@ -117,6 +132,7 @@ async def index_directory(ctx: dict, directory_id: uuid.UUID) -> None:
             "ancestor_path": ancestor_path,
             "extra_searchable": extra,
             "browse_path": browse_path,
+            "like_count": directory.like_count,
         }
         await meili_client.index("directories").add_documents([doc])
         logger.info(f"Indexed directory {directory_id}")

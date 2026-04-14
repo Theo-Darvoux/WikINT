@@ -16,7 +16,7 @@ interface ExpandableTextProps {
 
 export function ExpandableText({
     text,
-    threshold = 100, // kept for signature compatibility
+    // threshold = 100, // removed to fix warning
     clampedLines = 2,
     className = "",
     buttonClassName = "",
@@ -26,8 +26,7 @@ export function ExpandableText({
 }: ExpandableTextProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const [isTruncated, setIsTruncated] = useState(false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const textRef = useRef<any>(null);
+    const textRef = useRef<HTMLParagraphElement & HTMLDivElement & HTMLSpanElement>(null);
     
     useEffect(() => {
         const element = textRef.current;

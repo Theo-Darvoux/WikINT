@@ -7,13 +7,13 @@ import { Loader2, ImageOff } from "lucide-react";
 interface AsyncMaterialImageProps {
     src: string;
     alt?: string;
-    material?: Record<string, any>;
+    material?: Record<string, unknown>;
     className?: string;
 }
 
 // Simple in-memory cache to prevent duplicate requests for the same directory/material
 // when rendering multiple images in the same markdown file.
-const fetchCache = new Map<string, Promise<any>>();
+const fetchCache = new Map<string, Promise<unknown>>();
 
 function cachedApiFetch<T>(url: string): Promise<T> {
     if (!fetchCache.has(url)) {
@@ -23,7 +23,7 @@ function cachedApiFetch<T>(url: string): Promise<T> {
         });
         fetchCache.set(url, promise);
     }
-    return fetchCache.get(url)!;
+    return fetchCache.get(url)! as Promise<T>;
 }
 
 export function AsyncMaterialImage({ src, alt, material, className }: AsyncMaterialImageProps) {
@@ -60,12 +60,12 @@ export function AsyncMaterialImage({ src, alt, material, className }: AsyncMater
                 // Step 1: Try attachments of the current material
                 if (material.id) {
                     try {
-                        const attachments = await cachedApiFetch<any[]>(`/materials/${material.id}/attachments`);
+                        const attachments = await cachedApiFetch<Record<string, unknown>[]>(`/materials/${material.id}/attachments`);
                         const matched = attachments.find(
-                            (m) => m.title === fileName || m.current_version_info?.file_name === fileName
+                            (m) => m.title === fileName || (m.current_version_info as Record<string, unknown> | undefined)?.file_name === fileName
                         );
-                        if (matched) targetMaterialId = matched.id;
-                    } catch (e) {
+                        if (matched) targetMaterialId = matched.id as string;
+                    } catch {
                         // ignore
                     }
                 }
@@ -73,14 +73,14 @@ export function AsyncMaterialImage({ src, alt, material, className }: AsyncMater
                 // Step 2: Try siblings in the same directory
                 if (!targetMaterialId && material.directory_id) {
                     try {
-                        const children = await cachedApiFetch<{ materials: any[] }>(
+                        const children = await cachedApiFetch<{ materials: Record<string, unknown>[] }>(
                             `/directories/${material.directory_id}/children`
                         );
                         const matched = children.materials?.find(
-                            (m: any) => m.title === fileName || m.current_version_info?.file_name === fileName
+                            (m) => m.title === fileName || (m.current_version_info as Record<string, unknown> | undefined)?.file_name === fileName
                         );
-                        if (matched) targetMaterialId = matched.id;
-                    } catch (e) {
+                        if (matched) targetMaterialId = matched.id as string;
+                    } catch {
                         // ignore
                     }
                 }
@@ -88,14 +88,14 @@ export function AsyncMaterialImage({ src, alt, material, className }: AsyncMater
                 // Step 3: Try global search as a fallback
                 if (!targetMaterialId) {
                     try {
-                        const searchRes = await cachedApiFetch<any>(
+                        const searchRes = await cachedApiFetch<{ materials: Record<string, unknown>[] }>(
                             `/search?q=${encodeURIComponent(fileName)}&limit=10`
                         );
                         const matched = searchRes.materials?.find(
-                            (m: any) => m.title === fileName || m.current_version_info?.file_name === fileName
+                            (m) => m.title === fileName || (m.current_version_info as Record<string, unknown> | undefined)?.file_name === fileName
                         );
-                        if (matched) targetMaterialId = matched.id;
-                    } catch (e) {
+                        if (matched) targetMaterialId = matched.id as string;
+                    } catch {
                         // ignore
                     }
                 }
@@ -107,7 +107,7 @@ export function AsyncMaterialImage({ src, alt, material, className }: AsyncMater
                 } else {
                     if (mounted) setError(true);
                 }
-            } catch (err) {
+            } catch {
                 if (mounted) setError(true);
             } finally {
                 if (mounted) setLoading(false);
@@ -125,7 +125,7 @@ export function AsyncMaterialImage({ src, alt, material, className }: AsyncMater
         return (
             <span className="my-4 flex items-center justify-center rounded-md bg-muted p-8 animate-pulse border border-border">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Resolving image '{src}'...</span>
+                <span className="text-sm text-muted-foreground">Resolving image &apos;{src}&apos;...</span>
             </span>
         );
     }

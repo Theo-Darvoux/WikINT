@@ -1,14 +1,13 @@
 "use client";
 
 import React, { useMemo } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkWikiLink from "remark-wiki-link";
 import remarkMark from "@/lib/remark-mark";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeHighlight from "rehype-highlight";
-import type { Components } from "react-markdown";
 import { Mermaid } from "./mermaid";
 import { AsyncMaterialImage } from "./async-material-image";
 import { Callout, CalloutType } from "./callout";
@@ -34,9 +33,8 @@ const sanitizeSchema = {
     },
 };
 
-const remarkPlugins = [remarkGfm, remarkWikiLink, remarkMark];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const rehypePlugins: any[] = [
+const remarkPlugins: Options["remarkPlugins"] = [remarkGfm, remarkWikiLink, remarkMark];
+const rehypePlugins: Options["rehypePlugins"] = [
     rehypeRaw,
     [rehypeSanitize, sanitizeSchema],
     rehypeHighlight,
@@ -50,28 +48,27 @@ function getTextFromChildren(children: React.ReactNode, depth = 0): string {
     if (Array.isArray(children)) {
         return children.map((c) => getTextFromChildren(c, depth + 1)).join("");
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const props = (children as any)?.props;
+    const props = (children as { props?: { children?: React.ReactNode } })?.props;
     if (props?.children) {
         return getTextFromChildren(props.children, depth + 1);
     }
     return "";
 }
 
-export function MarkdownRenderer({ content, materialId, material, className, previewMode }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, material, className, previewMode }: MarkdownRendererProps) {
     const components: Components = useMemo(() => ({
-        img: (props: any) => {
+        img: (props) => {
             const { src, alt } = props;
             return (
                 <AsyncMaterialImage
                     src={(src as string) || ""}
                     alt={alt || ""}
-                    material={material as any}
+                    material={material}
                     className="max-w-full rounded-lg shadow-sm"
                 />
             );
         },
-        a: (props: any) => {
+        a: (props) => {
             const { href, children, ...rest } = props;
             const isExternal = href?.startsWith("http");
             if (previewMode) {
@@ -93,12 +90,12 @@ export function MarkdownRenderer({ content, materialId, material, className, pre
                 </a>
             );
         },
-        table: ({ children, ...props }: any) => (
+        table: ({ children, ...props }) => (
             <div className="overflow-x-auto">
                 <table {...props}>{children}</table>
             </div>
         ),
-        code: (props: any) => {
+        code: (props) => {
             const { className, children, node, ...rest } = props;
             const match = /language-(\w+)/.exec(className || "");
             const language = match ? match[1] : "";
@@ -117,7 +114,7 @@ export function MarkdownRenderer({ content, materialId, material, className, pre
                 </code>
             );
         },
-        blockquote: ({ children }: any) => {
+        blockquote: ({ children }) => {
             const allChildren = React.Children.toArray(children);
             
             // Find the first actual block element, ignoring raw whitespace strings
@@ -129,7 +126,7 @@ export function MarkdownRenderer({ content, materialId, material, className, pre
                 return <blockquote className="border-l-4 border-border pl-4 italic my-4">{children}</blockquote>;
             }
 
-            const firstChild = allChildren[firstBlockIndex] as React.ReactElement<any>;
+            const firstChild = allChildren[firstBlockIndex] as React.ReactElement<{ children?: React.ReactNode }>;
             
             // Extract children from the first block (usually a paragraph)
             const firstBlockChildren = firstChild.props?.children || firstChild;
@@ -202,7 +199,7 @@ export function MarkdownRenderer({ content, materialId, material, className, pre
 
                     // Clean up trailing quotes from the title if they were used for wrapping
                     if (titleElements.length > 0) {
-                        let lastEl = titleElements[titleElements.length - 1];
+                        const lastEl = titleElements[titleElements.length - 1];
                         if (typeof lastEl === "string") {
                             const strEl = lastEl as string;
                             const trimmed = strEl.trimEnd();
@@ -216,8 +213,7 @@ export function MarkdownRenderer({ content, materialId, material, className, pre
 
                     const otherBlocks = allChildren.slice(firstBlockIndex + 1);
 
-                    
-                    let calloutContent = [];
+                    const calloutContent = [];
                     if (bodyChildren.length > 0) {
                         calloutContent.push(React.cloneElement(firstChild, { ...firstChild.props, children: bodyChildren, key: "p-body" }));
                     }
@@ -243,8 +239,8 @@ export function MarkdownRenderer({ content, materialId, material, className, pre
     return (
         <div className={cn(className, previewMode && "prose-sm pointer-events-none select-none")}>
             <ReactMarkdown
-                remarkPlugins={remarkPlugins as any}
-                rehypePlugins={rehypePlugins as any}
+                remarkPlugins={remarkPlugins}
+                rehypePlugins={rehypePlugins}
                 components={components}
             >
                 {content}

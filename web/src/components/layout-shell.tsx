@@ -57,10 +57,10 @@ export function LayoutShell({ children }: { children: ReactNode }) {
       {/* Offline banner (U4) */}
       <div
         className={cn(
-          "bg-destructive text-destructive-foreground py-1.5 px-4 text-center text-xs font-medium transition-all overflow-hidden sticky top-0 z-[100] flex items-center justify-center gap-2",
+          "bg-destructive text-destructive-foreground px-4 text-center text-xs font-medium transition-all overflow-hidden sticky top-0 z-[100] flex items-center justify-center gap-2",
           isOffline
-            ? "h-auto opacity-100"
-            : "h-0 opacity-0 pointer-events-none",
+            ? "h-auto py-1.5 opacity-100"
+            : "h-0 py-0 opacity-0 pointer-events-none",
         )}
       >
         <WifiOff className="h-3.5 w-3.5" />

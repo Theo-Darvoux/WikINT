@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { DirectoryLineItem } from "@/components/browse/directory-line-item";
 import { MaterialLineItem } from "@/components/browse/material-line-item";
@@ -26,7 +26,6 @@ import {
   Plus,
   Upload,
   FolderPlus,
-  FileText,
   Folder,
   ArrowLeft,
   Paperclip,
@@ -41,7 +40,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useStagingStore } from "@/lib/staging-store";
-import { useIsMobile } from "@/hooks/use-media-query";
 import { unwrapOp } from "@/lib/staging-store";
 import { useDropZoneStore } from "@/components/pr/global-drop-zone";
 import { useSelectionStore } from "@/lib/selection-store";
@@ -112,15 +110,15 @@ export function DirectoryListing({
   previewOperations = [],
   previewPrId,
 }: DirectoryListingProps) {
-  const isMobile = useIsMobile();
+  // const isMobile = useIsMobile(); // removed to fix warning
   const router = useRouter();
   const pathname = usePathname();
   const triggerBrowseRefresh = useBrowseRefreshStore(
     (s) => s.triggerBrowseRefresh,
   );
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadParentMat, setUploadParentMat] = useState<{ id: string; name: string } | null>(null);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
-  const [showActions, setShowActions] = useState(false);
   const requestUpload = useDropZoneStore((s) => s.requestUpload);
   const setBrowseContext = useDropZoneStore((s) => s.setBrowseContext);
 
@@ -129,9 +127,16 @@ export function DirectoryListing({
   const activeGhostDir =
     ghostDirStack.length > 0 ? ghostDirStack[ghostDirStack.length - 1] : null;
 
-  const operations = useStagingStore((s) => s.operations) ?? [];
+  const rawOperations = useStagingStore((s) => s.operations);
+  const operations = useMemo(() => rawOperations ?? [], [rawOperations]);
   const addOperations = useStagingStore((s) => s.addOperations);
   const setReviewOpen = useStagingStore((s) => s.setReviewOpen);
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+
+  const handleAddAttachment = useCallback((id: string, name: string) => {
+    setUploadParentMat({ id, name });
+    setUploadOpen(true);
+  }, []);
 
   // Merge logic: local operations take precedence over preview operations
   const allOps = useMemo(() => {
@@ -266,12 +271,10 @@ export function DirectoryListing({
 
   const enterGhostDir = (tempId: string, name: string) => {
     setGhostDirStack((prev) => [...prev, { tempId, name }]);
-    setShowActions(false);
   };
 
   const goBack = () => {
     setGhostDirStack((prev) => prev.slice(0, -1));
-    setShowActions(false);
   };
 
   // Keyboard navigation
@@ -306,7 +309,76 @@ export function DirectoryListing({
   // Reset focus when directory changes
   useEffect(() => {
     setFocusedIndex(null);
-  }, [directory?.id]);
+    setLastSelectedIndex(null);
+  }, [directory?.id, selectMode]);
+
+  const handleToggleItem = useCallback(
+    (index: number, e?: React.MouseEvent) => {
+      const item = flatItems[index];
+      if (!item) return;
+
+      const toSelectedItem = (navItem: NavItem): SelectedItem | null => {
+        if (navItem.type === "dir") {
+          return {
+            id: String(navItem.dir.id),
+            type: "directory",
+            name: String(navItem.dir.name ?? ""),
+            parentId: dirId || null,
+          };
+        }
+        if (navItem.type === "mat") {
+          return {
+            id: String(navItem.mat.id),
+            type: "material",
+            name: String(navItem.mat.title ?? ""),
+            parentId: dirId || null,
+            material_type: String(navItem.mat.type ?? "other"),
+          };
+        }
+        if (navItem.type === "ghost-dir") {
+          return {
+            id: navItem.tempId,
+            type: "directory",
+            name: navItem.name,
+            parentId: dirId || null,
+          };
+        }
+        if (navItem.type === "ghost-mat") {
+          const op = navItem.op;
+          const title = op.op === "create_material" ? op.title : op.target_title;
+          const tempId = op.op === "create_material" ? op.temp_id : op.target_id;
+          const mType = op.op === "create_material" ? op.type : op.target_material_type;
+          return {
+            id: tempId || "",
+            type: "material",
+            name: title || "Unnamed",
+            parentId: dirId || null,
+            material_type: mType || "other",
+          };
+        }
+        return null;
+      };
+
+      const selectedItem = toSelectedItem(item);
+      if (!selectedItem) return;
+
+      if (e?.shiftKey && lastSelectedIndex !== null) {
+        const start = Math.min(lastSelectedIndex, index);
+        const end = Math.max(lastSelectedIndex, index);
+
+        const itemsToSelect: SelectedItem[] = [];
+        for (let i = start; i <= end; i++) {
+          const found = toSelectedItem(flatItems[i]);
+          if (found) itemsToSelect.push(found);
+        }
+        selectAll(itemsToSelect);
+      } else {
+        toggleSelect(selectedItem);
+      }
+      setLastSelectedIndex(index);
+    },
+    [flatItems, lastSelectedIndex, selectAll, toggleSelect, dirId],
+  );
 
   // Build path helper (mirrors logic in line-item components)
   const pathBase = pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
@@ -380,12 +452,25 @@ export function DirectoryListing({
       name: String(d.name ?? ""),
       parentId: dirId || null,
     })),
+    ...ghostDirs.filter(op => !op.isExternal).map((op) => ({
+      id: (op.op === "create_directory" ? op.temp_id : op.target_id) || "",
+      type: "directory" as const,
+      name: (op.op === "create_directory" ? op.name : op.target_name) || "Unnamed",
+      parentId: dirId || null,
+    })),
     ...effectiveMats.map((m) => ({
       id: String(m.id),
       type: "material" as const,
       name: String(m.title ?? ""),
       parentId: dirId || null,
       material_type: String(m.type ?? "other"),
+    })),
+    ...ghostMaterials.filter(op => !op.isExternal).map((op) => ({
+      id: (op.op === "create_material" ? op.temp_id : op.target_id) || "",
+      type: "material" as const,
+      name: (op.op === "create_material" ? op.title : op.target_title) || "Unnamed",
+      parentId: dirId || null,
+      material_type: (op.op === "create_material" ? op.type : op.target_material_type) || "other",
     })),
   ];
 
@@ -402,12 +487,10 @@ export function DirectoryListing({
 
   const handleBatchDelete = () => {
     const ops: Operation[] = [];
-    let skipped = 0;
     for (const item of selected.values()) {
       // Skip if this item already has a staged delete or move
       const existing = stagedStatus(operations, item.id, item.type);
       if (existing === "deleted") {
-        skipped++;
         continue;
       }
       if (item.type === "directory") {
@@ -543,98 +626,138 @@ export function DirectoryListing({
           )}
         </div>
 
-        {!isAttachmentListing && (
-          <div className="flex items-center flex-wrap gap-2 sm:justify-end">
-            {/* Clipboard paste button */}
-            {clipboard.length > 0 && (
-              <Button
-                key="paste-btn"
-                size="sm"
-                variant="outline"
-                className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30"
-                onClick={handlePaste}
-              >
-                <ClipboardPaste className="w-4 h-4" />
-                Paste Here ({clipboard.length})
-              </Button>
-            )}
-            {clipboard.length > 0 && (
-              <Button
-                key="cancel-paste-btn"
-                size="sm"
-                variant="ghost"
-                className="gap-1 text-muted-foreground"
-                onClick={clearClipboard}
-              >
-                <X className="w-3.5 h-3.5" />
-              </Button>
-            )}
+      </div>
 
-            {/* Select mode toggle */}
-            {!selectMode && allSelectableItems.length > 0 && (
-              <Button
-                key="select-btn"
-                size="sm"
-                variant="outline"
-                className="gap-2"
-                onClick={() => setSelectMode(true)}
-              >
-                <CheckSquare className="w-4 h-4" />
-                Select
-              </Button>
-            )}
+      {!isAttachmentListing && (
+        <div className="mt-2">
+          {!selectMode ? (
+            <div className="flex items-center justify-between h-11">
+              {/* Left side: Selection trigger */}
+              <div className="flex items-center">
+                {allSelectableItems.length > 0 && (
+                  <Button
+                    key="select-btn"
+                    size="sm"
+                    variant="ghost"
+                    className="gap-2 text-muted-foreground hover:text-foreground hover:bg-accent/50 group px-2"
+                    onClick={() => setSelectMode(true)}
+                  >
+                    <CheckSquare className="w-4 h-4 opacity-50 group-hover:opacity-100" />
+                    <span className="text-xs font-medium uppercase tracking-wider">Select</span>
+                  </Button>
+                )}
+              </div>
 
-            {!showActions && !selectMode ? (
-              <Button
-                key="add-item-btn"
-                size="sm"
-                className="gap-2"
-                onClick={() => setShowActions(true)}
-              >
-                <Plus className="w-4 h-4" />
-                Add Item
-              </Button>
-            ) : !selectMode ? (
-              <>
+              {/* Right side: Primary CTAs & Paste */}
+              <div className="flex items-center gap-2">
+                {/* Clipboard paste flow */}
+                {clipboard.length > 0 && (
+                  <div className="flex items-center gap-1 group">
+                    <Button
+                      key="paste-btn"
+                      size="sm"
+                      variant="outline"
+                      className="gap-2 border-amber-300 text-amber-700 bg-amber-50/50 hover:bg-amber-100 dark:border-amber-700/50 dark:text-amber-400 dark:bg-amber-950/20 dark:hover:bg-amber-900/30"
+                      onClick={handlePaste}
+                    >
+                      <ClipboardPaste className="w-4 h-4" />
+                      Paste ({clipboard.length})
+                    </Button>
+                    <Button
+                      key="cancel-paste-btn"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={clearClipboard}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+
                 <Button
                   key="upload-btn"
                   size="sm"
                   variant="outline"
-                  className="gap-2"
-                  onClick={() => {
-                    setUploadOpen(true);
-                    setShowActions(false);
-                  }}
+                  className="gap-2 shadow-xs"
+                  onClick={() => setUploadOpen(true)}
                 >
                   <Upload className="w-4 h-4" />
-                  <span className="hidden sm:inline">Upload Files</span>
+                  <span>Upload</span>
                 </Button>
                 <Button
                   key="new-folder-btn"
                   size="sm"
                   variant="outline"
-                  className="gap-2"
-                  onClick={() => {
-                    setNewFolderOpen(true);
-                    setShowActions(false);
-                  }}
-                >
-                  <FolderPlus className="w-4 h-4" />
-                  <span className="hidden sm:inline">New Folder</span>
-                </Button>
-                <Button
-                  key="cancel-btn"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setShowActions(false)}
-                >
-                  Cancel
-                </Button>
-              </>
-            ) : null}
+                  className="gap-2 shadow-xs"
+                onClick={() => setNewFolderOpen(true)}
+              >
+                <FolderPlus className="w-4 h-4" />
+                <span>New Folder</span>
+              </Button>
+            </div>
+          </div>
+        ) : (
+          /* Selection Toolbar (replaces the CTA row) */
+          <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 h-11 animate-in fade-in slide-in-from-top-1 duration-200 dark:bg-primary/10">
+            <div
+              className="h-8 gap-2 text-muted-foreground hover:text-foreground flex items-center cursor-pointer transition-colors rounded-md hover:bg-accent/50"
+              onClick={() => {
+                if (allSelected) deselectAll(allSelectableItems.map((i) => i.id));
+                else selectAll(allSelectableItems);
+              }}
+            >
+              <Checkbox
+                checked={allSelected}
+                className="shrink-0"
+                onCheckedChange={(checked) => {
+                   if (checked === "indeterminate") return;
+                   if (checked) selectAll(allSelectableItems);
+                   else deselectAll(allSelectableItems.map((i) => i.id));
+                }}
+              />
+              <span className="text-xs font-semibold uppercase tracking-wider select-none">
+                {allSelected ? "Deselect All" : "Select All"}
+              </span>
+            </div>
+            <span className="text-sm font-medium flex-1">
+              {selectedCount === 0 ? "Select items" : `${selectedCount} items`}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-amber-700 border-amber-300 bg-amber-50/50 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-700/50 dark:hover:bg-amber-950/30 disabled:opacity-100 disabled:bg-muted/40 disabled:text-muted-foreground/60 disabled:border-border/50 disabled:grayscale"
+                disabled={selectedCount === 0}
+                onClick={handleCut}
+              >
+                <Scissors className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Cut</span>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-destructive border-destructive/30 bg-destructive/5 hover:bg-destructive/10 disabled:opacity-100 disabled:bg-muted/40 disabled:text-muted-foreground/60 disabled:border-border/50 disabled:grayscale"
+                disabled={selectedCount === 0}
+                onClick={handleBatchDelete}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Delete</span>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 gap-1 px-2 text-foreground font-medium hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                onClick={() => setSelectMode(false)}
+              >
+                <X className="w-4 h-4" />
+                <span className="hidden sm:inline">Exit</span>
+              </Button>
+            </div>
           </div>
         )}
       </div>
+    )}
 
       {isAttachmentListing && (
         <div className="flex items-center gap-3 rounded-lg border border-violet-200 bg-violet-50/60 px-4 py-3 dark:border-violet-800/40 dark:bg-violet-950/20">
@@ -681,53 +804,7 @@ export function DirectoryListing({
         </div>
       )}
 
-      {/* Batch select toolbar */}
-      {selectMode && (
-        <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 dark:bg-primary/10">
-          <Checkbox
-            checked={allSelected}
-            onCheckedChange={() => {
-              if (allSelected) deselectAll(allSelectableItems.map((i) => i.id));
-              else selectAll(allSelectableItems);
-            }}
-            className="shrink-0"
-          />
-          <span className="text-sm font-medium flex-1">
-            {selectedCount === 0 ? "Select items" : `${selectedCount} selected`}
-          </span>
-          <div className="flex items-center gap-1.5">
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-700 dark:hover:bg-amber-950/30"
-              disabled={selectedCount === 0}
-              onClick={handleCut}
-            >
-              <Scissors className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Cut</span>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
-              disabled={selectedCount === 0}
-              onClick={handleBatchDelete}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Delete</span>
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="gap-1"
-              onClick={() => setSelectMode(false)}
-            >
-              <X className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Cancel</span>
-            </Button>
-          </div>
-        </div>
-      )}
+
 
       {/* Open PRs targeting this directory */}
       {!isAttachmentListing && !activeGhostDir && (
@@ -789,7 +866,7 @@ export function DirectoryListing({
         )
       ) : (
         !isEmpty && (
-          <div className="divide-y rounded-lg border">
+          <div className={`divide-y rounded-lg border ${selectMode ? "select-none" : ""}`}>
             {/* Real directories */}
             {sortedDirs.map((dir, i) => {
               const id = String(dir.id);
@@ -830,14 +907,7 @@ export function DirectoryListing({
                   staged={staged}
                   selectMode={selectMode}
                   selected={selected.has(id)}
-                  onToggleSelect={() =>
-                    toggleSelect({
-                      id,
-                      type: "directory",
-                      name: String(dir.name ?? ""),
-                      parentId: dirId || null,
-                    })
-                  }
+                  onToggleSelect={(e) => handleToggleItem(i, e)}
                   previewPrId={previewPrId}
                   navIndex={i}
                   focused={focusedIndex === i}
@@ -853,61 +923,30 @@ export function DirectoryListing({
               const isExternal = op.isExternal;
               const name =
                 op.op === "create_directory" ? op.name : op.target_name;
-              const isMove = op.op === "move_item";
-
-              // Count items staged inside this ghost dir
-              const childCount = allOps.filter((o) => {
-                return (
-                  (o.op === "create_material" && o.directory_id === tempId) ||
-                  (o.op === "create_directory" && o.parent_id === tempId)
-                );
-              }).length;
-
-              const themeColor = isMove
-                ? "amber"
-                : isExternal
-                  ? "blue"
-                  : "green";
-              const borderStyle = isExternal ? "border-solid" : "border-dashed";
-
+              
               const ghostDirNavIndex = sortedDirs.length + i;
-              const ghostDirFocused = focusedIndex === ghostDirNavIndex;
+              
+              // Map op to directory shape for component
+              const ghostDir = {
+                id: tempId,
+                name: name || "Unnamed",
+                child_directory_count: allOps.filter(o => o.op === "create_directory" && o.parent_id === tempId).length,
+                child_material_count: allOps.filter(o => o.op === "create_material" && o.directory_id === tempId).length,
+              };
+
               return (
-                <div
+                <DirectoryLineItem
                   key={`ghost-dir-${tempId}`}
-                  data-nav-index={ghostDirNavIndex}
-                  className={`flex items-center gap-3 px-4 py-3 ${borderStyle} border-l-2 border-l-${themeColor}-400 bg-${themeColor}-50/50 dark:bg-${themeColor}-950/20 cursor-pointer opacity-80 hover:opacity-100 hover:bg-${themeColor}-50 dark:hover:bg-${themeColor}-950/30 transition-all${ghostDirFocused ? " ring-2 ring-inset ring-primary/40" : ""}`}
-                  onClick={() => enterGhostDir(tempId, name || "Unnamed")}
-                >
-                  <Folder
-                    className={`h-5 w-5 shrink-0 text-${themeColor}-500`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <span
-                      className={`block truncate font-medium text-${themeColor}-700 dark:text-${themeColor}-400`}
-                    >
-                      {name}
-                    </span>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] text-${themeColor}-600 border-${themeColor}-300`}
-                      >
-                        {isMove
-                          ? "Moved here"
-                          : isExternal
-                            ? "Contribution"
-                            : "Draft"}
-                      </Badge>
-                      {childCount > 0 && (
-                        <span className={`text-[10px] text-${themeColor}-600`}>
-                          {childCount} item{childCount !== 1 ? "s" : ""} inside
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <span className={`text-${themeColor}-400 text-sm`}>→</span>
-                </div>
+                  directory={ghostDir}
+                  staged="created"
+                  isExternal={isExternal}
+                  selectMode={selectMode}
+                  selected={selected.has(tempId)}
+                  onToggleSelect={(e) => handleToggleItem(ghostDirNavIndex, e)}
+                  navIndex={ghostDirNavIndex}
+                  focused={focusedIndex === ghostDirNavIndex}
+                  onNavigate={() => enterGhostDir(tempId, name || "Unnamed")}
+                />
               );
             })}
 
@@ -958,18 +997,11 @@ export function DirectoryListing({
                   previewOpIndex={previewOpIndex}
                   selectMode={selectMode}
                   selected={selected.has(id)}
-                  onToggleSelect={() =>
-                    toggleSelect({
-                      id,
-                      type: "material",
-                      name: String(mat.title ?? ""),
-                      parentId: dirId || null,
-                      material_type: String(mat.type ?? "other"),
-                    })
-                  }
+                  onToggleSelect={(e) => handleToggleItem(matNavIndex, e)}
                   previewPrId={previewPrId}
                   navIndex={matNavIndex}
                   focused={focusedIndex === matNavIndex}
+                  onAddAttachment={() => handleAddAttachment(id, String(displayMat.title ?? ""))}
                 />
               );
             })}
@@ -977,119 +1009,56 @@ export function DirectoryListing({
             {/* Ghost materials (staged creates and moves) */}
             {ghostMaterials.map((op, i) => {
               const isExternal = op.isExternal;
-              const isMove = op.op === "move_item";
+              // const isMove = op.op === "move_item"; // removed to fix warning
               const title =
                 op.op === "create_material" ? op.title : op.target_title;
               const tempId =
                 op.op === "create_material" ? op.temp_id : op.target_id;
 
-              const attachCount =
+              const draftAttachmentCount =
                 op.op === "create_material" && op.temp_id
                   ? allOps.filter(
-                      (
-                        o,
-                      ): o is CreateMaterialOp & {
-                        isExternal: boolean;
-                        _previewIdx: number | undefined;
-                      } =>
+                      (o): o is AugmentedOp =>
                         o.op === "create_material" &&
                         o.parent_material_id === op.temp_id,
                     ).length
                   : 0;
 
-              const themeColor = isMove
-                ? "amber"
-                : isExternal
-                  ? "blue"
-                  : "green";
-              const borderStyle = isExternal ? "border-solid" : "border-dashed";
-
               const ghostMatNavIndex =
                 sortedDirs.length + ghostDirs.length + sortedMats.length + i;
-              const ghostMatFocused = focusedIndex === ghostMatNavIndex;
+
+              // Map op to material shape for component
+              const ghostMat = {
+                id: tempId || `ghost-mat-${i}`,
+                title: title || "Unnamed",
+                type: op.op === "create_material" ? op.type : op.target_material_type,
+                current_version_info: op.op === "create_material" ? { file_name: op.file_name } : undefined,
+              };
+
               return (
-                <div
+                <MaterialLineItem
                   key={`ghost-mat-${tempId ?? i}`}
-                  data-nav-index={ghostMatNavIndex}
-                  className={`flex items-center gap-3 px-4 py-3 ${borderStyle} border-l-2 border-l-${themeColor}-400 bg-${themeColor}-50/50 dark:bg-${themeColor}-950/20 cursor-pointer opacity-75 hover:opacity-100 transition-opacity${ghostMatFocused ? " ring-2 ring-inset ring-primary/40" : ""}`}
-                  onClick={() => {
+                  material={ghostMat}
+                  staged="created"
+                  isExternal={isExternal}
+                  selectMode={selectMode}
+                  selected={selected.has(tempId || "")}
+                  onToggleSelect={(e) => handleToggleItem(ghostMatNavIndex, e)}
+                  navIndex={ghostMatNavIndex}
+                  focused={focusedIndex === ghostMatNavIndex}
+                  previewOpIndex={op._previewIdx}
+                  onNavigate={() => {
                     if (isExternal) {
                       if (previewPrId && op._previewIdx !== undefined) {
-                        router.push(
-                          `/pull-requests/${previewPrId}/preview/${op._previewIdx}`,
-                        );
+                        router.push(`/pull-requests/${previewPrId}/preview/${op._previewIdx}`);
                       }
                     } else {
                       setReviewOpen(true);
                     }
                   }}
-                >
-                  <FileText
-                    className={`h-5 w-5 shrink-0 text-${themeColor}-500`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <span
-                      className={`block truncate font-medium text-${themeColor}-700 dark:text-${themeColor}-400`}
-                    >
-                      {title}
-                    </span>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] text-${themeColor}-600 border-${themeColor}-300`}
-                      >
-                        {isMove
-                          ? "Moved here"
-                          : isExternal
-                            ? "Contribution"
-                            : "Draft"}
-                      </Badge>
-                      {(op.op === "create_material"
-                        ? op.type
-                        : op.target_material_type) && (
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] px-1.5 py-0 h-4 capitalize"
-                        >
-                          {op.op === "create_material"
-                            ? op.type
-                            : op.target_material_type}
-                        </Badge>
-                      )}
-                      {op.op === "create_material" && op.file_name && (
-                        <span className="text-[10px] text-muted-foreground truncate">
-                          {op.file_name}
-                        </span>
-                      )}
-                      {attachCount > 0 && (
-                        <span
-                          className={`inline-flex items-center gap-0.5 text-[10px] text-violet-600 dark:text-violet-400`}
-                        >
-                          <Paperclip className="h-3 w-3" />
-                          {attachCount}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {op.op === "create_material" && op.temp_id && !isExternal && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="shrink-0 gap-1 text-violet-600 hover:text-violet-700 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/40"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        requestUpload({
-                          directoryId: dirId ?? "",
-                          directoryName: op.title,
-                          parentMaterialId: op.temp_id!,
-                        });
-                      }}
-                    >
-                      <Paperclip className="h-3.5 w-3.5" />
-                      {isMobile ? "" : "Joindre"}
-                    </Button>
-                  )}
-                </div>
+                  onAddAttachment={() => handleAddAttachment(tempId!, title!)}
+                  draftAttachmentCount={draftAttachmentCount}
+                />
               );
             })}
           </div>
@@ -1099,9 +1068,13 @@ export function DirectoryListing({
       {/* Upload Drawer — targets effective dirId (real UUID or temp_id) */}
       <UploadDrawer
         open={uploadOpen}
-        onOpenChange={setUploadOpen}
+        onOpenChange={(open) => {
+          setUploadOpen(open);
+          if (!open) setUploadParentMat(null);
+        }}
         directoryId={dirId}
-        directoryName={dirName}
+        directoryName={uploadParentMat ? uploadParentMat.name : dirName}
+        parentMaterialId={uploadParentMat?.id}
       />
 
       {/* New Folder Dialog — targets effective dirId */}

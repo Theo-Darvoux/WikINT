@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
@@ -133,8 +133,6 @@ const GenericViewer = dynamic(
   },
 );
 
-const EpubViewerOld = EpubViewer; // keep for type tracking if needed
-const DjvuViewerOld = DjvuViewer;
 
 import { SharedSidebar } from "@/components/sidebar/shared-sidebar";
 import { ViewerFab } from "@/components/browse/viewer-fab";
@@ -454,25 +452,6 @@ export function MaterialViewer({
               </Button>
             ) : (
               <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  variant={sidebarOpen ? "secondary" : "outline"}
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  title={sidebarOpen ? "Close inspector" : "Open inspector"}
-                  onClick={() => {
-                    if (sidebarOpen) {
-                      closeSidebar();
-                    } else {
-                      openSidebar("details", {
-                        type: "material",
-                        id: materialId,
-                        data: { ...material, __viewerType: viewerType },
-                      });
-                    }
-                  }}
-                >
-                  <PanelRight className="h-4 w-4" />
-                </Button>
                 {!parentMaterialId && (
                   <Button variant="outline" size="sm" asChild>
                     <Link
@@ -504,6 +483,25 @@ export function MaterialViewer({
                     <Download className="h-3.5 w-3.5" />
                   )}
                   Download
+                </Button>
+                <Button
+                  variant={sidebarOpen ? "secondary" : "outline"}
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  title={sidebarOpen ? "Close inspector" : "Open inspector"}
+                  onClick={() => {
+                    if (sidebarOpen) {
+                      closeSidebar();
+                    } else {
+                      openSidebar("details", {
+                        type: "material",
+                        id: materialId,
+                        data: { ...material, __viewerType: viewerType },
+                      });
+                    }
+                  }}
+                >
+                  <PanelRight className="h-4 w-4" />
                 </Button>
               </div>
             )}
