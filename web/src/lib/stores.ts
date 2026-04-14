@@ -28,7 +28,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     logout: () => set({ user: null, isAuthenticated: false, isLoading: false }),
 }));
 
-export type SidebarTab = "details" | "edits" | "chat" | "annotations" | "actions";
+export type SidebarTab = "details" | "edits" | "chat" | "annotations";
 
 interface SidebarTarget {
     type: "directory" | "material";

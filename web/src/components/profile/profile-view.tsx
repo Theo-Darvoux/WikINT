@@ -15,6 +15,7 @@ import {
   X,
   Crown,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -427,6 +428,7 @@ interface ProfileViewProps {
   onAvatarUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onProfileUpdated?: () => void;
   showRecentlyViewed?: boolean;
+  isUploadingAvatar?: boolean;
 }
 
 export function ProfileView({
@@ -435,6 +437,7 @@ export function ProfileView({
   onAvatarUpload,
   onProfileUpdated,
   showRecentlyViewed = false,
+  isUploadingAvatar = false,
 }: ProfileViewProps) {
   const [editing, setEditing] = useState(false);
   const [activeTab, setActiveTab] = useState("prs");
@@ -543,6 +546,11 @@ export function ProfileView({
                       : undefined
                   }
                 />
+                {isUploadingAvatar && (
+                  <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-[1px]">
+                    <Loader2 className="h-6 w-6 animate-spin text-white/70" />
+                  </div>
+                )}
                 <AvatarFallback
                   className={`font-semibold text-white ${special ? "text-2xl" : "text-xl"} ${
                     isBureau

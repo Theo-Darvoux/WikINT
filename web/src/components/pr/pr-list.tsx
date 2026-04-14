@@ -3,37 +3,22 @@
 import { useEffect, useState } from "react";
 import { apiFetch, apiFetchWithResponse } from "@/lib/api-client";
 import { PRCard } from "./pr-card";
+import { type PullRequestOut } from "@/components/home/types";
 import {
   Loader2,
-  Send,
+  Inbox,
   CheckCircle2,
   XCircle,
-  Inbox,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-interface PullRequest {
-  id: string;
-  type: string;
-  status: string;
-  title: string;
-  description: string | null;
-  author: {
-    id: string;
-    display_name: string;
-  } | null;
-  created_at: string;
-  summary_types?: string[];
-  virus_scan_result?: string;
-}
-
 type StatusFilter = "open" | "approved" | "rejected" | null;
 
 const TABS: { value: StatusFilter; label: string; icon: React.ElementType }[] =
   [
-    { value: "open", label: "Pending", icon: Send },
+    { value: "open", label: "Pending", icon: Inbox },
     { value: "approved", label: "Approved", icon: CheckCircle2 },
     { value: "rejected", label: "Rejected", icon: XCircle },
   ];
@@ -41,7 +26,7 @@ const TABS: { value: StatusFilter; label: string; icon: React.ElementType }[] =
 const PAGE_SIZE = 20;
 
 export function PRList() {
-  const [prs, setPrs] = useState<PullRequest[]>([]);
+  const [prs, setPrs] = useState<PullRequestOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("open");
@@ -58,7 +43,7 @@ export function PRList() {
     const statuses = ["open", "approved", "rejected"] as const;
     Promise.allSettled(
       statuses.map((s) =>
-        apiFetchWithResponse<PullRequest[]>(
+        apiFetchWithResponse<PullRequestOut[]>(
           `/pull-requests?status=${s}&page=1&limit=1`,
         ).then((res) => {
           const total = res.response.headers.get("X-Total-Count");
@@ -92,7 +77,7 @@ export function PRList() {
     params.set("limit", String(PAGE_SIZE));
     if (filterStatus) params.set("status", filterStatus);
 
-    apiFetch<PullRequest[]>(`/pull-requests?${params}`)
+    apiFetch<PullRequestOut[]>(`/pull-requests?${params}`)
       .then((data) => {
         if (active) setPrs(data);
       })
@@ -119,7 +104,7 @@ export function PRList() {
 
   const EmptyIcon =
     filterStatus === "open"
-      ? Send
+      ? Inbox
       : filterStatus === "approved"
         ? CheckCircle2
         : filterStatus === "rejected"

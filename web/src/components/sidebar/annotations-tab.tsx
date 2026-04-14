@@ -44,9 +44,6 @@ export function AnnotationsTab({ target }: AnnotationsTabProps) {
   const {
     threads,
     loading,
-    page,
-    pages,
-    fetchAnnotations,
     createAnnotation,
     editAnnotation,
     deleteAnnotation,

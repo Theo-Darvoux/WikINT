@@ -191,8 +191,8 @@ export function ReviewDrawer() {
                 setPreviewName(op.file_name || undefined);
                 setPreviewMime(op.file_mime_type || undefined);
             }
-        } catch (e: any) {
-            toast.error(e.message || "Unable to preview this file.");
+        } catch (e) {
+            toast.error((e as Error).message || "Unable to preview this file.");
         }
     };
 
@@ -220,7 +220,7 @@ export function ReviewDrawer() {
 
                     if (op.op === "edit_material" || op.op === "delete_material") {
                         try {
-                            const mat = await apiFetch<any>(`/materials/${op.material_id}`);
+                            const mat = await apiFetch<{ directory_id: string; title: string }>(`/materials/${op.material_id}`);
                             dirId = mat.directory_id;
                             itemName = mat.title;
                         } catch { /* ignore */ }
@@ -237,7 +237,7 @@ export function ReviewDrawer() {
 
                     if (dirId && !dirId.startsWith("$")) {
                         try {
-                            const path = await apiFetch<any[]>(`/directories/${dirId}/path`);
+                            const path = await apiFetch<{ name: string; id: string }[]>(`/directories/${dirId}/path`);
                             const pathStr = path.length > 0 
                                 ? path.map(p => p.name).join(" › ") + " › " + (itemName || "")
                                 : itemName || "";

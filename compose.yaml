@@ -16,11 +16,6 @@ services:
       retries: 5
     networks:
       - backend
-    deploy:
-      resources:
-        reservations:
-          cpus: "0.5"
-          memory: 512M
 
   redis:
     restart: unless-stopped
@@ -36,11 +31,6 @@ services:
       retries: 5
     networks:
       - backend
-    deploy:
-      resources:
-        reservations:
-          cpus: "0.25"
-          memory: 128M
 
   meilisearch:
     restart: unless-stopped
@@ -57,16 +47,9 @@ services:
       retries: 5
     networks:
       - backend
-    deploy:
-      resources:
-        reservations:
-          cpus: "0.25"
-          memory: 256M
 
   api:
-    image: ghcr.io/theo-darvoux/wikint/api:latest
     restart: unless-stopped
-    command: uv run --no-sync --no-dev gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
@@ -91,7 +74,6 @@ services:
       - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
       - ONLYOFFICE_FILE_TOKEN_SECRET=${ONLYOFFICE_FILE_TOKEN_SECRET}
       - PDF_COMPRESSION_LEVEL=${PDF_COMPRESSION_LEVEL}
-      - ENVIRONMENT=production
     depends_on:
       postgres:
         condition: service_healthy
@@ -110,17 +92,10 @@ services:
       - apparmor:unconfined
     cap_add:
       - SYS_ADMIN
-    deploy:
-      resources:
-        reservations:
-          cpus: "0.5"
-          memory: 512M
 
   worker:
-    image: ghcr.io/theo-darvoux/wikint/api:latest
     restart: unless-stopped
     entrypoint: ["./worker-start.sh"]
-    command: uv run --no-sync --no-dev arq app.workers.settings.WorkerSettings
     stop_grace_period: 30s
     environment:
       - DATABASE_URL=${DATABASE_URL}
@@ -139,7 +114,6 @@ services:
       - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
       - ONLYOFFICE_FILE_TOKEN_SECRET=${ONLYOFFICE_FILE_TOKEN_SECRET}
       - PDF_COMPRESSION_LEVEL=${PDF_COMPRESSION_LEVEL}
-      - ENVIRONMENT=production
     depends_on:
       postgres:
         condition: service_healthy
@@ -152,17 +126,10 @@ services:
       - apparmor:unconfined
     cap_add:
       - SYS_ADMIN
-    deploy:
-      resources:
-        reservations:
-          cpus: "0.25"
-          memory: 256M
 
   worker-fast:
-    image: ghcr.io/theo-darvoux/wikint/api:latest
     restart: unless-stopped
     entrypoint: ["./worker-start.sh"]
-    command: uv run --no-sync --no-dev arq app.workers.settings.UploadFastWorkerSettings
     stop_grace_period: 30s
     environment:
       - DATABASE_URL=${DATABASE_URL}
@@ -181,7 +148,6 @@ services:
       - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
       - ONLYOFFICE_FILE_TOKEN_SECRET=${ONLYOFFICE_FILE_TOKEN_SECRET}
       - PDF_COMPRESSION_LEVEL=${PDF_COMPRESSION_LEVEL}
-      - ENVIRONMENT=production
     depends_on:
       postgres:
         condition: service_healthy
@@ -194,17 +160,10 @@ services:
       - apparmor:unconfined
     cap_add:
       - SYS_ADMIN
-    deploy:
-      resources:
-        reservations:
-          cpus: "0.25"
-          memory: 256M
 
   worker-slow:
-    image: ghcr.io/theo-darvoux/wikint/api:latest
     restart: unless-stopped
     entrypoint: ["./worker-start.sh"]
-    command: uv run --no-sync --no-dev arq app.workers.settings.UploadSlowWorkerSettings
     stop_grace_period: 1m
     environment:
       - DATABASE_URL=${DATABASE_URL}
@@ -223,7 +182,6 @@ services:
       - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
       - ONLYOFFICE_FILE_TOKEN_SECRET=${ONLYOFFICE_FILE_TOKEN_SECRET}
       - PDF_COMPRESSION_LEVEL=${PDF_COMPRESSION_LEVEL}
-      - ENVIRONMENT=production
     depends_on:
       postgres:
         condition: service_healthy
@@ -236,14 +194,8 @@ services:
       - apparmor:unconfined
     cap_add:
       - SYS_ADMIN
-    deploy:
-      resources:
-        reservations:
-          cpus: "0.25"
-          memory: 256M
 
   web:
-    image: ghcr.io/theo-darvoux/wikint/web:latest
     restart: unless-stopped
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
@@ -252,11 +204,6 @@ services:
       - api
     networks:
       - frontend
-    deploy:
-      resources:
-        reservations:
-          cpus: "0.25"
-          memory: 256M
 
   onlyoffice:
     image: onlyoffice/documentserver:8.3.0
@@ -264,7 +211,7 @@ services:
     stop_grace_period: 1m
     environment:
       - JWT_ENABLED=true
-      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET:?ONLYOFFICE_JWT_SECRET must be set (see .env.example)}
       - JWT_IN_BODY=true
       - ALLOW_PRIVATE_IP_ADDRESS=true
       - ALLOW_META_IP_ADDRESS=true
@@ -290,22 +237,13 @@ services:
     restart: unless-stopped
     image: nginx:alpine
     volumes:
-      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./infra/nginx/nginx.onlyoffice.snippet:/etc/nginx/nginx.onlyoffice.snippet:ro
       - ./infra/nginx/error-expired.html:/etc/nginx/html/error-expired.html:ro
-    ports:
-      - "127.0.0.1:9080:80"
     depends_on:
       - api
       - web
     networks:
       - frontend
       - backend
-    deploy:
-      resources:
-        reservations:
-          cpus: "0.1"
-          memory: 64M
 
 networks:
   frontend:

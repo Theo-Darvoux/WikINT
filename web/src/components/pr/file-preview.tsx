@@ -15,7 +15,7 @@
  *   - Other — generic file icon with extension badge
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText, Music, Video, Code } from "lucide-react";
 
 interface FilePreviewProps {
@@ -68,7 +68,7 @@ export function FilePreviewThumbnail({
     useEffect(() => {
         if (file.type.startsWith("image/")) {
             const url = URL.createObjectURL(file);
-            setObjectUrl(url);
+            queueMicrotask(() => setObjectUrl(url));
             return () => URL.revokeObjectURL(url);
         }
     }, [file]);
@@ -171,7 +171,7 @@ export function FilePreviewExpanded({ file }: { file: File }) {
 
         if (file.type.startsWith("image/") || file.type.startsWith("video/") || file.type.startsWith("audio/")) {
             const url = URL.createObjectURL(file);
-            setObjectUrl(url);
+            queueMicrotask(() => setObjectUrl(url));
             return () => URL.revokeObjectURL(url);
         }
 

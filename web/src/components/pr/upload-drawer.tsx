@@ -20,7 +20,7 @@ import {
     AlertCircle,
     Loader2,
     RotateCcw,
-    Package,
+    PackagePlus,
     Folder,
     ShieldX,
     FileText,
@@ -32,7 +32,7 @@ import { toast } from "sonner";
 import { useStagingStore } from "@/lib/staging-store";
 import type { CreateMaterialOp } from "@/lib/staging-store";
 import { cn } from "@/lib/utils";
-import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, ACCEPTED_FILE_TYPES } from "@/lib/file-utils";
+import { MAX_FILE_SIZE_MB, ACCEPTED_FILE_TYPES } from "@/lib/file-utils";
 import { uploadFile, getUploadConfig, logicalFileSize, type UploadConfig } from "@/lib/upload-client";
 import { ApiError } from "@/lib/api-client";
 import { TagInput } from "@/components/ui/tag-input";
@@ -105,7 +105,6 @@ export function UploadDrawer({
     // Use the persistent global queue instead of local state
     const {
         items: files,
-        activeCount,
         addItems,
         updateItem,
         removeItem,
@@ -113,8 +112,6 @@ export function UploadDrawer({
         setActiveCount,
     } = useUploadQueue();
 
-    const pendingFiles = useMemo(() => files.filter((i) => i.status === "pending"), [files]);
-    const uploadingFiles = useMemo(() => files.filter((i) => i.status === "uploading"), [files]);
     const doneFiles = useMemo(() => files.filter((i) => i.status === "done"), [files]);
     const errorFiles = useMemo(() => files.filter((i) => i.status === "error" || i.status === "virus"), [files]);
     const inFlightCount = useMemo(
@@ -135,7 +132,6 @@ export function UploadDrawer({
     const [pendingDirPaths, setPendingDirPaths] = useState<DirPathMap>(new Map());
     const [batchTags, setBatchTags] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const folderInputRef = useRef<HTMLInputElement>(null);
     const dropzoneRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const initialFilesProcessedRef = useRef(false);
@@ -287,7 +283,7 @@ export function UploadDrawer({
         // Enqueue, then try to drain
         uploadQueueRef.current.push(clientId);
         drainQueue();
-    }, [updateItem]);
+    }, [updateItem, setActiveCount]);
 
     /** Shared logic: validate, create dir temp IDs, build FileEntry[], start uploads. */
     const processScannedFiles = useCallback(
@@ -371,7 +367,7 @@ export function UploadDrawer({
             addItems(newItems);
             for (const item of newItems) startUpload(item.clientId);
         },
-        [startUpload, nextTempId, addItems, files.length],
+        [startUpload, nextTempId, addItems, files.length, config],
     );
 
     /** Add flat files (from file input or flat drag). All go to current directory. */
@@ -396,7 +392,7 @@ export function UploadDrawer({
 
             processScannedFiles(scanned);
         },
-        [processScannedFiles, files.length],
+        [processScannedFiles],
     );
 
 
@@ -547,7 +543,7 @@ export function UploadDrawer({
 
     const stageLabel =
         doneFiles.length === files.length
-            ? `Continue to draft (${doneFiles.length})`
+            ? `Add to draft (${doneFiles.length})`
             : `Add to draft (${doneFiles.length}/${files.length})`;
 
     const handleStage = () => {
@@ -882,9 +878,6 @@ export function UploadDrawer({
                                             placeholder="Title"
                                         />
                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                            <span className="truncate">
-                                                {f.correctedName ?? f.fileName}
-                                            </span>
                                             <span className="shrink-0">
                                                 {f.serverSize != null
                                                     ? fileSize(f.serverSize)
@@ -1034,7 +1027,7 @@ export function UploadDrawer({
                         disabled={!canStage}
                         className="w-full gap-2"
                     >
-                        <Package className="h-4 w-4" />
+                        <PackagePlus className="h-4 w-4" />
                         {stageLabel}
                     </Button>
                 </SheetFooter>

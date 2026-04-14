@@ -61,7 +61,7 @@ export async function collectDroppedFiles(items: DataTransferItemList): Promise<
         if (item.kind !== "file") continue;
         
         // Use webkitGetAsEntry to get FileSystemEntry (supported by most modern browsers)
-        const entry = (item as any).webkitGetAsEntry?.();
+        const entry = (item as DataTransferItem & { webkitGetAsEntry?: () => FileSystemEntry }).webkitGetAsEntry?.();
         if (entry) {
             promises.push(traverseEntry(entry, "", out, visited, 0));
         } else {

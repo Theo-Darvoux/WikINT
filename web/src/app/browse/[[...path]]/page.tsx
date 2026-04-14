@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
 import { AuthGuard } from "@/components/auth-guard";
@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Eye, X } from "lucide-react";
 import Link from "next/link";
+import type { Operation } from "@/lib/staging-store";
 
 interface BrowseResponse {
   type: "directory_listing" | "material" | "attachment_listing";
@@ -118,12 +119,12 @@ function BrowseContent() {
   const [previewPr, setPreviewPr] = useState<{
     id: string;
     title: string;
-    payload: any[];
+    payload: Operation[];
   } | null>(null);
 
   useEffect(() => {
     if (previewPrId) {
-      apiFetch<any>(`/pull-requests/${previewPrId}`)
+      apiFetch<{ id: string; title: string; payload: Operation[] }>(`/pull-requests/${previewPrId}`)
         .then((pr) => {
           setPreviewPr({
             id: pr.id,
@@ -164,6 +165,18 @@ function BrowseContent() {
     closeSidebar();
     fetchData(false);
   }, [path, fetchData, closeSidebar]);
+
+  useEffect(() => {
+    if (data) {
+      if (data.type === "material" && data.material) {
+        document.title = `${data.material.title} • WikINT`;
+      } else if (data.directory) {
+        document.title = `${data.directory.name as string} • WikINT`;
+      } else if (path === "") {
+        document.title = "Course Materials • WikINT";
+      }
+    }
+  }, [data, path]);
 
   useEffect(() => {
     // If refreshCount changed but path didn't, it's a background refresh

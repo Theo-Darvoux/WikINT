@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import {
-    Send,
+    Inbox,
     CheckCircle2,
     XCircle,
     FilePlus,
@@ -17,6 +17,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { type PullRequestOut } from "@/components/home/types";
 
 const OP_ICONS: Record<string, React.ElementType> = {
     create_material: FilePlus,
@@ -29,19 +30,7 @@ const OP_ICONS: Record<string, React.ElementType> = {
 };
 
 interface PullRequestProps {
-    pr: {
-        id: string;
-        type: string;
-        status: string;
-        title: string;
-        author: {
-            id: string;
-            display_name: string;
-        } | null;
-        created_at: string;
-        summary_types?: string[];
-        virus_scan_result?: string;
-    };
+    pr: PullRequestOut;
 }
 
 export function PRCard({ pr }: PullRequestProps) {
@@ -63,7 +52,7 @@ export function PRCard({ pr }: PullRequestProps) {
         : "?";
 
     const StatusIcon = isOpen
-        ? Send
+        ? Inbox
         : isApproved
           ? CheckCircle2
           : XCircle;

@@ -16,7 +16,10 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "WikINT — Course Materials",
+  title: {
+    default: "Course Materials • WikINT",
+    template: "%s • WikINT",
+  },
   description:
     "Collaborative course materials platform for Telecom SudParis / IMT-BS",
 };
@@ -36,7 +39,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <LayoutShell>{children}</LayoutShell>
-          <Toaster position="top-center" richColors />
+          <Toaster position="bottom-left" expand richColors />
         </ThemeProvider>
       </body>
     </html>

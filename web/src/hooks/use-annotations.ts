@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 import { createSSEConnection } from "@/lib/sse-client";
 
@@ -41,12 +41,10 @@ interface PaginatedThreads {
 export function useAnnotations(materialId: string | null) {
     const [threads, setThreads] = useState<ThreadData[]>([]);
     const [loading, setLoading] = useState(false);
-    const [page, setPage] = useState(1);
-    const [pages, setPages] = useState(1);
     const [total, setTotal] = useState(0);
 
     const fetchAnnotations = useCallback(
-        async (p: number) => {
+        async () => {
             if (!materialId) return;
             setLoading(true);
             try {
@@ -54,8 +52,6 @@ export function useAnnotations(materialId: string | null) {
                     `/materials/${materialId}/annotations?page=1&limit=1000`
                 );
                 setThreads(data.items);
-                setPage(1);
-                setPages(1);
                 setTotal(data.total);
             } catch {
                 // silent
@@ -68,13 +64,10 @@ export function useAnnotations(materialId: string | null) {
 
     useEffect(() => {
         setThreads([]);
-        setPage(1);
-        if (materialId) fetchAnnotations(1);
+        if (materialId) fetchAnnotations();
     }, [materialId, fetchAnnotations]);
 
     // Subscribe to real-time annotation events for this material
-    const pageRef = useRef(1);
-    useEffect(() => { pageRef.current = page; }, [page]);
 
     useEffect(() => {
         if (!materialId) return;
@@ -82,8 +75,8 @@ export function useAnnotations(materialId: string | null) {
         const connection = createSSEConnection({
             url: `/materials/${materialId}/sse`,
             listeners: {
-                annotation_created: () => fetchAnnotations(pageRef.current),
-                annotation_deleted: () => fetchAnnotations(pageRef.current),
+                annotation_created: () => fetchAnnotations(),
+                annotation_deleted: () => fetchAnnotations(),
             },
             startupDelay: 50, // React Strict Mode workaround
         });
@@ -107,10 +100,10 @@ export function useAnnotations(materialId: string | null) {
                     body: JSON.stringify(payload),
                 }
             );
-            await fetchAnnotations(page);
+            await fetchAnnotations();
             return annotation;
         },
-        [materialId, page, fetchAnnotations]
+        [materialId, fetchAnnotations]
     );
 
     const editAnnotation = useCallback(
@@ -119,9 +112,9 @@ export function useAnnotations(materialId: string | null) {
                 method: "PATCH",
                 body: JSON.stringify({ body }),
             });
-            await fetchAnnotations(page);
+            await fetchAnnotations();
         },
-        [page, fetchAnnotations]
+        [fetchAnnotations]
     );
 
     const deleteAnnotation = useCallback(
@@ -129,16 +122,14 @@ export function useAnnotations(materialId: string | null) {
             await apiFetch<void>(`/annotations/${annotationId}`, {
                 method: "DELETE",
             });
-            await fetchAnnotations(page);
+            await fetchAnnotations();
         },
-        [page, fetchAnnotations]
+        [fetchAnnotations]
     );
 
     return {
         threads,
         loading,
-        page,
-        pages,
         total,
         fetchAnnotations,
         createAnnotation,

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, GitPullRequest } from "lucide-react";
+import { Loader2, Inbox } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { PRCard } from "@/components/pr/pr-card";
+import { type PullRequestOut } from "@/components/home/types";
 
 interface SidebarTarget {
     type: "directory" | "material";
@@ -16,8 +17,7 @@ interface EditsTabProps {
 }
 
 export function EditsTab({ target }: EditsTabProps) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [prs, setPrs] = useState<any[]>([]);
+    const [prs, setPrs] = useState<PullRequestOut[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -25,8 +25,7 @@ export function EditsTab({ target }: EditsTabProps) {
 
         let isActive = true;
         Promise.resolve().then(() => { if (isActive) setLoading(true); });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        apiFetch<any[]>(`/pull-requests/for-item?targetType=${target.type}&targetId=${target.id}`)
+        apiFetch<PullRequestOut[]>(`/pull-requests/for-item?targetType=${target.type}&targetId=${target.id}`)
             .then(data => {
                 if (isActive) setPrs(data);
             })
@@ -53,7 +52,7 @@ export function EditsTab({ target }: EditsTabProps) {
     if (prs.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-                <GitPullRequest className="mb-3 h-8 w-8 text-muted-foreground/50" />
+                <Inbox className="mb-3 h-8 w-8 text-muted-foreground/50" />
                 <p className="text-sm text-muted-foreground">
                     No active contributions for this {target.type}.
                 </p>
@@ -65,9 +64,8 @@ export function EditsTab({ target }: EditsTabProps) {
         <div className="space-y-4 px-1 pb-4">
             <h3 className="font-semibold px-2">Open Edits</h3>
             <div className="flex flex-col gap-3">
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {prs.map((pr: any) => (
-                    <PRCard key={pr.id as string} pr={pr} />
+                {prs.map((pr) => (
+                    <PRCard key={pr.id} pr={pr} />
                 ))}
             </div>
         </div>

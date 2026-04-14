@@ -16,7 +16,6 @@ interface MaterialPreviewProps {
 export function MaterialPreview({ material, className }: MaterialPreviewProps) {
   const [url, setUrl] = useState<string | null>(null);
   const [isServerThumbnail, setIsServerThumbnail] = useState(false);
-  const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [textPreview, setTextPreview] = useState<string | null>(null);
@@ -35,7 +34,6 @@ export function MaterialPreview({ material, className }: MaterialPreviewProps) {
 
   // We should fetch if it's media (for native rendering) or if we want a text excerpt
   // But now we prioritize the server-side thumbnail for everything.
-  const shouldFetchThumbnail = true;
 
   useEffect(() => {
     let mounted = true;
@@ -52,7 +50,7 @@ export function MaterialPreview({ material, className }: MaterialPreviewProps) {
             setLoading(false);
             return;
           }
-        } catch (e) {
+        } catch {
           // Thumbnail not available yet, fall back to native resolution for media/text
           console.debug("No server thumbnail available, falling back to inline source.");
         }
@@ -80,13 +78,13 @@ export function MaterialPreview({ material, className }: MaterialPreviewProps) {
              if (mounted) {
                setTextPreview(text.slice(0, 1000));
              }
-           } catch (e) {
-             console.error("Failed to fetch text preview:", e);
+           } catch {
+             // ignore
            }
         }
-      } catch (err) {
+      } catch {
         if (mounted) {
-          setError(true);
+          // setError(true);
         }
       } finally {
         if (mounted) setLoading(false);

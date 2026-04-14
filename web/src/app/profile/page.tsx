@@ -23,7 +23,7 @@ function OwnProfileContent() {
                 toast.error("Failed to load profile");
             });
         }
-    }, []);
+    }, [setUser]);
 
     useEffect(() => {
         setTimeout(fetchProfile, 0);
@@ -76,6 +76,7 @@ function OwnProfileContent() {
             profile={profile}
             isOwn
             onAvatarUpload={handleAvatarUpload}
+            isUploadingAvatar={isUploading}
             onProfileUpdated={fetchProfile}
             showRecentlyViewed
         />

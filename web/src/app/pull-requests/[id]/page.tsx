@@ -12,7 +12,6 @@ import {
     FolderPen,
     FolderX,
     ArrowRightLeft,
-    Upload,
     CheckCircle2,
     XCircle,
     Check,
@@ -24,11 +23,12 @@ import {
     ChevronsDownUp,
     ChevronsUpDown,
     AlertCircle,
-    Image,
+    Image as ImageIcon,
     FileText,
     Video,
     MapPin,
     ArrowRight,
+    Inbox,
 } from "lucide-react";
 import { PreviewDialog } from "@/components/pr/preview-dialog";
 import { MarkdownRenderer } from "@/components/viewers/markdown-renderer";
@@ -57,8 +57,30 @@ import { ExpandableText } from "@/components/ui/expandable-text";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/stores";
 import { toast } from "sonner";
+import { type Operation } from "@/lib/staging-store";
 
 /* ── Types ──────────────────────────────────────────── */
+
+type PullRequestOperation = Operation & {
+    result_browse_path?: string | null;
+    /** Legacy or extra fields from backend */
+    pr_type?: string;
+    target_title?: string;
+    target_name?: string;
+    // Common fields for easy access during rendering
+    title?: string;
+    name?: string;
+    directory_id?: string | null;
+    material_id?: string;
+    parent_id?: string | null;
+    target_id?: string;
+    target_type?: string;
+    new_parent_id?: string | null;
+    file_key?: string | null;
+    file_name?: string | null;
+    file_mime_type?: string | null;
+    diff_summary?: string | null;
+};
 
 interface PullRequestDetail {
     id: string;
@@ -70,8 +92,8 @@ interface PullRequestDetail {
     author: { id: string; display_name: string } | null;
     created_at: string;
     updated_at: string;
-    payload: Record<string, unknown>[] | Record<string, unknown>;
-    applied_result?: Record<string, unknown>[] | null;
+    payload: PullRequestOperation[] | PullRequestOperation;
+    applied_result?: PullRequestOperation[] | null;
     summary_types?: string[];
     virus_scan_result?: string;
 }
@@ -128,7 +150,7 @@ const STATUS_CONFIG: Record<
     { Icon: React.ElementType; color: string; bg: string; label: string }
 > = {
     open: {
-        Icon: Upload,
+        Icon: Inbox,
         color: "text-blue-600",
         bg: "bg-blue-500/10",
         label: "Pending",
@@ -170,10 +192,11 @@ interface ResolvedItemDetails {
 
 /* ── Helpers ─────────────────────────────────────────── */
 
-function opSummary(op: Record<string, unknown>): string {
-    const opType = String(op.op ?? op.pr_type ?? "unknown");
-    const name = (op.title || op.name) as string | undefined;
-    
+function opSummary(op: PullRequestOperation): string {
+    const rawOp = op as unknown as Record<string, unknown>;
+    const opType = String(rawOp.op || rawOp.pr_type || "unknown");
+    const name = (rawOp.title || rawOp.name) as string | undefined;
+
     switch (opType) {
         case "create_material":
             return `Added « ${name || "document"} »`;
@@ -188,7 +211,8 @@ function opSummary(op: Record<string, unknown>): string {
         case "delete_directory":
             return `Deleted folder « ${name || "folder"} »`;
         case "move_item":
-            return `Moved ${op.target_type === "directory" ? "folder" : "document"}${name ? ` « ${name} »` : ""}`;
+            const target_type = rawOp.target_type as string | undefined;
+            return `Moved ${target_type === "directory" ? "folder" : "document"}${name ? ` « ${name} »` : ""}`;
         default:
             return opType;
     }
@@ -263,7 +287,7 @@ export function PreviewDialog_OMIT({
                 <DialogHeader className="px-4 pt-4 pb-2">
                     <DialogTitle className="flex items-center gap-2 text-sm font-medium">
                         {isPdf && <FileText className="h-4 w-4 text-red-500" />}
-                        {isImage && <Image className="h-4 w-4 text-blue-500" />}
+                        {isImage && <ImageIcon className="h-4 w-4 text-blue-500" />}
                         {isVideo && <Video className="h-4 w-4 text-purple-500" />}
                         {!isPdf && !isImage && !isVideo && <Eye className="h-4 w-4 text-muted-foreground" />}
                         {fileName ?? "Preview"}
@@ -319,27 +343,28 @@ function OperationRow({
     prStatus,
     index,
 }: {
-    op: Record<string, unknown>;
+    op: PullRequestOperation;
     prId: string;
     prStatus: string;
     index: number;
 }) {
+    const rawOp = op as unknown as Record<string, unknown>;
     const [targetInfo, setTargetInfo] = useState<{ url: string; label: string } | null>(null);
     const [itemDetails, setItemDetails] = useState<ResolvedItemDetails | null>(null);
     const [existingPreview, setExistingPreview] = useState<{ url: string; mimeType?: string; fileName?: string } | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
 
-    const opType = String(op.op ?? op.pr_type ?? "unknown");
+    const opType = String(rawOp.op || rawOp.pr_type || "unknown");
     const Icon = OP_ICONS[opType] ?? FilePlus;
     const colorClass = OP_COLORS[opType] ?? "";
-    const hasFile = Boolean(op.file_key);
+    const hasFile = Boolean(rawOp.file_key);
     const isApproved = prStatus === "approved";
 
     // After approval: result_browse_path is already in the op
     const resultBrowsePath = (() => {
         if (!isApproved) return null;
-        if (op.result_browse_path !== undefined && op.result_browse_path !== null) {
-            const path = String(op.result_browse_path);
+        if (rawOp.result_browse_path !== undefined && rawOp.result_browse_path !== null) {
+            const path = String(rawOp.result_browse_path);
             return path ? `/browse/${path}` : "/browse";
         }
         // Fallback for older PRs or if path wasn't captured: use resolved details
@@ -366,8 +391,11 @@ function OperationRow({
 
         let cancelled = false;
         async function fetchInfo() {
-            let dirId = String(op.directory_id ?? op.parent_id ?? "");
-            const matId = String(op.material_id ?? "");
+            let dirId = "";
+            if (rawOp.directory_id) dirId = String(rawOp.directory_id);
+            else if (rawOp.parent_id) dirId = String(rawOp.parent_id);
+
+            const matId = String(rawOp.material_id ?? "");
 
             if (!dirId && matId && !matId.startsWith("$")) {
                 try {
@@ -384,15 +412,15 @@ function OperationRow({
 
         fetchInfo();
         return () => { cancelled = true; };
-    }, [op.directory_id, op.parent_id, op.material_id, isApproved, needsItemResolution]);
+    }, [rawOp.directory_id, rawOp.parent_id, rawOp.material_id, isApproved, needsItemResolution]);
 
     // Resolve item name + paths for delete/move ops
     useEffect(() => {
         if (!needsItemResolution) return;
 
-        const matId = String(op.material_id ?? "");
-        const dirId = String(op.directory_id ?? "");
-        const targetId = String(op.target_id ?? "");
+        const matId = String(rawOp.material_id ?? "");
+        const dirId = String(rawOp.directory_id ?? "");
+        const targetId = String(rawOp.target_id ?? "");
 
         // Don't try to resolve temp IDs
         if (matId.startsWith("$") || dirId.startsWith("$") || targetId.startsWith("$")) return;
@@ -446,7 +474,7 @@ function OperationRow({
 
                 } else if (opType === "move_item") {
                     if (!targetId) return;
-                    const targetType = String(op.target_type ?? "");
+                    const targetType = String(rawOp.target_type ?? "");
                     let itemName: string | undefined;
                     let sourcePath: string | undefined;
                     let sourceUrl: string | undefined;
@@ -488,7 +516,7 @@ function OperationRow({
                     }
 
                     // Resolve destination
-                    const newParentId = op.new_parent_id ? String(op.new_parent_id) : null;
+                    const newParentId = rawOp.new_parent_id ? String(rawOp.new_parent_id) : null;
                     let destPath = "Root";
                     let destUrl = "/browse";
                     if (newParentId && !newParentId.startsWith("$")) {
@@ -543,8 +571,7 @@ function OperationRow({
 
         resolveDetails();
         return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [opType, op.material_id, op.directory_id, op.target_id, op.new_parent_id, op.target_type, needsItemResolution]);
+    }, [opType, rawOp.material_id, rawOp.directory_id, rawOp.target_id, rawOp.new_parent_id, rawOp.target_type, needsItemResolution]);
 
     // Fetch inline preview URL for an existing material
     const handleExistingPreview = async () => {
@@ -568,7 +595,7 @@ function OperationRow({
     // Derive summary text using resolved item name when available
     const displaySummary = (() => {
         const name = itemDetails?.itemName;
-        const opName = (op.title || op.name) as string | undefined;
+        const opName = (rawOp.title || rawOp.name) as string | undefined;
         const finalName = name || opName;
 
         switch (opType) {
@@ -577,7 +604,7 @@ function OperationRow({
             case "edit_material":   return `Edited « ${finalName || "document"} »`;
             case "edit_directory":   return `Renamed folder « ${finalName || "folder"} »`;
             case "move_item":
-                const isDir = op.target_type === "directory";
+                const isDir = rawOp.target_type === "directory";
                 return `Moved ${isDir ? "folder " : ""}« ${finalName || (isDir ? "folder" : "document")} »`;
             default: return opSummary(op);
         }
@@ -588,7 +615,7 @@ function OperationRow({
         ([k, v]) => VISIBLE_FIELDS.has(k) && v !== null && v !== undefined,
     );
 
-    const diffSummary = "diff_summary" in op ? (op as any).diff_summary : null;
+    const diffSummary = "diff_summary" in op ? (op as unknown as Record<string, unknown>).diff_summary : null;
     const hasDiff = Boolean(diffSummary);
 
     const canPreviewExisting = Boolean(itemDetails?.materialId) && !previewLoading;
@@ -810,13 +837,13 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
     const [previewPath, setPreviewPath] = useState<string | null>(null);
 
     // Use applied_result for approved PRs (contains result_browse_path); fall back to payload
-    const operations: Record<string, unknown>[] = useMemo(() => {
+    const operations: PullRequestOperation[] = useMemo(() => {
         if (!pr) return [];
         return pr.status === "approved" && Array.isArray(pr.applied_result) && pr.applied_result.length > 0
             ? pr.applied_result
             : Array.isArray(pr.payload)
                 ? pr.payload
-                : [pr.payload] as Record<string, unknown>[];
+                : [pr.payload] as PullRequestOperation[];
     }, [pr]);
 
     useEffect(() => {
@@ -824,7 +851,8 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
         // Find the first operation that points to a real directory
         const findDir = async () => {
             for (const op of operations) {
-                const dirId = (op.directory_id ?? op.parent_id) as string | undefined;
+                const rawOp = op as unknown as Record<string, unknown>;
+                const dirId = (rawOp.directory_id ?? rawOp.parent_id) as string | undefined;
                 if (dirId && typeof dirId === "string" && !dirId.startsWith("$")) {
                     setPreviewDirId(dirId);
                     return;
@@ -915,7 +943,8 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
 
     const typeCounts: Record<string, number> = {};
     for (const op of operations) {
-        const t = String(op.op ?? op.pr_type ?? "unknown");
+        const rawOp = op as unknown as Record<string, unknown>;
+        const t = String(rawOp.op ?? rawOp.pr_type ?? "unknown");
         typeCounts[t] = (typeCounts[t] || 0) + 1;
     }
 

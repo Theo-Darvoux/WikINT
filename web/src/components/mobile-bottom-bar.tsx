@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createPortal } from "react-dom";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotificationStore, useUIStore } from "@/lib/stores";
 import { cn } from "@/lib/utils";
+
+const emptySubscribe = () => () => {};
 import {
   Home,
   Folder,
@@ -65,12 +66,8 @@ export function MobileBottomBar() {
   const { unreadCount } = useNotificationStore();
   const { hideFooter, setMaterialActionsOpen } = useUIStore();
   const pathname = usePathname();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
   const touchStartY = useRef<number | null>(null);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartY.current = e.touches[0].clientY;

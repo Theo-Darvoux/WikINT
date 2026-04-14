@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
     Dialog,
     DialogContent,
@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/ui/tag-input";
 import { useStagingStore, unwrapOp } from "@/lib/staging-store";
-import type { Operation, CreateMaterialOp, EditMaterialOp, CreateDirectoryOp, EditDirectoryOp } from "@/lib/staging-store";
+import type { Operation } from "@/lib/staging-store";
 
 interface StagedItemEditDialogProps {
     /** The index in the staging operations array, or null if closed */

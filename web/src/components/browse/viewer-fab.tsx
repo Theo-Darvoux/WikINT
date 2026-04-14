@@ -7,20 +7,18 @@ import {
   Download,
   Share2,
   Paperclip,
-  UploadCloud,
   Loader2,
   Printer,
   Info,
   MessageSquare,
   Highlighter,
-  GitPullRequest,
+  Inbox,
   Edit,
   Trash2,
   ThumbsUp,
 } from "lucide-react";
 import { FlagButton } from "@/components/flags/flag-button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import { useDropZoneStore } from "@/components/pr/global-drop-zone";
 import { useDownload } from "@/hooks/use-download";
 import { usePrint } from "@/hooks/use-print";
 import { useUIStore } from "@/lib/stores";
@@ -128,7 +126,6 @@ export function ViewerFab({
   material,
   materialId,
   materialTitle,
-  directoryId,
   attachmentCount = 0,
   isAttachment = false,
   viewerType = "",
@@ -139,7 +136,6 @@ export function ViewerFab({
 }: ViewerFabProps) {
   const pathname = usePathname();
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const requestUpload = useDropZoneStore((s) => s.requestUpload);
   const { openSidebar, updateSidebarData } = useUIStore();
   const { downloadMaterial, isDownloading } = useDownload();
   const { print, isPrinting, canPrint } = usePrint({
@@ -194,13 +190,6 @@ export function ViewerFab({
     }
   };
 
-  const handleUpload = () => {
-    requestUpload({
-      directoryId: directoryId ?? "",
-      directoryName: materialTitle ?? "Material",
-      parentMaterialId: materialId,
-    });
-  };
   
   const handleDelete = () => {
     addOperation({
@@ -327,7 +316,7 @@ export function ViewerFab({
 
           {/* ── Edits ── */}
           <ActionCell
-            icon={<GitPullRequest className="h-5 w-5" />}
+            icon={<Inbox className="h-5 w-5" />}
             label="Edits"
             onClick={() => {
               close();

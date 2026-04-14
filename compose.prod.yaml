@@ -1,0 +1,85 @@
+services:
+  postgres:
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  redis:
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+  meilisearch:
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  api:
+    image: ghcr.io/theo-darvoux/wikint/api:latest
+    command: uv run --no-sync --no-dev gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+    environment:
+      - ENVIRONMENT=production
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  worker:
+    image: ghcr.io/theo-darvoux/wikint/api:latest
+    command: uv run --no-sync --no-dev arq app.workers.settings.WorkerSettings
+    environment:
+      - ENVIRONMENT=production
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  worker-fast:
+    image: ghcr.io/theo-darvoux/wikint/api:latest
+    command: uv run --no-sync --no-dev arq app.workers.settings.UploadFastWorkerSettings
+    environment:
+      - ENVIRONMENT=production
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  worker-slow:
+    image: ghcr.io/theo-darvoux/wikint/api:latest
+    command: uv run --no-sync --no-dev arq app.workers.settings.UploadSlowWorkerSettings
+    environment:
+      - ENVIRONMENT=production
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  web:
+    image: ghcr.io/theo-darvoux/wikint/web:latest
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  nginx:
+    ports:
+      - "127.0.0.1:9080:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/nginx.onlyoffice.snippet:/etc/nginx/nginx.onlyoffice.snippet:ro
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.1"
+          memory: 64M

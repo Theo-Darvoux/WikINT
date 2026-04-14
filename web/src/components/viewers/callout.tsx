@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React from "react";
 import { 
     Info, 
     FileText, 
@@ -33,7 +33,7 @@ interface CalloutProps {
     defaultOpen?: boolean;
 }
 
-const CALLOUT_CONFIG: Record<CalloutType, { icon: any; colorClass: string; label: string }> = {
+const CALLOUT_CONFIG: Record<CalloutType, { icon: React.ElementType; colorClass: string; label: string }> = {
     note: { icon: Info, colorClass: "callout-info", label: "Note" },
     info: { icon: Info, colorClass: "callout-info", label: "Info" },
     todo: { icon: CheckSquare, colorClass: "callout-info", label: "Todo" },
