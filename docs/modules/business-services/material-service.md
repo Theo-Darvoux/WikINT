@@ -6,6 +6,8 @@ Handles material CRUD operations and search indexing. Key functions:
 
 ### Material Retrieval
 - `get_material_by_id(db, id)` — Load material with eager-loaded versions and tags
+- `material_orm_to_dict(m, **kwargs)` — Convert Material ORM to a serializable dict
+- `version_orm_to_dict(v)` — Convert MaterialVersion ORM to a serializable dict
 - `get_material_by_slug(db, directory_id, slug)` — Resolve a material within a directory
 - `get_materials_in_directory(db, directory_id)` — List all materials in a directory
 

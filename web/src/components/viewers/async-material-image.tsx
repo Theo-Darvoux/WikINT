@@ -93,15 +93,6 @@ function MissingImageUploadDialog({
                 setErrorMsg("Only image files are accepted.");
                 return;
             }
-            // Validate extension matches the expected filename so the server won't
-            // reject it as a MIME/extension mismatch.
-            const fileExt = file.name.split(".").pop()?.toLowerCase() ?? "";
-            if (expectedExt && fileExt !== expectedExt) {
-                setErrorMsg(
-                    `Expected a .${expectedExt} file to match "${expectedFileName}". Please convert or rename your image first.`,
-                );
-                return;
-            }
 
             const controller = new AbortController();
             abortRef.current = controller;

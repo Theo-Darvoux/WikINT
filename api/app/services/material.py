@@ -62,6 +62,26 @@ def material_orm_to_dict(
     }
 
 
+def version_orm_to_dict(v: MaterialVersion) -> dict[str, typing.Any]:
+    """Convert a MaterialVersion ORM instance to a plain dict safe for Pydantic validation."""
+    return {
+        "id": v.id,
+        "material_id": v.material_id,
+        "version_number": v.version_number,
+        "file_key": v.file_key,
+        "file_name": v.file_name,
+        "file_size": v.file_size,
+        "file_mime_type": v.file_mime_type,
+        "diff_summary": v.diff_summary,
+        "author_id": v.author_id,
+        "pr_id": v.pr_id,
+        "virus_scan_result": v.virus_scan_result.value
+        if hasattr(v.virus_scan_result, "value")
+        else v.virus_scan_result,
+        "created_at": v.created_at,
+    }
+
+
 async def get_material_by_id(db: AsyncSession, material_id: str | uuid.UUID) -> Material:
 
     if isinstance(material_id, str):
@@ -145,7 +165,7 @@ async def get_material_with_version(
         "material": material_orm_to_dict(
             material, attachment_count=att_count, current_user_id=current_user_id
         ),
-        "current_version_info": current_version,
+        "current_version_info": version_orm_to_dict(current_version) if current_version else None,
         "attachment_count": att_count,
     }
 
@@ -210,7 +230,7 @@ async def get_material_attachments(
     for material, version in result.all():
         mat_dict = material_orm_to_dict(material, current_user_id=current_user_id)
         if version:
-            mat_dict["current_version_info"] = version
+            mat_dict["current_version_info"] = version_orm_to_dict(version)
         attachments_out.append(mat_dict)
     return attachments_out
 

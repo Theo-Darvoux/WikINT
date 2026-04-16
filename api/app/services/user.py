@@ -18,7 +18,7 @@ from app.models.pull_request import PRComment, PullRequest
 from app.models.upload import Upload
 from app.models.user import User
 from app.models.view_history import ViewHistory
-from app.services.material import material_orm_to_dict
+from app.services.material import material_orm_to_dict, version_orm_to_dict
 
 logger = logging.getLogger("wikint")
 
@@ -102,7 +102,7 @@ async def get_recently_viewed(db: AsyncSession, user_id: str, limit: int = 10) -
     for material, version in result.all():
         mat_dict = material_orm_to_dict(material, current_user_id=uid)
         if version:
-            mat_dict["current_version_info"] = version
+            mat_dict["current_version_info"] = version_orm_to_dict(version)
         materials_out.append(mat_dict)
     return materials_out
 
@@ -152,7 +152,7 @@ async def get_user_contributions(
         for material, version in result.all():
             mat_dict = material_orm_to_dict(material, current_user_id=current_user_id)
             if version:
-                mat_dict["current_version_info"] = version
+                mat_dict["current_version_info"] = version_orm_to_dict(version)
             materials_out.append(mat_dict)
         return materials_out, total
     elif contribution_type == "annotations":

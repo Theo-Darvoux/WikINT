@@ -128,18 +128,16 @@ async def get_root_directories(
         is_liked = False
         is_favourited = False
         if current_user_id:
-            # We can optimize this with an outer join or subquery if needed,
-            # but keep it simple for now.
-            is_liked = await db.scalar(
+            is_liked = (await db.scalar(
                 select(func.count())
                 .select_from(DirectoryLike)
                 .where(DirectoryLike.directory_id == d.id, DirectoryLike.user_id == current_user_id)
-            ) > 0
-            is_favourited = await db.scalar(
+            ) or 0) > 0
+            is_favourited = (await db.scalar(
                 select(func.count())
                 .select_from(DirectoryFavourite)
                 .where(DirectoryFavourite.directory_id == d.id, DirectoryFavourite.user_id == current_user_id)
-            ) > 0
+            ) or 0) > 0
 
         item = {
             "id": str(d.id),
@@ -177,7 +175,7 @@ async def get_root_directories(
     )
     mat_result = await db.execute(mat_stmt)
 
-    from app.services.material import material_orm_to_dict
+    from app.services.material import material_orm_to_dict, version_orm_to_dict
 
     materials_out = []
     for material in mat_result.scalars().all():
@@ -204,7 +202,7 @@ async def get_root_directories(
         )
 
         if version:
-            mat_dict["current_version_info"] = version
+            mat_dict["current_version_info"] = version_orm_to_dict(version)
 
         materials_out.append(mat_dict)
 
@@ -265,16 +263,16 @@ async def get_directory_children(
         is_liked = False
         is_favourited = False
         if current_user_id:
-            is_liked = await db.scalar(
+            is_liked = (await db.scalar(
                 select(func.count())
                 .select_from(DirectoryLike)
                 .where(DirectoryLike.directory_id == d.id, DirectoryLike.user_id == current_user_id)
-            ) > 0
-            is_favourited = await db.scalar(
+            ) or 0) > 0
+            is_favourited = (await db.scalar(
                 select(func.count())
                 .select_from(DirectoryFavourite)
                 .where(DirectoryFavourite.directory_id == d.id, DirectoryFavourite.user_id == current_user_id)
-            ) > 0
+            ) or 0) > 0
 
         dirs_with_counts.append(
             {
@@ -311,7 +309,7 @@ async def get_directory_children(
     )
     mat_result = await db.execute(mat_stmt)
 
-    from app.services.material import material_orm_to_dict
+    from app.services.material import material_orm_to_dict, version_orm_to_dict
 
     materials_out = []
     child_material = Material.__table__.alias("child_mat")
@@ -338,7 +336,7 @@ async def get_directory_children(
         )
 
         if version:
-            mat_dict["current_version_info"] = version
+            mat_dict["current_version_info"] = version_orm_to_dict(version)
         materials_out.append(mat_dict)
 
     return {"directories": dirs_with_counts, "materials": materials_out}
@@ -380,7 +378,7 @@ async def resolve_browse_path(
     current_dir: Directory | None = None
     last_material: Material | None = None
 
-    from app.services.material import material_orm_to_dict
+    from app.services.material import material_orm_to_dict, version_orm_to_dict
 
     for i, segment in enumerate(segments):
         if segment == "attachments" and last_material is not None:
@@ -408,7 +406,7 @@ async def resolve_browse_path(
                 return {"type": "material", "material": detail}
 
             # No more segments — return the attachment listing
-            result = await db.execute(
+            att_listing_result = await db.execute(
                 select(Material)
                 .options(
                     selectinload(Material.tags),
@@ -420,7 +418,7 @@ async def resolve_browse_path(
             )
 
             materials_out = []
-            for material in result.scalars().all():
+            for material in att_listing_result.scalars().all():
                 ver_stmt = select(MaterialVersion).where(
                     MaterialVersion.material_id == material.id,
                     MaterialVersion.version_number == material.current_version,
@@ -430,7 +428,7 @@ async def resolve_browse_path(
 
                 mat_dict = material_orm_to_dict(material, current_user_id=current_user_id)
                 if version:
-                    mat_dict["current_version_info"] = version
+                    mat_dict["current_version_info"] = version_orm_to_dict(version)
                 materials_out.append(mat_dict)
 
             return {
@@ -440,7 +438,7 @@ async def resolve_browse_path(
             }
 
         if current_dir is None:
-            result = await db.execute(
+            dir_result = await db.execute(
                 select(Directory)
                 .options(selectinload(Directory.tags))
                 .where(
@@ -450,7 +448,7 @@ async def resolve_browse_path(
                 )
             )
         else:
-            result = await db.execute(
+            dir_result = await db.execute(
                 select(Directory)
                 .options(selectinload(Directory.tags))
                 .where(
@@ -460,7 +458,7 @@ async def resolve_browse_path(
                 )
             )
 
-        directory = result.scalar_one_or_none()
+        directory: Directory | None = dir_result.scalar_one_or_none()
         if directory:
             current_dir = directory
             last_material = None
@@ -480,9 +478,9 @@ async def resolve_browse_path(
                 Material.parent_material_id.is_(None),
             )
         )
-        material = mat_result.scalar_one_or_none()
-        if material:
-            last_material = material
+        mat_row = mat_result.scalar_one_or_none()
+        if mat_row:
+            last_material = mat_row
             if i == len(segments) - 1:
                 from app.services.material import get_material_with_version
 
@@ -500,16 +498,16 @@ async def resolve_browse_path(
         is_liked = False
         is_favourited = False
         if current_user_id:
-            is_liked = await db.scalar(
+            is_liked = (await db.scalar(
                 select(func.count())
                 .select_from(DirectoryLike)
                 .where(DirectoryLike.directory_id == current_dir.id, DirectoryLike.user_id == current_user_id)
-            ) > 0
-            is_favourited = await db.scalar(
+            ) or 0) > 0
+            is_favourited = (await db.scalar(
                 select(func.count())
                 .select_from(DirectoryFavourite)
                 .where(DirectoryFavourite.directory_id == current_dir.id, DirectoryFavourite.user_id == current_user_id)
-            ) > 0
+            ) or 0) > 0
 
         children = await get_directory_children(db, str(current_dir.id), current_user_id=current_user_id)
         return {
