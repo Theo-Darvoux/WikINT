@@ -69,14 +69,13 @@ async def get_onlyoffice_config(
 
     material_id_str = str(material_id)
     data = await get_material_with_version(db, material_id_str)
-    material_obj = data.get("material")
-    if material_obj is not None and user is not None:
-        check_material_access(user.id, material_obj)
+    if data is not None and user is not None:
+        check_material_access(user.id, data)
     version = data.get("current_version_info")
-    if version is None or version.file_key is None:
+    if version is None or version.get("file_key") is None:
         raise NotFoundError("No file available for preview")
 
-    file_name: str = version.file_name or ""
+    file_name: str = version.get("file_name") or ""
     ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
     doc_type = _EXT_TO_DOCTYPE.get(ext, "word")
 
@@ -88,7 +87,7 @@ async def get_onlyoffice_config(
     file_url = f"{settings.onlyoffice_internal_api_base_url}/api/onlyoffice/file/{material_id_str}?token={file_token}"
 
     # Cache key: version_number invalidates on new uploads.
-    doc_key = f"{material_id_str}-v{version.version_number}"
+    doc_key = f"{material_id_str}-v{version['version_number']}"
     if settings.is_dev:
         # Dev-only: bust OO's cache without uploading a new version.
         # Remove this when iterating on config changes is no longer needed.

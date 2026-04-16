@@ -16,7 +16,7 @@ from app.core.redis import get_redis
 from app.dependencies.auth import CurrentUser, security
 from app.dependencies.rate_limit import rate_limit_downloads
 from app.models.user import User
-from app.schemas.material import MaterialDetail, MaterialOut, MaterialVersionOut
+from app.schemas.material import MaterialDetail, MaterialVersionOut
 from app.services.audit import record_download
 from app.services.material import (
     check_material_access,
@@ -63,13 +63,9 @@ async def get_material(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MaterialDetail:
     data = await get_material_with_version(db, material_id, current_user_id=user.id)
-    mat_dict = data["material"]  # already a plain dict
     if user is not None:
-        check_material_access(user.id, mat_dict)
-    ver = data.get("current_version_info")
-    mat_out = MaterialOut.model_validate(mat_dict)
-    ver_out = MaterialVersionOut.model_validate(ver) if ver else None
-    return MaterialDetail.model_validate({**mat_out.model_dump(), "current_version_info": ver_out})
+        check_material_access(user.id, data)
+    return MaterialDetail.model_validate(data)
 
 
 @router.get("/{material_id}/download-url")
@@ -83,7 +79,7 @@ async def get_material_download_url(
     await increment_download_count(db, material_id)
     data = await get_material_with_version(db, material_id)
     version = data.get("current_version_info")
-    if version is None or version.file_key is None:
+    if version is None or version.get("file_key") is None:
         from app.core.exceptions import NotFoundError
 
         raise NotFoundError("No file available for download")
@@ -92,7 +88,7 @@ async def get_material_download_url(
         db,
         user.id,
         uuid.UUID(material_id),
-        version.version_number,
+        version["version_number"],
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
@@ -101,9 +97,9 @@ async def get_material_download_url(
     from app.core.storage import generate_presigned_get_url
 
     url = await generate_presigned_get_url(
-        version.file_key,
-        filename=version.file_name,
-        content_type=version.file_mime_type,
+        version["file_key"],
+        filename=version.get("file_name"),
+        content_type=version.get("file_mime_type"),
     )
     return {"url": url}
 
@@ -120,7 +116,7 @@ async def inline_material(
     check_material_access(user.id, data)
 
     version = data.get("current_version_info")
-    if version is None or version.file_key is None:
+    if version is None or version.get("file_key") is None:
         from app.core.exceptions import NotFoundError
 
         raise NotFoundError("No file available for preview")
@@ -129,17 +125,17 @@ async def inline_material(
 
     # Images, PDFs, and Videos are safe to render inline; all other types are forced
     # to download so the browser never executes or parses unknown content.
-    file_mime = getattr(version, "file_mime_type", "") or ""
+    file_mime = version.get("file_mime_type") or ""
     inline_safe = (
         file_mime.startswith("image/") or
         file_mime.startswith("video/") or
         file_mime == "application/pdf"
     )
     url = await generate_presigned_get_url(
-        version.file_key,
+        version["file_key"],
         force_download=not inline_safe,
-        filename=version.file_name,
-        content_type=version.file_mime_type,
+        filename=version.get("file_name"),
+        content_type=version.get("file_mime_type"),
     )
     return {"url": url}
 
@@ -171,7 +167,7 @@ async def thumbnail_material(
     from app.core.storage import generate_presigned_get_url
 
     # 1. Prefer dedicated stored thumbnail
-    target_key = getattr(version, "thumbnail_key", None)
+    target_key = version.get("thumbnail_key")
     content_type = "image/webp"
     is_dedicated = bool(target_key)
 
@@ -179,15 +175,15 @@ async def thumbnail_material(
     #    (images, videos, PDFs). Audio, Office, and generic blobs are excluded
     #    because the browser cannot render them in an <img> / <video> thumbnail.
     if not target_key:
-        file_mime = getattr(version, "file_mime_type", "") or ""
+        file_mime = version.get("file_mime_type") or ""
         if file_mime.startswith("image/"):
-            target_key = version.file_key
+            target_key = version["file_key"]
             content_type = file_mime
         elif file_mime.startswith("video/"):
-            target_key = version.file_key
+            target_key = version["file_key"]
             content_type = file_mime
         elif file_mime == "application/pdf":
-            target_key = version.file_key
+            target_key = version["file_key"]
             content_type = file_mime
         else:
             raise AppError(404, "Thumbnail not available for this file type")
@@ -195,7 +191,7 @@ async def thumbnail_material(
     url = await generate_presigned_get_url(
         target_key,
         force_download=False,
-        filename=f"thumb_{version.file_name or 'file'}.webp",
+        filename=f"thumb_{version.get('file_name') or 'file'}.webp",
         content_type=content_type,
     )
     return {
@@ -248,14 +244,14 @@ async def stream_material_file(
     check_material_access(effective_user.id, data)
 
     version = data.get("current_version_info")
-    if version is None or version.file_key is None:
+    if version is None or version.get("file_key") is None:
         raise NotFoundError("No file available")
 
     await record_download(
         db,
         effective_user.id,
         uuid.UUID(material_id),
-        version.version_number,
+        version["version_number"],
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
@@ -266,9 +262,9 @@ async def stream_material_file(
     # Redirect to presigned URL. S3/MinIO handles Range requests (206) perfectly,
     # which is required for browser media players to seek and parse metadata.
     url = await generate_presigned_get_url(
-        version.file_key,
-        filename=version.file_name,
-        content_type=version.file_mime_type,
+        version["file_key"],
+        filename=version.get("file_name"),
+        content_type=version.get("file_mime_type"),
     )
     return RedirectResponse(url=url, status_code=302)
 
@@ -394,11 +390,11 @@ async def get_material_text_content(
     check_material_access(user.id, data)
 
     version = data.get("current_version_info")
-    if version is None or version.file_key is None:
+    if version is None or version.get("file_key") is None:
         raise NotFoundError("No file available")
 
-    mime = (getattr(version, "file_mime_type", "") or "").lower()
-    filename = (getattr(version, "file_name", "") or "").lower()
+    mime = (version.get("file_mime_type") or "").lower()
+    filename = (version.get("file_name") or "").lower()
 
     # Allow gzip-wrapped text files (e.g. original.md.gz)
     is_gzip_wrapped = mime == "application/gzip" or filename.endswith(".gz")
@@ -406,7 +402,7 @@ async def get_material_text_content(
     if not is_gzip_wrapped and not _is_text_mime(mime):
         raise BadRequestError("This file is not a text-based document and cannot be edited as text")
 
-    raw_bytes = await read_full_object(version.file_key)
+    raw_bytes = await read_full_object(version["file_key"])
 
     # Decompress if explicitly wrapped OR if bytes look like GZIP (X12 fix)
     if is_gzip_wrapped or raw_bytes.startswith(b"\x1f\x8b"):
@@ -453,8 +449,8 @@ async def save_material_text_content(
     if version is None:
         raise NotFoundError("No version found for this material")
 
-    current_mime = (getattr(version, "file_mime_type", "") or "").lower()
-    current_name = (getattr(version, "file_name", "") or "")
+    current_mime = (version.get("file_mime_type") or "").lower()
+    current_name = (version.get("file_name") or "")
 
     # Strip any previous .gz suffix to derive the "logical" original name
     if current_name.endswith(".gz"):
@@ -482,7 +478,7 @@ async def save_material_text_content(
     from app.core.storage import read_full_object
 
     try:
-        old_bytes = await read_full_object(version.file_key)
+        old_bytes = await read_full_object(version["file_key"])
         if is_gzip_wrapped:
             old_bytes = gzip.decompress(old_bytes)
         if old_bytes.startswith(b"\xef\xbb\xbf"):

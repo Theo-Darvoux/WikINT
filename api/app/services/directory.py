@@ -484,7 +484,7 @@ async def resolve_browse_path(
             if i == len(segments) - 1:
                 from app.services.material import get_material_with_version
 
-                detail = await get_material_with_version(db, str(material.id), current_user_id=current_user_id)
+                detail = await get_material_with_version(db, str(mat_row.id), current_user_id=current_user_id)
                 return {"type": "material", "material": detail}
             continue
 

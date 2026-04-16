@@ -161,13 +161,12 @@ async def get_material_with_version(
         or 0
     )
 
-    return {
-        "material": material_orm_to_dict(
-            material, attachment_count=att_count, current_user_id=current_user_id
-        ),
-        "current_version_info": version_orm_to_dict(current_version) if current_version else None,
-        "attachment_count": att_count,
-    }
+    mat_dict = material_orm_to_dict(
+        material, attachment_count=att_count, current_user_id=current_user_id
+    )
+    if current_version:
+        mat_dict["current_version_info"] = version_orm_to_dict(current_version)
+    return mat_dict
 
 
 async def get_material_versions(
