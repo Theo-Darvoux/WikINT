@@ -1,6 +1,8 @@
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Session, with_loader_criteria
 
 from app.config import settings
 
@@ -12,6 +14,62 @@ engine = create_async_engine(
 )
 
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _soft_delete_filter(execute_state):  # type: ignore[no-untyped-def]
+    if not execute_state.is_select:
+        return
+    if execute_state.execution_options.get("include_deleted", False):
+        return
+
+    from app.models.directory import Directory
+    from app.models.material import Material, MaterialVersion
+
+    execute_state.statement = execute_state.statement.options(
+        with_loader_criteria(Material, Material.deleted_at.is_(None), include_aliases=True),
+        with_loader_criteria(Directory, Directory.deleted_at.is_(None), include_aliases=True),
+        with_loader_criteria(
+            MaterialVersion, MaterialVersion.deleted_at.is_(None), include_aliases=True
+        ),
+    )
+
+
+def _coalesce_index_jobs(jobs: list) -> list:
+    """Coalesce consecutive index_material / index_directory jobs into batch calls.
+
+    Preserves relative order of non-index jobs (delete_indexed_item,
+    delete_storage_objects, etc.) so that deletes always execute before or after
+    the adjacent index operations as originally ordered.
+    """
+    result = []
+    i = 0
+    while i < len(jobs):
+        kind = jobs[i][0]
+        if kind == "index_material":
+            batch: list = [jobs[i][1]]
+            i += 1
+            while i < len(jobs) and jobs[i][0] == "index_material":
+                batch.append(jobs[i][1])
+                i += 1
+            if len(batch) == 1:
+                result.append(("index_material", batch[0]))
+            else:
+                result.append(("index_materials_batch", batch))
+        elif kind == "index_directory":
+            batch = [jobs[i][1]]
+            i += 1
+            while i < len(jobs) and jobs[i][0] == "index_directory":
+                batch.append(jobs[i][1])
+                i += 1
+            if len(batch) == 1:
+                result.append(("index_directory", batch[0]))
+            else:
+                result.append(("index_directories_batch", batch))
+        else:
+            result.append(jobs[i])
+            i += 1
+    return result
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -30,9 +88,10 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
                 import app.core.redis as redis_core
 
                 db_logger = logging.getLogger("wikint")
+                coalesced = _coalesce_index_jobs(jobs)
 
                 if redis_core.arq_pool:
-                    for job in jobs:
+                    for job in coalesced:
                         try:
                             await redis_core.arq_pool.enqueue_job(*job)
                         except Exception as e:
@@ -44,7 +103,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
                 else:
                     db_logger.critical(
                         "CRITICAL: No arq_pool available to enqueue jobs after commit. Jobs: %s",
-                        jobs,
+                        coalesced,
                     )
         except Exception:
             await session.rollback()

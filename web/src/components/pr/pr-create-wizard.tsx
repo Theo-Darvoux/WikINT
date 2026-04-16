@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { submitDirectOperations } from "@/lib/pr-client";
 import type { Operation } from "@/lib/staging-store";
 import { useBrowseRefreshStore } from "@/lib/stores";
+import { sanitizeNameInput } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,11 +60,11 @@ export function PRCreateWizard() {
 
         if (["create_material", "create_directory"].includes(prType)) {
             if (!itemName.trim()) newErrors.itemName = "Name/Title is required.";
-            else if (itemName.length > 100) newErrors.itemName = "Max length is 100 characters.";
+            else if (itemName.length > 32) newErrors.itemName = "Max length is 32 characters.";
         }
 
         if (["edit_material", "edit_directory"].includes(prType)) {
-            if (itemName && itemName.length > 100) newErrors.itemName = "Max length is 100 characters.";
+            if (itemName && itemName.length > 32) newErrors.itemName = "Max length is 32 characters.";
             // Require at least one field to change if not uploading a new file (file upload happens in step 3 so we validate what we can here)
             if (!itemName.trim() && !itemDescription.trim() && prType === "edit_directory") {
                 newErrors.general = "Please provide at least one attribute to update.";
@@ -178,7 +179,10 @@ export function PRCreateWizard() {
                         <>
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Name / Title</label>
-                                <Input value={itemName} onChange={e => { setItemName(e.target.value); setErrors({ ...errors, itemName: "", general: "" }) }} placeholder="Item title" />
+                                <Input value={itemName} onChange={e => { setItemName(sanitizeNameInput(e.target.value)); setErrors({ ...errors, itemName: "", general: "" }) }} placeholder="Item title" maxLength={32} />
+                                <p className={`text-[11px] text-right ${itemName.length >= 32 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                                    {itemName.length}/32
+                                </p>
                                 {errors.itemName && <p className="text-sm text-destructive">{errors.itemName}</p>}
                             </div>
                             <div className="space-y-2">

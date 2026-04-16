@@ -39,7 +39,7 @@ async def test_verify_code_invalid(client: AsyncClient, mock_redis: AsyncMock) -
     try:
         response = await client.post(
             "/api/auth/verify-code",
-            json={"email": "test@telecom-sudparis.eu", "code": "WRONGCODE"},
+            json={"email": "test@telecom-sudparis.eu", "code": "WRONGCOD"},
         )
         assert response.status_code == 400
         # Check that increment was called
@@ -64,7 +64,7 @@ async def test_verify_code_rate_limit(client: AsyncClient, mock_redis: AsyncMock
 
         response = await client.post(
             "/api/auth/verify-code",
-            json={"email": email, "code": "12345678"},
+            json={"email": email, "code": "A2B3C4D5"},
         )
         assert response.status_code == 429
         assert "Too many verification attempts" in response.json()["detail"]

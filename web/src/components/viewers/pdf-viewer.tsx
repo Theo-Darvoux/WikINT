@@ -215,7 +215,7 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
     const scrollRef = useRef<HTMLDivElement>(null);
     const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
     const [zoom, setZoom] = useState(100);
-    const [fileBlob, setFileBlob] = useState<Blob | null>(null);
+    const [fileUrl, setFileUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [numPages, setNumPages] = useState<number>(0);
     const [currentPage, setCurrentPage] = useState(1);
@@ -224,27 +224,33 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        let objectUrl: string | null = null;
+        let url: string | null = null;
         let cancelled = false;
+
         Promise.resolve().then(() => {
             if (cancelled) return;
             setLoading(true);
-            setNumPages(0);
             setError(null);
+            setNumPages(0);
+            setFileUrl(null);
         });
+
         fetchMaterialBlob(materialId)
             .then(blob => {
                 if (cancelled) return;
-                objectUrl = URL.createObjectURL(blob);
-                setFileBlob(blob);
+                url = URL.createObjectURL(blob);
+                setFileUrl(url);
             })
             .catch(err => {
                 if (!cancelled) setError(err.message ?? "Failed to load PDF");
             })
-            .finally(() => { if (!cancelled) setLoading(false); });
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+
         return () => {
             cancelled = true;
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
+            if (url) URL.revokeObjectURL(url);
         };
     }, [materialId]);
 
@@ -339,7 +345,7 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
 
     return (
         <div ref={containerRef} className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}>
-            <ViewerToolbar 
+            <ViewerToolbar
                 isFullscreen={isFullscreen}
                 left={
                     <button
@@ -395,7 +401,7 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
 
             <div
                 ref={scrollRef}
-                className={`overflow-auto bg-muted/20 flex flex-col ${isFullscreen ? "flex-1" : "flex-1"
+                className={`overflow-auto bg-zinc-200 dark:bg-zinc-800/50 flex flex-col ${isFullscreen ? "flex-1" : "flex-1"
                     }`}
             >
                 {error && (
@@ -424,9 +430,9 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
                         </div>
                     </div>
                 )}
-                {!loading && !error && fileBlob && (
+                {!loading && !error && fileUrl && (
                     <Document
-                        file={fileBlob}
+                        file={fileUrl}
                         onLoadSuccess={onDocumentLoadSuccess}
                         onLoadError={onDocumentLoadError}
                         loading={

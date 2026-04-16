@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    DateTime,
     Enum,
     ForeignKey,
     String,
@@ -25,6 +26,7 @@ class PRStatus(enum.StrEnum):
     OPEN = "open"
     APPROVED = "approved"
     REJECTED = "rejected"
+    CANCELLED = "cancelled"
 
 
 class PullRequest(UUIDMixin, TimestampMixin, Base):
@@ -60,11 +62,26 @@ class PullRequest(UUIDMixin, TimestampMixin, Base):
         server_default="pending",
     )
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reverts_pr_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("pull_requests.id", ondelete="SET NULL"), nullable=True
+    )
+    reverted_by_pr_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("pull_requests.id", ondelete="SET NULL"), nullable=True
+    )
 
     author: Mapped[User | None] = relationship(
         back_populates="pull_requests", foreign_keys=[author_id]
     )
     reviewer: Mapped[User | None] = relationship(foreign_keys=[reviewed_by])
+    reverts_pr: Mapped[PullRequest | None] = relationship(
+        foreign_keys=[reverts_pr_id], remote_side="PullRequest.id"
+    )
+    reverted_by_pr: Mapped[PullRequest | None] = relationship(
+        foreign_keys=[reverted_by_pr_id], remote_side="PullRequest.id"
+    )
     comments: Mapped[list[PRComment]] = relationship(
         back_populates="pull_request", cascade="all, delete-orphan"
     )
@@ -74,12 +91,36 @@ class PullRequest(UUIDMixin, TimestampMixin, Base):
 
     @property
     def expires_at(self) -> datetime | None:
-        """PRs expire 7 days after the last update if they are still open."""
         if self.status != PRStatus.OPEN:
             return None
         from datetime import timedelta
 
         return self.updated_at + timedelta(days=7)
+
+    @property
+    def revert_grace_expires_at(self) -> datetime | None:
+        if self.status != PRStatus.APPROVED or self.approved_at is None:
+            return None
+        from datetime import timedelta
+
+        approved_at = self.approved_at
+        if approved_at.tzinfo is None:
+            approved_at = approved_at.replace(tzinfo=UTC)
+
+        return approved_at + timedelta(days=7)
+
+    @property
+    def is_revertable(self) -> bool:
+
+        expires = self.revert_grace_expires_at
+        return (
+            self.status == PRStatus.APPROVED
+            and self.type != "revert"
+            and self.reverted_by_pr_id is None
+            and expires is not None
+            and datetime.now(UTC) < expires
+            and self.applied_result is not None
+        )
 
 
 class PRFileClaim(Base):

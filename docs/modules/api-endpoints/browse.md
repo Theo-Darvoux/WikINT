@@ -82,7 +82,7 @@ Toggles the current user's like status on the material.
 Toggles the current user's favourite status on the material.
 
 ### `GET /api/materials/{id}/text-content`
-Returns the raw UTF-8 text of the material's current version. Works for both plain-text files and gzip-compressed text files (`.gz`). Only available for text-based materials.
+Returns the raw UTF-8 text of the material's current version. Automatically decompresses gzip-wrapped content (via both explicit `.gz` extension/mimetype check and magic-number detection). Only available for text-based materials.
 
 ### `POST /api/materials/{id}/text-content`
 Accepts raw UTF-8 text in the request body, gzip-compresses it server-side, and stores it in object storage. Creates a clean `Upload` row and returns a `file_key` ready to be staged in an `edit_material` pull request operation.

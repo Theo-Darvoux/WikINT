@@ -70,6 +70,14 @@ The storage layer supports both MinIO (development) and Cloudflare R2 (productio
 ### 7. MeiliSearch
 Full-text search engine indexing materials and directories. Setup is "soft-fail": if MeiliSearch is unavailable at startup, the API runs in degraded mode (search endpoints return empty results) rather than crashing.
 
+**Two clients are maintained:**
+- `meili_admin_client` — uses `MEILI_MASTER_KEY`. Used by `setup_meilisearch`, index workers, and the reindex script. Never exposed to the public search route.
+- `meili_search_client` — uses `MEILI_SEARCH_KEY` (a search-only key provisioned via the Meilisearch admin API). Used exclusively by `perform_search`. Falls back to the master key in development if `MEILI_SEARCH_KEY` is unset (logs a warning in production).
+
+**Settings idempotency:** `setup_meilisearch` fetches current index settings on startup and calls `update_settings` only when something has changed, avoiding unnecessary full re-indexes on every app restart.
+
+**Ranking:** Uses Meilisearch-native ranking rules (`like_count:desc`, `total_views:desc` appended after standard rules) so pagination is stable and no client-side re-sorting is needed.
+
 ### 8. OnlyOffice Document Server (Optional)
 Provides in-browser viewing and editing of Office documents. Integration uses:
 - JWT-signed document tokens (separate secret from the API JWT)

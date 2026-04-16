@@ -65,7 +65,7 @@ export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
                     />
                 }
             />
-            <div className={`relative flex flex-1 w-full items-center justify-center bg-muted/20 ${isFullscreen ? "" : "h-[calc(100vh-10rem)]"}`}>
+            <div className={`relative flex flex-1 w-full items-center justify-center bg-zinc-200 dark:bg-zinc-800/50 ${isFullscreen ? "" : "h-[calc(100vh-10rem)]"}`}>
                 {loading && (
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 )}

@@ -89,7 +89,7 @@ export function AsyncMaterialImage({ src, alt, material, className }: AsyncMater
                 if (!targetMaterialId) {
                     try {
                         const searchRes = await cachedApiFetch<{ materials: Record<string, unknown>[] }>(
-                            `/search?q=${encodeURIComponent(fileName)}&limit=10`
+                            `/search?query=${encodeURIComponent(fileName)}&limit=10`
                         );
                         const matched = searchRes.materials?.find(
                             (m) => m.title === fileName || (m.current_version_info as Record<string, unknown> | undefined)?.file_name === fileName

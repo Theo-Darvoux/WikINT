@@ -8,9 +8,6 @@ export function useDownload() {
     const [isDownloading, setIsDownloading] = useState(false);
 
     const downloadMaterial = async (materialId: string, versionNumber?: number) => {
-        // Open a blank tab synchronously while still in the user-gesture context
-        // so popup blockers don't interfere with the later window.open call.
-        const newTab = window.open("", "_blank");
         setIsDownloading(true);
         try {
             const endpoint = versionNumber
@@ -19,14 +16,17 @@ export function useDownload() {
 
             const { url } = await apiFetch<{ url: string }>(endpoint);
 
-            if (newTab) {
-                newTab.location.href = url;
-            } else {
-                // Popup was blocked — fall back to same-tab navigation.
-                window.location.assign(url);
-            }
+            // Trigger the download in-place by creating a hidden anchor element.
+            // Since the backend returns a URL with ResponseContentDisposition set to attachment, 
+            // the browser will stay on the current page and initiate the download.
+            const link = document.createElement("a");
+            link.href = url;
+            // The download attribute helps hint to the browser that this should be a download.
+            link.setAttribute("download", "");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         } catch (error) {
-            newTab?.close();
             console.error("Download failed:", error);
             toast.error("Failed to start download. Please try again.");
         } finally {

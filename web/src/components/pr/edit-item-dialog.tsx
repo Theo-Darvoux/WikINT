@@ -18,6 +18,7 @@ import { useStagingStore, type Operation } from "@/lib/staging-store";
 import { submitDirectOperations } from "@/lib/pr-client";
 import { TagInput } from "@/components/ui/tag-input";
 import { useBrowseRefreshStore } from "@/lib/stores";
+import { sanitizeNameInput } from "@/lib/utils";
 
 interface EditItemDialogProps {
     open: boolean;
@@ -64,7 +65,8 @@ export function EditItemDialog({
         description !== currentDescription ||
         hasTagsChanged();
 
-    const canSubmit = hasChanges && title.trim().length > 0 && !submitting;
+    const NAME_MAX = 32;
+    const canSubmit = hasChanges && title.trim().length > 0 && title.length <= NAME_MAX && !submitting;
     const isDraftTarget = target.id.startsWith("$");
 
     const buildOp = (): Operation => {
@@ -150,11 +152,14 @@ export function EditItemDialog({
                         <Input
                             id="edit-title"
                             value={title}
-                            onChange={(e) => setTitle(e.target.value)}
-                            maxLength={100}
+                            onChange={(e) => setTitle(sanitizeNameInput(e.target.value))}
+                            maxLength={NAME_MAX}
                             disabled={submitting}
                             autoFocus
                         />
+                        <p className={`text-[11px] text-right ${title.length >= NAME_MAX ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                            {title.length}/{NAME_MAX}
+                        </p>
                     </div>
 
                     <div className="space-y-1.5">

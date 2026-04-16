@@ -15,7 +15,7 @@ function OwnProfileContent() {
 
     const fetchProfile = useCallback(async () => {
         try {
-            const data = await apiFetch<UserProfile>("/users/me");
+            const data = await apiFetch<UserProfile>(`/users/me?t=${Date.now()}`);
             setProfile(data);
             setUser(data);
         } catch {
@@ -55,12 +55,18 @@ function OwnProfileContent() {
 
             toast.loading("Processing and compressing...", { id: toastId });
             
-            await apiFetch("/users/me", {
+            const updatedUser = await apiFetch<UserProfile>("/users/me", {
                 method: "PATCH",
                 body: JSON.stringify({ avatar_url: upload.file_key }),
             });
 
             toast.success("Avatar updated", { id: toastId });
+            
+            // Immediately update state with returned user data while keeping old stats if necessary
+            setProfile(prev => prev ? { ...prev, ...updatedUser } : updatedUser);
+            setUser(updatedUser);
+            
+            // Still fetch full profile to ensure stats are perfectly synced if they changed (unlikely for avatar)
             fetchProfile();
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "Failed to upload avatar", { id: toastId });

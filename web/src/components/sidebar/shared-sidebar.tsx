@@ -1,6 +1,7 @@
 "use client";
 
 import { useUIStore, type SidebarTab } from "@/lib/stores";
+import { cn } from "@/lib/utils";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import dynamic from "next/dynamic";
@@ -136,10 +137,20 @@ export function SharedSidebar() {
   const { sidebarOpen, closeSidebar } = useUIStore();
   const isDesktop = useIsDesktop();
 
-  // Desktop: render directly inside the page's bounded container
+  // Desktop: render directly inside the page's bounded container with transition
   if (isDesktop) {
-    if (!sidebarOpen) return null;
-    return <SidebarContent />;
+    return (
+      <aside
+        className={cn(
+          "relative h-full transition-all duration-150 ease-in-out overflow-hidden bg-background border-l border-border",
+          sidebarOpen ? "w-80 opacity-100" : "w-0 opacity-0 border-transparent pointer-events-none"
+        )}
+      >
+        <div className="w-80 h-full flex flex-col">
+          <SidebarContent />
+        </div>
+      </aside>
+    );
   }
 
   // Mobile: Drawer for native feel and swipe-to-dismiss

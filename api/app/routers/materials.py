@@ -391,11 +391,14 @@ async def get_material_text_content(
 
     raw_bytes = await read_full_object(version.file_key)
 
-    if is_gzip_wrapped:
+    # Decompress if explicitly wrapped OR if bytes look like GZIP (X12 fix)
+    if is_gzip_wrapped or raw_bytes.startswith(b"\x1f\x8b"):
         try:
             raw_bytes = gzip.decompress(raw_bytes)
         except Exception as exc:
-            raise BadRequestError(f"Failed to decompress file: {exc}") from exc
+            # If magic number was a false positive, we just fall through
+            if is_gzip_wrapped:
+                raise BadRequestError(f"Failed to decompress file: {exc}") from exc
 
     # Detect and strip UTF-8 BOM if present
     if raw_bytes.startswith(b"\xef\xbb\xbf"):

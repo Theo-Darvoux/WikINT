@@ -18,20 +18,20 @@ Aggregate home-page data endpoint. All routes require authentication (`CurrentUs
 
 ## Comments (`/api/comments`)
 Polymorphic comment system supporting threaded replies:
-- `POST /api/comments` — Create comment on any target (material, directory, etc.)
+- `POST /api/comments` — Create comment on any target (material, directory, etc.) [Rate Limit: 10/min]
 - `GET /api/comments?target_type=...&target_id=...` — List comments for a target
 - `PUT /api/comments/{id}` — Edit own comment
 - `DELETE /api/comments/{id}` — Delete own comment
 
 ## PR Comments (`/api/pull-requests/{id}/comments`)
 Discussion threads on pull requests:
-- `POST /api/pull-requests/{id}/comments` — Add a comment
+- `POST /api/pull-requests/{id}/comments` — Add a comment [Rate Limit: 10/min]
 - `GET /api/pull-requests/{id}/comments` — List comments
 - Supports `parent_id` for threaded replies
 
 ## Annotations (`/api/annotations`)
 Document-level annotations with spatial coordinates:
-- `POST /api/materials/{id}/annotations` — Create annotation on a material
+- `POST /api/materials/{id}/annotations` — Create annotation on a material [Rate Limit: 10/min]
 - `GET /api/materials/{id}/annotations` — List annotations for a material
 - Annotations include `page_number` and `coordinates` (JSONB) for positioning
 

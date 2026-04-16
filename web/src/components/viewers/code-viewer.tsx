@@ -176,7 +176,7 @@ export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
                     />
                 }
             />
-            <div className="flex-1 overflow-auto text-sm">
+            <div className="flex-1 overflow-auto bg-zinc-200 dark:bg-zinc-800/50 text-sm">
                 {truncated && (
                     <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                         <span>⚠ File truncated — showing first 512 KiB of a larger file. Download to view the full content.</span>

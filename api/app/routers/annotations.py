@@ -1,11 +1,12 @@
 import math
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.core.database import get_db
+from app.core.limiter import limiter
 from app.core.sse import (
     broadcast_to_topic,
     register_topic_queue,
@@ -66,7 +67,9 @@ async def list_annotations(
     response_model=AnnotationOut,
     status_code=201,
 )
+@limiter.limit("10/minute")
 async def add_annotation(
+    request: Request,
     material_id: str,
     data: AnnotationCreateIn,
     user: OnboardedUser,

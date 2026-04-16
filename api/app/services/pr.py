@@ -2,6 +2,7 @@ import re
 import typing
 import uuid
 from collections import defaultdict
+from datetime import UTC
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models.directory import Directory
 from app.models.material import Material, MaterialVersion
-from app.models.pull_request import PullRequest
+from app.models.pull_request import PRStatus, PullRequest
 from app.models.security import VirusScanResult
 from app.models.tag import Tag
 from app.services.directory import slugify
@@ -181,6 +182,39 @@ async def _enqueue_deindex_material_recursive(db: AsyncSession, material_id: uui
         )
 
 
+async def _enqueue_reindex_directory_recursive(db: AsyncSession, directory_id: uuid.UUID) -> None:
+    """Enqueue index_directory for a directory and all its descendants, plus their materials."""
+    dir_cte = (
+        select(Directory.id)
+        .where(Directory.id == directory_id)
+        .cte(name="reindex_descendant_dirs", recursive=True)
+    )
+    dir_alias = aliased(Directory)
+    dir_cte = dir_cte.union_all(
+        select(dir_alias.id).join(dir_cte, dir_alias.parent_id == dir_cte.c.id)
+    )
+
+    all_dir_ids = (await db.scalars(select(dir_cte.c.id))).all()
+
+    mat_ids = (
+        await db.scalars(select(Material.id).where(Material.directory_id.in_(all_dir_ids)))
+    ).all()
+
+    seen: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
+
+    for did in all_dir_ids:
+        key = ("index_directory", str(did))
+        if key not in seen:
+            seen.add(key)
+            db.info.setdefault("post_commit_jobs", []).append(("index_directory", did))
+
+    for mid in mat_ids:
+        key = ("index_material", str(mid))
+        if key not in seen:
+            seen.add(key)
+            db.info.setdefault("post_commit_jobs", []).append(("index_material", mid))
+
+
 async def _enqueue_deindex_directory_recursive(db: AsyncSession, directory_id: uuid.UUID) -> None:
     """Recursively find all subdirectories and materials (including attachments) to de-index them."""
     # 1. Find all descendant directories (recursive subfolders)
@@ -205,14 +239,13 @@ async def _enqueue_deindex_directory_recursive(db: AsyncSession, directory_id: u
     for mid in mat_ids:
         await _enqueue_deindex_material_recursive(db, mid)
 
-    # 4. Enqueue the directories themselves
+    # 4. Enqueue the directories themselves (dedup via set)
+    seen_deindex: set[tuple[str, str, str]] = db.info.setdefault("post_commit_deindex_keys", set())
     for did in all_dir_ids:
-        # Skip if already enqueued by _enqueue_deindex_material_recursive (unlikely but safe)
-        existing_jobs = db.info.get("post_commit_jobs", [])
-        if not any(j == ("delete_indexed_item", "directories", str(did)) for j in existing_jobs):
-            db.info.setdefault("post_commit_jobs", []).append(
-                ("delete_indexed_item", "directories", str(did))
-            )
+        key = ("delete_indexed_item", "directories", str(did))
+        if key not in seen_deindex:
+            seen_deindex.add(key)
+            db.info.setdefault("post_commit_jobs", []).append(key)
 
 
 def topo_sort_operations(operations: list[dict[str, typing.Any]]) -> list[dict[str, typing.Any]]:
@@ -445,7 +478,11 @@ async def _exec_create_material(
 
                     await increment_cas_ref(redis_client, v.cas_sha256)
 
-    db.info.setdefault("post_commit_jobs", []).append(("index_material", mat_id))
+    seen: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
+    key = ("index_material", str(mat_id))
+    if key not in seen:
+        seen.add(key)
+        db.info.setdefault("post_commit_jobs", []).append(("index_material", mat_id))
 
     return mat_id
 
@@ -541,9 +578,45 @@ async def _exec_edit_material(
 
             await increment_cas_ref(redis_client, mv.cas_sha256)
 
-    db.info.setdefault("post_commit_jobs", []).append(("index_material", mat.id))
+    seen: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
+    key = ("index_material", str(mat.id))
+    if key not in seen:
+        seen.add(key)
+        db.info.setdefault("post_commit_jobs", []).append(("index_material", mat.id))
 
     return mat.id
+
+
+async def _soft_delete_material_tree(db: AsyncSession, mat: Material) -> None:
+    """Soft-delete a material and its attachment subtree (system dir + child materials)."""
+    from datetime import datetime
+
+    now = datetime.now(UTC)
+    mat.deleted_at = now
+
+    versions = await db.scalars(
+        select(MaterialVersion)
+        .where(MaterialVersion.material_id == mat.id)
+        .execution_options(include_deleted=True)
+    )
+    for v in versions:
+        v.deleted_at = now
+
+    sys_dir = await db.scalar(select(Directory).where(Directory.name == f"attachments:{mat.id}"))
+    if sys_dir:
+        sys_dir.deleted_at = now
+        att_mats = (
+            await db.scalars(select(Material).where(Material.directory_id == sys_dir.id))
+        ).all()
+        for att in att_mats:
+            att.deleted_at = now
+            att_versions = await db.scalars(
+                select(MaterialVersion)
+                .where(MaterialVersion.material_id == att.id)
+                .execution_options(include_deleted=True)
+            )
+            for av in att_versions:
+                av.deleted_at = now
 
 
 async def _exec_delete_material(
@@ -556,40 +629,8 @@ async def _exec_delete_material(
 
     deleted_id = mat.id
 
-    # Collect file keys to delete / CAS refs to decrement
-    file_keys_to_delete: list[str] = []
-    versions = await db.scalars(
-        select(MaterialVersion).where(MaterialVersion.material_id == deleted_id)
-    )
-    for v in versions:
-        if v.file_key:
-            file_keys_to_delete.append(v.file_key)
-
-    await db.delete(mat)
-
-    sys_dir = await db.scalar(select(Directory).where(Directory.name == f"attachments:{mat.id}"))
-    if sys_dir:
-        att_mats = await db.scalars(select(Material).where(Material.directory_id == sys_dir.id))
-        att_mat_ids = [m.id for m in att_mats]
-        if att_mat_ids:
-            att_versions = await db.scalars(
-                select(MaterialVersion).where(MaterialVersion.material_id.in_(att_mat_ids))
-            )
-            for av in att_versions:
-                if av.file_key:
-                    file_keys_to_delete.append(av.file_key)
-
-        await db.delete(sys_dir)
-
-    # Recursive de-indexing (Issue #GhostSearch)
     await _enqueue_deindex_material_recursive(db, deleted_id)
-
-    # CAS V2: delete_storage_objects already handles cas/ keys via ref
-    # counting (decrement, only delete S3 object at ref_count=0).
-    if file_keys_to_delete:
-        db.info.setdefault("post_commit_jobs", []).append(
-            ("delete_storage_objects", file_keys_to_delete)
-        )
+    await _soft_delete_material_tree(db, mat)
 
     return deleted_id
 
@@ -622,7 +663,11 @@ async def _exec_create_directory(
     db.add(d)
     await db.flush()
 
-    db.info.setdefault("post_commit_jobs", []).append(("index_directory", d.id))
+    seen: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
+    key = ("index_directory", str(d.id))
+    if key not in seen:
+        seen.add(key)
+        db.info.setdefault("post_commit_jobs", []).append(("index_directory", d.id))
 
     return dir_id
 
@@ -637,6 +682,7 @@ async def _exec_edit_directory(
     if not dir_obj:
         raise NotFoundError("Directory not found")
 
+    name_or_slug_changed = p.get("name") is not None
     if p.get("name") is not None:
         dir_obj.name = p["name"]
         dir_obj.slug = await _unique_directory_slug(
@@ -655,9 +701,47 @@ async def _exec_edit_directory(
         dir_obj.metadata_ = p["metadata"]
 
     await db.flush()
-    db.info.setdefault("post_commit_jobs", []).append(("index_directory", dir_obj.id))
+
+    if name_or_slug_changed:
+        # Rename propagates ancestor_path to all descendants — reindex the whole subtree.
+        await _enqueue_reindex_directory_recursive(db, dir_obj.id)
+    else:
+        seen: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
+        key = ("index_directory", str(dir_obj.id))
+        if key not in seen:
+            seen.add(key)
+            db.info.setdefault("post_commit_jobs", []).append(("index_directory", dir_obj.id))
 
     return dir_obj.id
+
+
+async def _soft_delete_directory_tree(db: AsyncSession, directory_id: uuid.UUID) -> None:
+    """Soft-delete a directory and its entire subtree (children, materials, versions)."""
+    from datetime import datetime
+
+    now = datetime.now(UTC)
+
+    dir_cte = (
+        select(Directory.id)
+        .where(Directory.id == directory_id)
+        .cte(name="soft_del_dirs", recursive=True)
+    )
+    dir_alias = aliased(Directory)
+    dir_cte = dir_cte.union_all(
+        select(dir_alias.id).join(dir_cte, dir_alias.parent_id == dir_cte.c.id)
+    )
+    all_dir_ids = (await db.scalars(select(dir_cte.c.id))).all()
+
+    for did in all_dir_ids:
+        d = await db.get(Directory, did)
+        if d:
+            d.deleted_at = now
+
+    mat_rows = (
+        await db.scalars(select(Material).where(Material.directory_id.in_(all_dir_ids)))
+    ).all()
+    for mat in mat_rows:
+        await _soft_delete_material_tree(db, mat)
 
 
 async def _exec_delete_directory(
@@ -670,10 +754,8 @@ async def _exec_delete_directory(
 
     deleted_id = dir_obj.id
 
-    # Recursive de-indexing for all descendant subdirectories and materials (Issue #GhostSearch)
     await _enqueue_deindex_directory_recursive(db, deleted_id)
-
-    await db.delete(dir_obj)
+    await _soft_delete_directory_tree(db, deleted_id)
 
     return deleted_id
 
@@ -709,7 +791,8 @@ async def _exec_move_item(
                 check_id = parent
         dir_obj.parent_id = new_parent_id
         await db.flush()
-        db.info.setdefault("post_commit_jobs", []).append(("index_directory", dir_obj.id))
+        # Moving a directory changes ancestor_path for the whole subtree.
+        await _enqueue_reindex_directory_recursive(db, dir_obj.id)
         return dir_obj.id
     else:
         mat = await db.scalar(select(Material).where(Material.id == target_id))
@@ -720,7 +803,11 @@ async def _exec_move_item(
         # Re-slug to ensure uniqueness in new location
         mat.slug = await _unique_material_slug(db, new_parent, mat.title, exclude_id=mat.id)
         await db.flush()
-        db.info.setdefault("post_commit_jobs", []).append(("index_material", mat.id))
+        seen: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
+        key = ("index_material", str(mat.id))
+        if key not in seen:
+            seen.add(key)
+            db.info.setdefault("post_commit_jobs", []).append(("index_material", mat.id))
         return mat.id
 
 
@@ -786,6 +873,84 @@ async def _build_browse_path(db: AsyncSession, op_type: str, result_id: uuid.UUI
 # ---------------------------------------------------------------------------
 
 
+async def _capture_pre_state(
+    db: AsyncSession,
+    op_type: str,
+    op: dict[str, typing.Any],
+    id_map: dict[str, uuid.UUID],
+) -> dict[str, typing.Any] | None:
+    """Snapshot the entity state before mutation for revertable ops."""
+    pre: dict[str, typing.Any] = {}
+
+    if op_type == "edit_material":
+        mat_id = _resolve(str(op["material_id"]), id_map)
+        mat = await db.scalar(
+            select(Material).where(Material.id == mat_id).options(selectinload(Material.tags))
+        )
+        if not mat:
+            return None
+        pre = {
+            "title": mat.title,
+            "slug": mat.slug,
+            "type": mat.type,
+            "description": mat.description,
+            "metadata": mat.metadata_,
+            "tags": [t.name for t in mat.tags],
+            "current_version": mat.current_version,
+            "directory_id": str(mat.directory_id) if mat.directory_id else None,
+        }
+        if op.get("file_key"):
+            latest_mv = await db.scalar(
+                select(MaterialVersion)
+                .where(MaterialVersion.material_id == mat.id)
+                .order_by(MaterialVersion.version_number.desc())
+                .limit(1)
+            )
+            if latest_mv:
+                pre["prev_version_number"] = latest_mv.version_number
+                pre["prev_file_key"] = latest_mv.file_key
+                pre["prev_file_name"] = latest_mv.file_name
+                pre["prev_cas_sha256"] = latest_mv.cas_sha256
+        return pre
+
+    if op_type == "edit_directory":
+        dir_id = _resolve(str(op["directory_id"]), id_map)
+        d = await db.scalar(
+            select(Directory).where(Directory.id == dir_id).options(selectinload(Directory.tags))
+        )
+        if not d:
+            return None
+        return {
+            "name": d.name,
+            "slug": d.slug,
+            "type": d.type,
+            "description": d.description,
+            "metadata": d.metadata_,
+            "tags": [t.name for t in d.tags],
+            "parent_id": str(d.parent_id) if d.parent_id else None,
+        }
+
+    if op_type == "move_item":
+        target_id = _resolve(str(op["target_id"]), id_map)
+        if op["target_type"] == "directory":
+            d = await db.scalar(select(Directory).where(Directory.id == target_id))
+            if d:
+                return {
+                    "target_type": "directory",
+                    "prev_parent_id": str(d.parent_id) if d.parent_id else None,
+                }
+        else:
+            mat = await db.scalar(select(Material).where(Material.id == target_id))
+            if mat:
+                return {
+                    "target_type": "material",
+                    "prev_directory_id": str(mat.directory_id) if mat.directory_id else None,
+                    "prev_slug": mat.slug,
+                }
+
+    return None
+
+
 async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) -> None:
     """
     Execute all operations in a batch PR.  Operations are topologically sorted
@@ -795,11 +960,13 @@ async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) 
     The original pr.payload is never mutated.  After execution, pr.applied_result
     is set to an enriched copy of the sorted operations, each annotated with:
       - result_id:          UUID string of the created/edited/deleted item
-      - result_browse_path: slug-path usable as /browse/<path> (omitted for deletes
-                            where the path could not be captured before deletion)
+      - result_browse_path: slug-path usable as /browse/<path>
+      - pre_state:          snapshot of the entity before mutation (for edit/move ops)
     """
     if pr.applied_result is not None:
         return
+
+    from datetime import datetime
 
     sorted_ops = topo_sort_operations(list(pr.payload))
     id_map: dict[str, uuid.UUID] = {}
@@ -815,6 +982,11 @@ async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) 
             raise BadRequestError(f"Unknown operation type: {op_type}")
 
         is_delete = "delete" in op_type
+
+        # Capture pre-state before mutation (for revertable edits/moves)
+        pre_state: dict[str, typing.Any] | None = None
+        if op_type in ("edit_material", "edit_directory", "move_item"):
+            pre_state = await _capture_pre_state(db, op_type, op, id_map)
 
         # For deletes, capture the browse path BEFORE the item is removed
         pre_delete_browse_path: str | None = None
@@ -838,6 +1010,8 @@ async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) 
         # Build the enriched operation record for applied_result
         enriched: dict[str, typing.Any] = dict(op)
         enriched["result_id"] = str(result_id)
+        if pre_state is not None:
+            enriched["pre_state"] = pre_state
         if is_delete and pre_delete_browse_path:
             enriched["result_browse_path"] = pre_delete_browse_path
         elif not is_delete:
@@ -846,10 +1020,400 @@ async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) 
                 if browse_path:
                     enriched["result_browse_path"] = browse_path
             except Exception:
-                pass  # non-critical; skip if path can't be resolved
+                pass
 
         result_ops.append(enriched)
 
-    # Store enriched results without touching the original payload
     pr.applied_result = result_ops
     flag_modified(pr, "applied_result")
+    pr.approved_at = datetime.now(UTC)
+
+
+# ---------------------------------------------------------------------------
+# Revert executors (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+async def _exec_undelete_material(
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
+) -> uuid.UUID:
+    """Restore a soft-deleted material and its attachment subtree."""
+    mat_id = _resolve(str(p["material_id"]), id_map)
+    mat = await db.scalar(
+        select(Material)
+        .where(Material.id == mat_id)
+        .execution_options(include_deleted=True)
+    )
+    if not mat:
+        raise NotFoundError("Material not found (even among deleted)")
+
+    mat.deleted_at = None
+
+    versions = await db.scalars(
+        select(MaterialVersion)
+        .where(MaterialVersion.material_id == mat.id)
+        .execution_options(include_deleted=True)
+    )
+    for v in versions:
+        v.deleted_at = None
+
+    sys_dir = await db.scalar(
+        select(Directory)
+        .where(Directory.name == f"attachments:{mat.id}")
+        .execution_options(include_deleted=True)
+    )
+    if sys_dir:
+        sys_dir.deleted_at = None
+        att_mats = (
+            await db.scalars(
+                select(Material)
+                .where(Material.directory_id == sys_dir.id)
+                .execution_options(include_deleted=True)
+            )
+        ).all()
+        for att in att_mats:
+            att.deleted_at = None
+            att_vs = await db.scalars(
+                select(MaterialVersion)
+                .where(MaterialVersion.material_id == att.id)
+                .execution_options(include_deleted=True)
+            )
+            for av in att_vs:
+                av.deleted_at = None
+
+    seen: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
+    key = ("index_material", str(mat.id))
+    if key not in seen:
+        seen.add(key)
+        db.info.setdefault("post_commit_jobs", []).append(("index_material", mat.id))
+
+    return mat.id
+
+
+async def _exec_undelete_directory(
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
+) -> uuid.UUID:
+    """Restore a soft-deleted directory and its entire subtree."""
+    dir_id = _resolve(str(p["directory_id"]), id_map)
+
+    dir_cte = (
+        select(Directory.id)
+        .where(Directory.id == dir_id)
+        .execution_options(include_deleted=True)
+        .cte(name="undelete_dirs", recursive=True)
+    )
+    dir_alias = aliased(Directory)
+    dir_cte = dir_cte.union_all(
+        select(dir_alias.id)
+        .where(dir_alias.parent_id == dir_cte.c.id)
+        .execution_options(include_deleted=True)
+    )
+    all_dir_ids = (
+        await db.scalars(
+            select(dir_cte.c.id).execution_options(include_deleted=True)
+        )
+    ).all()
+
+    for did in all_dir_ids:
+        d = await db.scalar(
+            select(Directory).where(Directory.id == did).execution_options(include_deleted=True)
+        )
+        if d:
+            d.deleted_at = None
+
+    mat_rows = (
+        await db.scalars(
+            select(Material)
+            .where(Material.directory_id.in_(all_dir_ids))
+            .execution_options(include_deleted=True)
+        )
+    ).all()
+    for mat in mat_rows:
+        mat.deleted_at = None
+        vs = await db.scalars(
+            select(MaterialVersion)
+            .where(MaterialVersion.material_id == mat.id)
+            .execution_options(include_deleted=True)
+        )
+        for v in vs:
+            v.deleted_at = None
+
+    await _enqueue_reindex_directory_recursive(db, dir_id)
+    return dir_id
+
+
+async def _exec_revert_edit_material(
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
+) -> uuid.UUID:
+    """Revert a material to its pre-PR state using the captured pre_state snapshot."""
+    mat_id = _resolve(str(p["material_id"]), id_map)
+    pre = p.get("pre_state", {})
+    mat = await db.scalar(
+        select(Material).where(Material.id == mat_id).options(selectinload(Material.tags))
+    )
+    if not mat:
+        raise NotFoundError("Material not found")
+
+    mat.title = pre["title"]
+    mat.slug = pre["slug"]
+    mat.type = pre["type"]
+    mat.description = pre.get("description")
+    mat.metadata_ = pre.get("metadata", {})
+
+    if "tags" in pre:
+        await get_or_create_tags(db, pre["tags"])
+        normalized = [t.strip().lower() for t in pre["tags"] if t.strip()]
+        if normalized:
+            tag_result = await db.execute(select(Tag).where(Tag.name.in_(normalized)))
+            mat.tags = list(tag_result.scalars().all())
+        else:
+            mat.tags = []
+
+    if pre.get("prev_version_number") is not None:
+        versions_to_drop = await db.scalars(
+            select(MaterialVersion)
+            .where(
+                MaterialVersion.material_id == mat.id,
+                MaterialVersion.version_number > pre["prev_version_number"],
+            )
+        )
+        for v in versions_to_drop:
+            if v.cas_sha256 and v.file_key and v.file_key.startswith("cas/"):
+                from app.core.cas import decrement_cas_ref
+                from app.core.redis import redis_client
+
+                await decrement_cas_ref(redis_client, v.cas_sha256)
+            await db.delete(v)
+
+        mat.current_version = pre["prev_version_number"]
+
+    await db.flush()
+
+    seen: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
+    key = ("index_material", str(mat.id))
+    if key not in seen:
+        seen.add(key)
+        db.info.setdefault("post_commit_jobs", []).append(("index_material", mat.id))
+
+    return mat.id
+
+
+async def _exec_revert_edit_directory(
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
+) -> uuid.UUID:
+    """Revert a directory to its pre-PR state."""
+    dir_id = _resolve(str(p["directory_id"]), id_map)
+    pre = p.get("pre_state", {})
+    d = await db.scalar(
+        select(Directory).where(Directory.id == dir_id).options(selectinload(Directory.tags))
+    )
+    if not d:
+        raise NotFoundError("Directory not found")
+
+    name_changed = d.name != pre["name"]
+    d.name = pre["name"]
+    d.slug = pre["slug"]
+    d.type = pre["type"]
+    d.description = pre.get("description")
+    d.metadata_ = pre.get("metadata", {})
+
+    if "tags" in pre:
+        await get_or_create_tags(db, pre["tags"])
+        normalized = [t.strip().lower() for t in pre["tags"] if t.strip()]
+        if normalized:
+            tag_result = await db.execute(select(Tag).where(Tag.name.in_(normalized)))
+            d.tags = list(tag_result.scalars().all())
+        else:
+            d.tags = []
+
+    await db.flush()
+
+    if name_changed:
+        await _enqueue_reindex_directory_recursive(db, d.id)
+    else:
+        seen: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
+        key = ("index_directory", str(d.id))
+        if key not in seen:
+            seen.add(key)
+            db.info.setdefault("post_commit_jobs", []).append(("index_directory", d.id))
+
+    return d.id
+
+
+async def _exec_revert_move_item(
+    db: AsyncSession, p: dict[str, typing.Any], pr: PullRequest, id_map: dict[str, uuid.UUID]
+) -> uuid.UUID:
+    """Move an item back to its pre-PR location."""
+    target_id = _resolve(str(p["target_id"]), id_map)
+    pre = p.get("pre_state", {})
+
+    if pre.get("target_type") == "directory":
+        d = await db.scalar(select(Directory).where(Directory.id == target_id))
+        if not d:
+            raise NotFoundError("Directory not found")
+        prev_parent = uuid.UUID(pre["prev_parent_id"]) if pre.get("prev_parent_id") else None
+        d.parent_id = prev_parent
+        await db.flush()
+        await _enqueue_reindex_directory_recursive(db, d.id)
+        return d.id
+    else:
+        mat = await db.scalar(select(Material).where(Material.id == target_id))
+        if not mat:
+            raise NotFoundError("Material not found")
+        prev_dir = uuid.UUID(pre["prev_directory_id"]) if pre.get("prev_directory_id") else None
+        mat.directory_id = prev_dir
+        mat.slug = pre.get("prev_slug") or await _unique_material_slug(
+            db, prev_dir, mat.title, exclude_id=mat.id
+        )
+        await db.flush()
+        seen: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
+        key = ("index_material", str(mat.id))
+        if key not in seen:
+            seen.add(key)
+            db.info.setdefault("post_commit_jobs", []).append(("index_material", mat.id))
+        return mat.id
+
+
+_REVERT_EXECUTORS: dict[
+    str,
+    typing.Callable[
+        [AsyncSession, dict[str, typing.Any], PullRequest, dict[str, uuid.UUID]],
+        typing.Coroutine[typing.Any, typing.Any, uuid.UUID],
+    ],
+] = {
+    "create_material": _exec_delete_material,
+    "create_directory": _exec_delete_directory,
+    "edit_material": _exec_revert_edit_material,
+    "edit_directory": _exec_revert_edit_directory,
+    "delete_material": _exec_undelete_material,
+    "delete_directory": _exec_undelete_directory,
+    "move_item": _exec_revert_move_item,
+}
+
+
+def _build_reverse_ops(applied_result: list[dict[str, typing.Any]]) -> list[dict[str, typing.Any]]:
+    """Build the list of reverse operations from an applied_result, in reverse order."""
+    reverse_ops: list[dict[str, typing.Any]] = []
+
+    for enriched in reversed(applied_result):
+        op_type = str(enriched.get("op", ""))
+        result_id = enriched.get("result_id")
+        pre_state = enriched.get("pre_state")
+
+        if op_type == "create_material":
+            reverse_ops.append({"op": "delete_material", "material_id": result_id})
+        elif op_type == "create_directory":
+            reverse_ops.append({"op": "delete_directory", "directory_id": result_id})
+        elif op_type == "edit_material":
+            reverse_ops.append({
+                "op": "edit_material",
+                "material_id": result_id,
+                "pre_state": pre_state,
+            })
+        elif op_type == "edit_directory":
+            reverse_ops.append({
+                "op": "edit_directory",
+                "directory_id": result_id,
+                "pre_state": pre_state,
+            })
+        elif op_type == "delete_material":
+            reverse_ops.append({"op": "undelete_material", "material_id": result_id})
+        elif op_type == "delete_directory":
+            reverse_ops.append({"op": "undelete_directory", "directory_id": result_id})
+        elif op_type == "move_item":
+            reverse_ops.append({
+                "op": "move_item",
+                "target_id": result_id,
+                "target_type": enriched.get("target_type"),
+                "pre_state": pre_state,
+            })
+
+    return reverse_ops
+
+
+# Dispatch table for revert ops — maps the REVERSE op name to its executor.
+_REVERT_DISPATCH: dict[
+    str,
+    typing.Callable[
+        [AsyncSession, dict[str, typing.Any], PullRequest, dict[str, uuid.UUID]],
+        typing.Coroutine[typing.Any, typing.Any, uuid.UUID],
+    ],
+] = {
+    "delete_material": _exec_delete_material,
+    "delete_directory": _exec_delete_directory,
+    "edit_material": _exec_revert_edit_material,
+    "edit_directory": _exec_revert_edit_directory,
+    "undelete_material": _exec_undelete_material,
+    "undelete_directory": _exec_undelete_directory,
+    "move_item": _exec_revert_move_item,
+}
+
+
+async def revert_pr(
+    db: AsyncSession,
+    original_pr: PullRequest,
+    admin_user_id: uuid.UUID,
+) -> PullRequest:
+    """
+    Create and immediately apply a revert PR that undoes all operations
+    from the original PR. The original is marked as reverted.
+    """
+    from datetime import datetime
+
+    if original_pr.applied_result is None:
+        raise BadRequestError("PR has no applied_result — cannot revert (legacy PR without pre-state snapshot)")
+
+    # Check that all edit/move ops have pre_state
+    for enriched in original_pr.applied_result:
+        op_type = str(enriched.get("op", ""))
+        if op_type in ("edit_material", "edit_directory", "move_item") and not enriched.get("pre_state"):
+            raise BadRequestError(
+                f"Operation '{op_type}' in PR is missing pre_state snapshot — "
+                "cannot revert (legacy PR approved before revert support was added)"
+            )
+
+    reverse_ops = _build_reverse_ops(original_pr.applied_result)
+
+    revert = PullRequest(
+        id=uuid.uuid4(),
+        type="revert",
+        status=PRStatus.APPROVED,
+        title=f"Revert: {original_pr.title}",
+        description=f"Automatic revert of PR \"{original_pr.title}\" (id: {original_pr.id})",
+        payload=reverse_ops,
+        summary_types=list({op["op"] for op in reverse_ops}),
+        author_id=admin_user_id,
+        reviewed_by=admin_user_id,
+        reverts_pr_id=original_pr.id,
+        approved_at=datetime.now(UTC),
+    )
+    db.add(revert)
+    await db.flush()
+
+    id_map: dict[str, uuid.UUID] = {}
+    result_ops: list[dict[str, typing.Any]] = []
+
+    for op in reverse_ops:
+        op_type = str(op["op"])
+        executor = _REVERT_DISPATCH.get(op_type)
+        if not executor:
+            raise BadRequestError(f"No revert executor for op type: {op_type}")
+
+        result_id = await executor(db, op, revert, id_map)
+
+        enriched_rev: dict[str, typing.Any] = dict(op)
+        enriched_rev["result_id"] = str(result_id)
+        try:
+            bp = await _build_browse_path(db, op_type, result_id)
+            if bp:
+                enriched_rev["result_browse_path"] = bp
+        except Exception:
+            pass
+        result_ops.append(enriched_rev)
+
+    revert.applied_result = result_ops
+    flag_modified(revert, "applied_result")
+
+    original_pr.reverted_by_pr_id = revert.id
+
+    return revert

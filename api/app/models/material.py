@@ -19,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin, UUIDMixin
+from app.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 from app.models.security import VirusScanResult
 
 if TYPE_CHECKING:
@@ -29,15 +29,23 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
-class Material(UUIDMixin, TimestampMixin, Base):
+class Material(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "materials"
     __table_args__ = (
-        UniqueConstraint("directory_id", "slug", name="uq_material_directory_slug"),
+        Index(
+            "uq_material_directory_slug",
+            "directory_id",
+            "slug",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+            sqlite_where=text("deleted_at IS NULL"),
+        ),
         Index(
             "uq_material_root_slug",
             "slug",
             unique=True,
-            postgresql_where=text("directory_id IS NULL"),
+            postgresql_where=text("directory_id IS NULL AND deleted_at IS NULL"),
+            sqlite_where=text("directory_id IS NULL AND deleted_at IS NULL"),
         ),
     )
 
@@ -122,7 +130,7 @@ class MaterialFavourite(UUIDMixin, Base):
     material: Mapped[Material] = relationship(back_populates="favourites")
 
 
-class MaterialVersion(UUIDMixin, Base):
+class MaterialVersion(UUIDMixin, SoftDeleteMixin, Base):
     __tablename__ = "material_versions"
     __table_args__ = (
         UniqueConstraint("material_id", "version_number", name="uq_material_version"),

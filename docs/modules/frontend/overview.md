@@ -249,6 +249,22 @@ Handles the three-phase upload flow:
 
 Supports progress callbacks (`onProgress`, `onStatusUpdate`) and `AbortController` for cancellation.
 
+## Download System (`hooks/use-download.ts`)
+
+The download system manages triggering file downloads from the browser without navigating away from the current page.
+
+### Architecture
+
+- **`useDownload()`** — Hook providing `downloadMaterial(id, version?)` and `isDownloading` state.
+- **In-place Triggering** — To ensure a seamless UX, downloads are triggered using a hidden anchor element. This prevents the browser from opening a new tab, as the backend provides `Content-Disposition: attachment` headers in the presigned URL.
+
+### Flow
+1. Fetch a short-lived presigned download URL from the backend.
+2. Create a temporary `<a>` element in the DOM.
+3. Set `href` to the presigned URL.
+4. Programmatically click the element to trigger the browser's download manager.
+5. Cleanup the temporary element.
+
 ## Crypto Utils (`lib/crypto-utils.ts`)
 
 Client-side SHA-256 hashing using the Web Crypto API. Used for:

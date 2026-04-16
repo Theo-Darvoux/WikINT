@@ -3,6 +3,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, Field
 
+from app.core.sanitization import SanitizedStr
+
 StrFromUUID = Annotated[str, BeforeValidator(lambda v: str(v))]
 OptStrFromUUID = Annotated[str | None, BeforeValidator(lambda v: str(v) if v is not None else None)]
 
@@ -10,11 +12,11 @@ OptStrFromUUID = Annotated[str | None, BeforeValidator(lambda v: str(v) if v is 
 class CommentCreateIn(BaseModel):
     target_type: Literal["directory", "material"]
     target_id: str
-    body: str = Field(min_length=1, max_length=10000)
+    body: SanitizedStr = Field(min_length=1, max_length=10000)
 
 
 class CommentUpdateIn(BaseModel):
-    body: str = Field(min_length=1, max_length=10000)
+    body: SanitizedStr = Field(min_length=1, max_length=10000)
 
 
 class CommentAuthor(BaseModel):

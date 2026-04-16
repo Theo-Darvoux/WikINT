@@ -9,18 +9,20 @@ import {
   Inbox,
   CheckCircle2,
   XCircle,
+  Ban,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-type StatusFilter = "open" | "approved" | "rejected" | null;
+type StatusFilter = "open" | "approved" | "rejected" | "cancelled" | null;
 
 const TABS: { value: StatusFilter; label: string; icon: React.ElementType }[] =
   [
     { value: "open", label: "Pending", icon: Inbox },
     { value: "approved", label: "Approved", icon: CheckCircle2 },
     { value: "rejected", label: "Rejected", icon: XCircle },
+    { value: "cancelled", label: "Cancelled", icon: Ban },
   ];
 
 const PAGE_SIZE = 20;
@@ -36,11 +38,12 @@ export function PRList() {
     open: null,
     approved: null,
     rejected: null,
+    cancelled: null,
   });
 
   useEffect(() => {
     let active = true;
-    const statuses = ["open", "approved", "rejected"] as const;
+    const statuses = ["open", "approved", "rejected", "cancelled"] as const;
     Promise.allSettled(
       statuses.map((s) =>
         apiFetchWithResponse<PullRequestOut[]>(
@@ -109,7 +112,9 @@ export function PRList() {
         ? CheckCircle2
         : filterStatus === "rejected"
           ? XCircle
-          : Inbox;
+          : filterStatus === "cancelled"
+            ? Ban
+            : Inbox;
 
   return (
     <div className="space-y-5">
@@ -140,7 +145,9 @@ export function PRList() {
                       ? "text-green-500"
                       : value === "approved"
                         ? "text-purple-500"
-                        : "text-red-500"
+                        : value === "cancelled"
+                          ? "text-muted-foreground"
+                          : "text-red-500"
                     : ""
                 }`}
               />

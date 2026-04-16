@@ -122,9 +122,9 @@ class UploadStatusOut(BaseModel):
 class UploadInitRequest(BaseModel):
     """Body for POST /upload/init — requests a presigned PUT URL."""
 
-    filename: str
-    size: int
-    mime_type: str = "application/octet-stream"
+    filename: str = Field(..., min_length=1, max_length=255)
+    size: int = Field(..., ge=0)
+    mime_type: str = Field("application/octet-stream", max_length=200)
     sha256: str | None = None
 
     @field_validator("sha256")
@@ -162,8 +162,17 @@ class UploadCompleteRequest(BaseModel):
 class CheckExistsRequest(BaseModel):
     """Body for POST /upload/check-exists — skip re-upload of identical files."""
 
-    sha256: str
-    size: int
+    sha256: str = Field(..., min_length=64, max_length=64)
+    size: int = Field(..., ge=0)
+
+    @field_validator("sha256")
+    @classmethod
+    def validate_sha256(cls, v: str) -> str:
+        try:
+            bytes.fromhex(v)
+        except ValueError:
+            raise ValueError("sha256 must be a valid hex string")
+        return v.lower()
 
 
 class CheckExistsOut(BaseModel):
@@ -183,6 +192,16 @@ class BatchStatusRequest(BaseModel):
     """Body for POST /upload/status/batch — poll multiple upload statuses at once."""
 
     file_keys: list[str] = Field(..., min_length=1, max_length=50)
+
+    @field_validator("file_keys")
+    @classmethod
+    def validate_file_keys(cls, v: list[str]) -> list[str]:
+        for key in v:
+            if len(key) > 512:
+                raise ValueError("Each file_key must be at most 512 characters")
+            if "\x00" in key or ".." in key:
+                raise ValueError("Invalid file_key")
+        return v
 
 
 class UploadHistoryItem(BaseModel):

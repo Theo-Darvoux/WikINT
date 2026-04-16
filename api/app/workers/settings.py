@@ -4,7 +4,13 @@ from arq.cron import cron
 from app.config import settings
 from app.workers.cleanup_uploads import cleanup_uploads
 from app.workers.gdpr_cleanup import gdpr_cleanup
-from app.workers.index_content import delete_indexed_item, index_directory, index_material
+from app.workers.index_content import (
+    delete_indexed_item,
+    index_directories_batch,
+    index_directory,
+    index_material,
+    index_materials_batch,
+)
 from app.workers.process_upload import process_upload
 from app.workers.reconcile_multipart import reconcile_multipart_uploads
 from app.workers.storage_ops import delete_storage_objects
@@ -71,7 +77,9 @@ class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     functions = [
         index_material,
+        index_materials_batch,
         index_directory,
+        index_directories_batch,
         delete_indexed_item,
         delete_storage_objects,
         process_upload,

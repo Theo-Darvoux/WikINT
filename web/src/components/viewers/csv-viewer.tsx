@@ -147,7 +147,7 @@ export function CsvViewer({ materialId }: CsvViewerProps) {
                 )}
 
                 {/* Table */}
-                <div ref={tableContainerRef} className="flex-1 overflow-auto">
+                <div ref={tableContainerRef} className="flex-1 overflow-auto bg-zinc-200 dark:bg-zinc-800/50">
                     <table className="w-full border-collapse text-sm">
                         <thead className="sticky top-0 z-10 bg-muted">
                             <tr>

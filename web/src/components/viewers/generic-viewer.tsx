@@ -34,7 +34,7 @@ export function GenericViewer({ fileName, fileSize, mimeType, materialId }: Gene
                     />
                 }
             />
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16">
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16 bg-zinc-200 dark:bg-zinc-800/50">
             <FileText className="h-16 w-16 text-muted-foreground/50" />
             <div className="text-center">
                 <p className="font-medium">{fileName}</p>

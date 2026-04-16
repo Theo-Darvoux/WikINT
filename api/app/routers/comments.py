@@ -1,10 +1,11 @@
 import math
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.limiter import limiter
 from app.dependencies.auth import CurrentUser, OnboardedUser
 from app.dependencies.pagination import PaginationParams
 from app.schemas.comment import CommentCreateIn, CommentOut, CommentUpdateIn
@@ -38,7 +39,9 @@ async def list_comments(
 
 
 @router.post("", response_model=CommentOut, status_code=201)
+@limiter.limit("10/minute")
 async def add_comment(
+    request: Request,
     data: CommentCreateIn,
     user: OnboardedUser,
     db: Annotated[AsyncSession, Depends(get_db)],

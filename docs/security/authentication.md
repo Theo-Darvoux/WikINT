@@ -29,6 +29,16 @@ Both methods are sent in the same email, giving the user flexibility to either t
 - Users behind NAT are distinguished by their client ID
 - A single user can't bypass limits by just changing client IDs (the IP part persists)
 
+## Chatting Rate Limiting
+
+To prevent spam and abuse of discussion features, the following "chatting" endpoints are subject to a rate limit of **10 requests per minute** per user:
+
+- `POST /api/comments` (Material/General comments)
+- `POST /api/pull-requests/{id}/comments` (PR comments)
+- `POST /api/materials/{id}/annotations` (Document annotations)
+
+When a user exceeds this limit, the API returns a `429 Too Many Requests` response.
+
 ### 2. Code Verification (`POST /api/auth/verify-code`)
 
 **Input:** `{ "email": "user@example.com", "code": "123456" }`

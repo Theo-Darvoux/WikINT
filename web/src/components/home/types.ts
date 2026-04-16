@@ -58,6 +58,8 @@ export interface PullRequestOut {
     created_at: string;
     summary_types?: string[];
     virus_scan_result?: string;
+    reverted_by_pr_id?: string | null;
+    reverts_pr_id?: string | null;
 }
 
 export interface HomeData {

@@ -29,7 +29,12 @@ import {
     MapPin,
     ArrowRight,
     Inbox,
+    Undo2,
+    ShieldAlert,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { PreviewDialog } from "@/components/pr/preview-dialog";
 import { MarkdownRenderer } from "@/components/viewers/markdown-renderer";
 import { Button } from "@/components/ui/button";
@@ -96,6 +101,11 @@ interface PullRequestDetail {
     applied_result?: PullRequestOperation[] | null;
     summary_types?: string[];
     virus_scan_result?: string;
+    approved_at?: string | null;
+    reverts_pr_id?: string | null;
+    reverted_by_pr_id?: string | null;
+    revert_grace_expires_at?: string | null;
+    can_revert?: boolean;
 }
 
 /* ── Constants ──────────────────────────────────────── */
@@ -166,6 +176,12 @@ const STATUS_CONFIG: Record<
         color: "text-red-600",
         bg: "bg-red-500/10",
         label: "Rejected",
+    },
+    cancelled: {
+        Icon: XCircle,
+        color: "text-muted-foreground",
+        bg: "bg-muted",
+        label: "Cancelled",
     },
 };
 
@@ -829,9 +845,13 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
     const { user } = useAuthStore();
     const [pr, setPr] = useState<PullRequestDetail | null>(null);
     const [loading, setLoading] = useState(true);
-    const [acting, setActing] = useState<"approve" | "reject" | null>(null);
+    const [acting, setActing] = useState<"approve" | "reject" | "cancel" | "revert" | null>(null);
     const [showRejectDialog, setShowRejectDialog] = useState(false);
+    const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [rejectReason, setRejectReason] = useState("");
+    const [showRevertDialog, setShowRevertDialog] = useState(false);
+    const [revertConfirmText, setRevertConfirmText] = useState("");
+    const [revertUnderstood, setRevertUnderstood] = useState(false);
     const [expandedItems, setExpandedItems] = useState<string[]>([]);
     const [previewDirId, setPreviewDirId] = useState<string | null>(null);
     const [previewPath, setPreviewPath] = useState<string | null>(null);
@@ -919,6 +939,36 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
         }
     };
 
+    const handleCancel = async () => {
+        setActing("cancel");
+        setShowCancelDialog(false);
+        try {
+            await apiFetch(`/pull-requests/${id}/cancel`, { method: "POST" });
+            setPr((prev) => prev ? { ...prev, status: "cancelled" } : prev);
+            toast.success("Contribution cancelled");
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed to cancel");
+        } finally {
+            setActing(null);
+        }
+    };
+
+    const handleRevert = async () => {
+        setActing("revert");
+        setShowRevertDialog(false);
+        try {
+            const revertPr = await apiFetch<PullRequestDetail>(`/pull-requests/${id}/revert`, { method: "POST" });
+            setPr((prev) => prev ? { ...prev, reverted_by_pr_id: revertPr.id, can_revert: false } : prev);
+            setRevertConfirmText("");
+            setRevertUnderstood(false);
+            toast.success("Contribution reverted successfully");
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed to revert");
+        } finally {
+            setActing(null);
+        }
+    };
+
     /* Loading */
     if (loading) {
         return (
@@ -952,6 +1002,10 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
         user?.role === "moderator" ||
         user?.role === "bureau" ||
         user?.role === "vieux";
+    const isAdmin = user?.role === "bureau" || user?.role === "vieux";
+    const isAuthor = !!user && !!pr.author?.id && pr.author.id === user.id;
+    const canCancel = pr.status === "open" && isAuthor;
+    const canRevert = isAdmin && pr.can_revert === true && !pr.reverted_by_pr_id;
     const status = STATUS_CONFIG[pr.status] ?? STATUS_CONFIG.open;
     const StatusIcon = status.Icon;
 
@@ -979,6 +1033,49 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Contributions
             </Link>
+
+            {/* ─── Reverted banner ──────────────────────── */}
+            {pr.reverted_by_pr_id && (
+                <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/20">
+                    <Undo2 className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <div>
+                        <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                            This contribution has been reverted
+                        </p>
+                        <p className="mt-1 text-sm text-amber-600/90 dark:text-amber-400/80">
+                            All changes from this contribution have been undone.{" "}
+                            <Link
+                                href={`/pull-requests/${pr.reverted_by_pr_id}`}
+                                className="underline hover:text-amber-700 dark:hover:text-amber-300"
+                            >
+                                View revert PR
+                            </Link>
+                        </p>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Revert-of banner ──────────────────────── */}
+            {pr.reverts_pr_id && (
+                <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/20">
+                    <Undo2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                    <div>
+                        <p className="text-sm font-medium text-blue-700 dark:text-blue-400">
+                            This is a revert contribution
+                        </p>
+                        <p className="mt-1 text-sm text-blue-600/90 dark:text-blue-400/80">
+                            This contribution undoes the changes from{" "}
+                            <Link
+                                href={`/pull-requests/${pr.reverts_pr_id}`}
+                                className="underline hover:text-blue-700 dark:hover:text-blue-300"
+                            >
+                                the original PR
+                            </Link>
+                            .
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* ─── Rejection reason banner ─────────────── */}
             {pr.status === "rejected" && pr.rejection_reason && (
@@ -1087,38 +1184,98 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                     </div>
                 </div>
 
-                {/* Moderator toolbar */}
-                {pr.status === "open" && isModerator && (
+                {/* Revert toolbar (admin only, approved PRs within grace) */}
+                {canRevert && pr.revert_grace_expires_at && (
+                    <>
+                        <Separator />
+                        <div className="flex items-center justify-between gap-2 px-6 py-3">
+                            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <Clock className="h-3 w-3" />
+                                Revertable for {formatDistanceToNow(new Date(pr.revert_grace_expires_at))}
+                            </span>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-800 dark:hover:bg-red-950/30"
+                                onClick={() => setShowRevertDialog(true)}
+                                disabled={acting !== null}
+                            >
+                                {acting === "revert" ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                    <Undo2 className="h-3.5 w-3.5" />
+                                )}
+                                Revert contribution
+                            </Button>
+                        </div>
+                    </>
+                )}
+
+                {/* Expired grace period (admin only, informational) */}
+                {isAdmin && pr.status === "approved" && !pr.reverted_by_pr_id && pr.type !== "revert" && !canRevert && pr.approved_at && (
                     <>
                         <Separator />
                         <div className="flex items-center justify-end gap-2 px-6 py-3">
-                            <Button
-                                size="sm"
-                                className="gap-1.5 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                                onClick={handleApprove}
-                                disabled={acting !== null}
-                            >
-                                {acting === "approve" ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                    <Check className="h-3.5 w-3.5" />
-                                )}
-                                Publish
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="destructive"
-                                className="gap-1.5"
-                                onClick={() => setShowRejectDialog(true)}
-                                disabled={acting !== null}
-                            >
-                                {acting === "reject" ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                    <X className="h-3.5 w-3.5" />
-                                )}
-                                Reject
-                            </Button>
+                            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <Clock className="h-3 w-3" />
+                                Revert grace period expired
+                            </span>
+                        </div>
+                    </>
+                )}
+
+                {/* Action toolbar (moderator review + author cancel) */}
+                {pr.status === "open" && (isModerator || canCancel) && (
+                    <>
+                        <Separator />
+                        <div className="flex items-center justify-end gap-2 px-6 py-3">
+                            {canCancel && (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="gap-1.5"
+                                    onClick={() => setShowCancelDialog(true)}
+                                    disabled={acting !== null}
+                                >
+                                    {acting === "cancel" ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                        <X className="h-3.5 w-3.5" />
+                                    )}
+                                    Cancel contribution
+                                </Button>
+                            )}
+                            {isModerator && (
+                                <>
+                                    <Button
+                                        size="sm"
+                                        className="gap-1.5 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                                        onClick={handleApprove}
+                                        disabled={acting !== null}
+                                    >
+                                        {acting === "approve" ? (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                            <Check className="h-3.5 w-3.5" />
+                                        )}
+                                        Publish
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        className="gap-1.5"
+                                        onClick={() => setShowRejectDialog(true)}
+                                        disabled={acting !== null}
+                                    >
+                                        {acting === "reject" ? (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                            <X className="h-3.5 w-3.5" />
+                                        )}
+                                        Reject
+                                    </Button>
+                                </>
+                            )}
                         </div>
                     </>
                 )}
@@ -1220,6 +1377,117 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                         >
                             <X className="mr-2 h-4 w-4" />
                             Reject
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ─── Cancel dialog ──────────────────────── */}
+            <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Cancel this contribution?</DialogTitle>
+                        <DialogDescription>
+                            The contribution will be withdrawn and no longer
+                            visible to reviewers. Any staged files you uploaded
+                            for it will be discarded. This cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowCancelDialog(false)}
+                        >
+                            Keep it open
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleCancel}
+                        >
+                            <X className="mr-2 h-4 w-4" />
+                            Cancel contribution
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ─── Revert dialog (double confirmation) ── */}
+            <Dialog
+                open={showRevertDialog}
+                onOpenChange={(open) => {
+                    setShowRevertDialog(open);
+                    if (!open) {
+                        setRevertConfirmText("");
+                        setRevertUnderstood(false);
+                    }
+                }}
+            >
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-red-600">
+                            <ShieldAlert className="h-5 w-5" />
+                            Revert this contribution
+                        </DialogTitle>
+                        <DialogDescription>
+                            This will reverse all operations in this contribution.
+                            Created items will be deleted, deleted items will be
+                            restored, and edits will be rolled back to their state
+                            before this PR was applied.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
+                        <strong>Warning:</strong> Any edits made to affected items
+                        after this PR was approved will also be lost. This action
+                        cannot be undone.
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="flex items-start gap-2">
+                            <Checkbox
+                                id="revert-understood"
+                                checked={revertUnderstood}
+                                onCheckedChange={(checked) => setRevertUnderstood(checked === true)}
+                            />
+                            <Label htmlFor="revert-understood" className="text-sm leading-tight cursor-pointer">
+                                I understand that this reversal is permanent and may
+                                affect changes made after this contribution
+                            </Label>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="revert-confirm" className="text-sm text-muted-foreground">
+                                Type <span className="font-mono font-semibold text-foreground">REVERT</span> to confirm
+                            </Label>
+                            <Input
+                                id="revert-confirm"
+                                value={revertConfirmText}
+                                onChange={(e) => setRevertConfirmText(e.target.value)}
+                                placeholder="REVERT"
+                                className="font-mono"
+                                autoComplete="off"
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowRevertDialog(false);
+                                setRevertConfirmText("");
+                                setRevertUnderstood(false);
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            disabled={!revertUnderstood || revertConfirmText !== "REVERT"}
+                            onClick={handleRevert}
+                        >
+                            <Undo2 className="mr-2 h-4 w-4" />
+                            Revert contribution
                         </Button>
                     </DialogFooter>
                 </DialogContent>

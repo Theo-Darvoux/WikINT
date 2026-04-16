@@ -18,6 +18,7 @@ import { useStagingStore, type Operation } from "@/lib/staging-store";
 import { TagInput } from "@/components/ui/tag-input";
 import { submitDirectOperations } from "@/lib/pr-client";
 import { useBrowseRefreshStore } from "@/lib/stores";
+import { sanitizeNameInput } from "@/lib/utils";
 
 interface NewFolderDialogProps {
     open: boolean;
@@ -41,7 +42,8 @@ export function NewFolderDialog({
     const [submitting, setSubmitting] = useState(false);
     const triggerBrowseRefresh = useBrowseRefreshStore((s) => s.triggerBrowseRefresh);
 
-    const canSubmit = name.trim().length >= 1 && !submitting;
+    const NAME_MAX = 32;
+    const canSubmit = name.trim().length >= 1 && name.length <= NAME_MAX && !submitting;
     const isDraftParent = parentId?.startsWith("$") ?? false;
 
     const buildOp = (): Operation => {
@@ -127,12 +129,15 @@ export function NewFolderDialog({
                         <Input
                             id="folder-name"
                             value={name}
-                            onChange={(e) => setName(e.target.value)}
+                            onChange={(e) => setName(sanitizeNameInput(e.target.value))}
                             placeholder="e.g. Week 5"
-                            maxLength={100}
+                            maxLength={NAME_MAX}
                             disabled={submitting}
                             autoFocus
                         />
+                        <p className={`text-[11px] text-right ${name.length >= NAME_MAX ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                            {name.length}/{NAME_MAX}
+                        </p>
                     </div>
                     <div className="space-y-1.5">
                         <label

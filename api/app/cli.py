@@ -69,7 +69,7 @@ async def _reindex() -> None:
         # Reindex Materials
         m_result = await session.execute(
             select(Material).options(
-                selectinload(Material.tags), 
+                selectinload(Material.tags),
                 selectinload(Material.author),
                 selectinload(Material.versions)
             )
@@ -90,11 +90,10 @@ async def _reindex() -> None:
 
             # Find current version metadata
             file_name = None
-            file_mime_type = None
             for v in mat.versions:
                 if v.version_number == mat.current_version:
                     file_name = v.file_name
-                    file_mime_type = v.file_mime_type
+                    # Break after finding current version info
                     break
 
             # Build extra searchable fields (identifiers)

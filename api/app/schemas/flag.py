@@ -3,12 +3,14 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.core.sanitization import SanitizedStr
+
 
 class FlagCreateIn(BaseModel):
     target_type: str = Field(pattern=r"^(material|annotation|pull_request|comment|pr_comment)$")
     target_id: uuid.UUID
     reason: str = Field(pattern=r"^(inappropriate|copyright|spam|incorrect|other)$")
-    description: str | None = None
+    description: SanitizedStr | None = Field(None, max_length=1000)
 
 
 class FlagUpdateIn(BaseModel):

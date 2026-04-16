@@ -10,16 +10,18 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin, UUIDMixin
+from app.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.material import Material
@@ -31,9 +33,18 @@ class DirectoryType(enum.StrEnum):
     FOLDER = "folder"
 
 
-class Directory(UUIDMixin, TimestampMixin, Base):
+class Directory(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "directories"
-    __table_args__ = (UniqueConstraint("parent_id", "slug", name="uq_directory_parent_slug"),)
+    __table_args__ = (
+        Index(
+            "uq_directory_parent_slug",
+            "parent_id",
+            "slug",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+            sqlite_where=text("deleted_at IS NULL"),
+        ),
+    )
 
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("directories.id", ondelete="CASCADE")

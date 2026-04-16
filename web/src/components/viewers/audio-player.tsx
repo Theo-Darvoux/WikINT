@@ -238,7 +238,8 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                     />
                 }
             />
-            <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8 w-full max-w-4xl mx-auto overflow-auto">
+            <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8 w-full bg-zinc-200 dark:bg-zinc-800/50 overflow-auto">
+                <div className="w-full max-w-4xl mx-auto flex flex-col items-center justify-center">
             {isLoading ? (
                 <div className="flex flex-col items-center gap-6">
                     <div className="relative flex items-center justify-center">
@@ -292,7 +293,7 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                                         </div>
                                     </>
                                 ) : (
-                                    <div className="w-full h-full flex flex-col items-center justify-center bg-muted/20 relative">
+                                    <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-200/50 dark:bg-black/20 relative">
                                         <div 
                                             className="absolute left-0 top-0 bottom-0 bg-primary/20 transition-all duration-150 ease-out pointer-events-none"
                                             style={{ width: duration ? `${(currentTime / duration) * 100}%` : "0%" }}
@@ -426,6 +427,7 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                     />
                 </div>
             )}
+                </div>
             </div>
         </div>
     );

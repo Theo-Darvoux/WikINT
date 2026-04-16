@@ -46,6 +46,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { FlagButton } from "@/components/flags/flag-button";
+import { getViewerType } from "@/lib/file-utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,38 +77,56 @@ function useItemActions(item: ItemData) {
 
   const isMaterial = item.type === "material";
   const title = String(isMaterial ? (item.data.title ?? "") : (item.data.name ?? ""));
-  const viewerType = String(item.data.type || "");
-  const mimeType = String(item.data.mime_type || "");
+
+  // Refined viewerType and mimeType determination for materials
+  let viewerType = String(item.data.type || "");
+  let mimeType = String(item.data.mime_type || "");
+
+  if (isMaterial) {
+    // Check if we have current version info (typical for materials from API)
+    const vi = item.data.current_version_info as Record<string, unknown> | undefined;
+    if (vi) {
+      mimeType = String(vi.file_mime_type || mimeType);
+      const fileName = String(vi.file_name || "");
+      viewerType = getViewerType(mimeType, fileName);
+    } else {
+      // Fallback: maybe it's passed directly or it's a creation draft
+      const fileName = String(item.data.file_name || "");
+      if (mimeType || fileName) {
+        viewerType = getViewerType(mimeType, fileName);
+      }
+    }
+  }
 
   const handleDraftDelete = () => {
     // If this is already a staged creation, "deleting" it means just removing the creation op
     if (item.staged === "created" && !item.isExternal) {
-        // Find index of the creation op for this temp id
-        const idx = operations.findIndex(o => {
-            const unwrapped = unwrapOp(o);
-            if (item.type === "directory") {
-                return unwrapped.op === "create_directory" && unwrapped.temp_id === item.id;
-            } else {
-                return unwrapped.op === "create_material" && unwrapped.temp_id === item.id;
-            }
-        });
-        if (idx !== -1) {
-            removeOperation(idx);
-            toast.success("Creation cancelled and removed from draft");
-        }
-    } else {
-        if (isMaterial) {
-            addOperation({
-                op: "delete_material",
-                material_id: item.id,
-            });
+      // Find index of the creation op for this temp id
+      const idx = operations.findIndex(o => {
+        const unwrapped = unwrapOp(o);
+        if (item.type === "directory") {
+          return unwrapped.op === "create_directory" && unwrapped.temp_id === item.id;
         } else {
-            addOperation({
-                op: "delete_directory",
-                directory_id: item.id,
-            });
+          return unwrapped.op === "create_material" && unwrapped.temp_id === item.id;
         }
-        toast.success("Added deletion to current draft");
+      });
+      if (idx !== -1) {
+        removeOperation(idx);
+        toast.success("Creation cancelled and removed from draft");
+      }
+    } else {
+      if (isMaterial) {
+        addOperation({
+          op: "delete_material",
+          material_id: item.id,
+        });
+      } else {
+        addOperation({
+          op: "delete_directory",
+          directory_id: item.id,
+        });
+      }
+      toast.success("Added deletion to current draft");
     }
     setDeleteDialogOpen(false);
   };
@@ -190,11 +209,11 @@ function MenuItemsList({ isContextMenu = false }: { isContextMenu?: boolean }) {
       <Label className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
         {actions.isMaterial ? "Material Actions" : "Folder Actions"}
       </Label>
-      
+
       {actions.isMaterial && !isCreated && (
         <>
-          <Item 
-            onClick={() => downloadMaterial(item.id)} 
+          <Item
+            onClick={() => downloadMaterial(item.id)}
             disabled={isDownloading}
             className="cursor-pointer"
           >
@@ -202,8 +221,8 @@ function MenuItemsList({ isContextMenu = false }: { isContextMenu?: boolean }) {
             <span>Download</span>
           </Item>
           {canPrint && (
-            <Item 
-              onClick={() => print()} 
+            <Item
+              onClick={() => print()}
               disabled={isPrinting}
               className="cursor-pointer"
             >
@@ -225,7 +244,7 @@ function MenuItemsList({ isContextMenu = false }: { isContextMenu?: boolean }) {
         <>
           <Item onClick={() => actions.setEditDialogOpen(true)} className="cursor-pointer">
             <Edit className="mr-2 h-4 w-4" />
-            <span>Edit Metadata</span>
+            <span>Edit</span>
           </Item>
           <Item onClick={actions.handleShare} className="cursor-pointer">
             <Share2 className="mr-2 h-4 w-4" />
@@ -248,7 +267,7 @@ function MenuItemsList({ isContextMenu = false }: { isContextMenu?: boolean }) {
 
       <Separator />
 
-      <Item 
+      <Item
         onClick={() => actions.setDeleteDialogOpen(true)}
         variant="destructive"
         className="cursor-pointer"
@@ -288,9 +307,9 @@ export function ItemActionsMenu({
 
       {!item.isExternal && (
         <FileEditDialog
-            open={actions.editDialogOpen}
-            onOpenChange={actions.setEditDialogOpen}
-            target={{ type: item.type, id: item.id, data: item.data }}
+          open={actions.editDialogOpen}
+          onOpenChange={actions.setEditDialogOpen}
+          target={{ type: item.type, id: item.id, data: item.data }}
         />
       )}
 
@@ -302,7 +321,7 @@ export function ItemActionsMenu({
               {item.staged === "created" ? "Discard Draft" : `Delete ${actions.isMaterial ? "Material" : "Folder"}`}
             </DialogTitle>
             <DialogDescription>
-              {item.staged === "created" 
+              {item.staged === "created"
                 ? `Are you sure you want to discard this staged ${item.type}? All unsaved changes will be lost.`
                 : <>Are you sure you want to permanently delete <span className="font-semibold text-foreground">{actions.title}</span>?</>
               }
@@ -312,24 +331,24 @@ export function ItemActionsMenu({
             <Button variant="ghost" onClick={() => actions.setDeleteDialogOpen(false)} disabled={actions.deleting} className="sm:mr-auto">
               Cancel
             </Button>
-            
+
             {item.staged !== "created" && (
-                <Button
-                    variant="outline"
-                    onClick={actions.handleDraftDelete}
-                    disabled={actions.deleting}
-                    className="gap-2 border-dashed border-destructive/40 text-destructive hover:bg-destructive/5 hover:border-destructive/60"
-                >
-                    <Plus className="h-4 w-4" />
-                    Draft
-                </Button>
+              <Button
+                variant="outline"
+                onClick={actions.handleDraftDelete}
+                disabled={actions.deleting}
+                className="gap-2 border-dashed border-destructive/40 text-destructive hover:bg-destructive/5 hover:border-destructive/60"
+              >
+                <Plus className="h-4 w-4" />
+                Draft
+              </Button>
             )}
 
-            <Button 
-                variant="destructive" 
-                onClick={item.staged === "created" ? actions.handleDraftDelete : actions.handleDirectDelete} 
-                disabled={actions.deleting} 
-                className="gap-2 shadow-sm"
+            <Button
+              variant="destructive"
+              onClick={item.staged === "created" ? actions.handleDraftDelete : actions.handleDirectDelete}
+              disabled={actions.deleting}
+              className="gap-2 shadow-sm"
             >
               {actions.deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : (item.staged === "created" ? <Trash2 className="h-4 w-4" /> : <Send className="h-4 w-4" />)}
               {item.staged === "created" ? "Discard" : "Delete Now"}
@@ -349,9 +368,9 @@ export function ItemActionsDropdownTrigger() {
     <div onClick={(e) => e.stopPropagation()}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             className="h-8 w-8 hover:bg-muted active:scale-95 transition-transform"
           >
             <MoreVertical className="h-4 w-4 text-muted-foreground" />

@@ -90,7 +90,7 @@ On successful PR creation, the staging store clears all submitted operations.
 
 ### Step 3.1: PR Listing
 
-PRs appear on the `/pull-requests` page with status filtering (open, approved, rejected). Each card shows:
+PRs appear on the `/pull-requests` page with status filtering (open, approved, rejected, cancelled). Each card shows:
 - Title, description, author
 - Operation summary (counts by type)
 
@@ -207,8 +207,12 @@ After successful commit, jobs are dispatched via ARQ:
 |-----|---------|
 | `index_material` | Add/update material in MeiliSearch |
 | `index_directory` | Add/update directory in MeiliSearch |
-| delete_indexed_item | Remove from MeiliSearch (for deletes). Recursive for parent items. |
+| `delete_indexed_item` | Remove from MeiliSearch (for deletes). Recursive for parent items. |
 | `delete_storage_objects` | Delete `uploads/` staging files (legacy V1) |
+
+**Subtree reindex on rename/move:** When a directory is renamed (name changed) or moved (`move_item`), `_enqueue_reindex_directory_recursive` walks the entire descendant subtree via a recursive CTE and enqueues `index_directory` for every descendant directory and `index_material` for every material within those directories. This ensures `ancestor_path` and `browse_path` in Meilisearch stay consistent after structural changes.
+
+**Deduplication:** Each `(kind, id)` pair is tracked in `db.info["post_commit_job_keys"]` (a `set`) to prevent duplicate enqueues within a single PR merge.
 
 These are fire-and-forget. If a post-commit job fails, the cleanup worker catches it later.
 
@@ -262,6 +266,70 @@ This replaces the previous `router.refresh()` approach, which only re-ran server
 
 When a moderator rejects a PR, they can provide a `rejection_reason` (string). This is stored in the DB and shown to the author, helping them understand why their contribution was not accepted.
 
+### Step 4.11: Author-Initiated Cancellation
+
+At any point while a PR is still `OPEN`, its author can withdraw it via `POST /api/pull-requests/{id}/cancel`. The endpoint is author-only (`403` for any other caller) and rejects non-open PRs with `400`.
+
+On cancel the server:
+1. Sets `status = CANCELLED`.
+2. Schedules `delete_storage_objects` for any `uploads/` staging files referenced by the PR payload (legacy V1). CAS keys are left alone — ref decrements happen when the corresponding `uploads` row expires.
+3. Deletes all `pr_file_claims` rows for the PR, freeing those file keys so the author can re-stage and submit again.
+
+No `apply_pr()` is run; no content is materialized; no moderator notification is sent (the author is the actor). Cancelled PRs remain queryable via `/pull-requests?status=cancelled` for auditing but are excluded from the open-PR quota and from `for-item` lookups (which filter on `OPEN`).
+
+## Phase 6: Revert (Admin Only)
+
+### Step 6.1: Revert Eligibility
+
+A PR can be reverted when:
+- Status is `APPROVED`
+- PR type is `batch` (not `revert` — **reverts cannot be reverted**)
+- No existing `reverted_by_pr_id` (not already reverted)
+- `now < approved_at + 7 days` (within grace period)
+- `applied_result` contains `pre_state` snapshots (post-deployment PRs only)
+- The requesting user has `BUREAU` or `VIEUX` role (moderators cannot revert)
+
+### Step 6.2: Reverse Operation Generation
+
+`revert_pr()` walks `applied_result` in **reverse order** and generates inverse ops:
+
+| Original Op | Reverse Op |
+|-------------|------------|
+| `create_material` | `delete_material` (soft-delete) |
+| `create_directory` | `delete_directory` (soft-delete subtree) |
+| `edit_material` | `edit_material` with `pre_state` values + drop added versions |
+| `edit_directory` | `edit_directory` with `pre_state` values |
+| `delete_material` | `undelete_material` (clear `deleted_at`) |
+| `delete_directory` | `undelete_directory` (recursive clear `deleted_at`) |
+| `move_item` | `move_item` back to `pre_state.prev_parent_id` |
+
+### Step 6.3: Revert PR Creation & Execution
+
+1. A new `PullRequest` row is created with `type="revert"`, `status=APPROVED`, `reverts_pr_id=original.id`
+2. All reverse operations are executed in a single transaction (using revert-specific dispatch table)
+3. `original.reverted_by_pr_id` is set to the revert PR's id
+4. Post-commit jobs enqueued (search reindex for restored items, deindex for deleted items)
+5. The original PR author is notified (if different from the admin)
+
+### Step 6.4: UI
+
+- Approved PRs show a "Revert contribution" button (admin only, within grace period)
+- Grace countdown chip: "Revertable for 4d 12h"
+- Double confirmation dialog: checkbox acknowledgement + type "REVERT" to confirm
+- Reverted PRs show an amber "Reverted" banner with link to the revert PR
+- Revert PRs show a blue "Revert" banner with link to the original
+- PR list cards show "Reverted" / "Revert" badges
+
+### Soft-Delete Mechanism
+
+Delete operations use soft-delete (`deleted_at` timestamp) instead of hard-delete:
+- All read queries automatically filter `deleted_at IS NULL` via a global SQLAlchemy `do_orm_execute` event
+- Opt out with `.execution_options(include_deleted=True)` for revert/cleanup operations
+- Background worker hard-deletes rows where `deleted_at < now - 7 days` and decrements CAS refs
+- Slug uniqueness constraints are partial indexes filtered on `deleted_at IS NULL`
+
+## Error Scenarios
+
 | Scenario | Behavior |
 |----------|----------|
 | Transaction rollback during approval | All DB changes rolled back; uploads preserved; PR remains `OPEN`; file claims preserved |
@@ -270,3 +338,7 @@ When a moderator rejects a PR, they can provide a `rejection_reason` (string). T
 | Circular directory move | Ancestry walk detects cycles; raises `BadRequestError` |
 | Expired upload files | PR submission blocked client-side; server validates file existence |
 | Duplicate file claim | DB `IntegrityError` on `pr_file_claims.file_key` PRIMARY KEY → 400 Bad Request |
+| Revert of legacy PR | 400 "missing pre_state snapshot" — PRs approved before deployment cannot be reverted |
+| Revert grace expired | 400 "grace period expired" — only within 7 days of `approved_at` |
+| Revert of a revert | 400 "revert contributions cannot be reverted" — terminal by design |
+| Revert of already-reverted PR | 400 "already reverted" — `reverted_by_pr_id` is set |

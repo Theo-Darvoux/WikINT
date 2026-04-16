@@ -721,7 +721,7 @@ export function DirectoryListing({
               </span>
             </div>
             <span className="text-sm font-medium flex-1">
-              {selectedCount === 0 ? "Select items" : `${selectedCount} items`}
+              {selectedCount > 0 && `${selectedCount} items`}
             </span>
             <div className="flex items-center gap-1.5">
               <Button

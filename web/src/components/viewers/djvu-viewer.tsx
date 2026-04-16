@@ -31,7 +31,7 @@ export function DjvuViewer({ materialId }: DjvuViewerProps) {
                     />
                 }
             />
-            <div className="flex flex-1 flex-col items-center justify-center p-12 text-center text-muted-foreground w-full bg-muted/20">
+            <div className="flex flex-1 flex-col items-center justify-center p-12 text-center text-muted-foreground w-full bg-zinc-200 dark:bg-zinc-800/50">
             <p className="text-lg font-medium mb-2">Offline DjVu Preview</p>
             <p className="max-w-md mb-6">
                 Native browser previewing for DjVu files requires WebAssembly desktop parsers which are currently not installed.

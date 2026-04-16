@@ -55,6 +55,51 @@ async def get_directory_paths(
     return {row.id: row.full_path for row in result.all()}
 
 
+async def get_ancestor_map(
+    db: AsyncSession, directory_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, tuple[str, str]]:
+    """Return (name_path, slug_path) for each directory_id in a single recursive CTE.
+
+    name_path: space-joined names from root to the directory (inclusive).
+    slug_path: slash-joined slugs from root to the directory (inclusive).
+
+    Used by batch indexers to avoid O(depth × n) individual queries.
+    """
+    if not directory_ids:
+        return {}
+
+    from sqlalchemy import String
+    from sqlalchemy.orm import aliased
+
+    base_case = (
+        select(
+            Directory.id,
+            Directory.parent_id,
+            Directory.name.cast(String).label("name_path"),
+            Directory.slug.cast(String).label("slug_path"),
+        )
+        .where(Directory.parent_id.is_(None))
+        .cte(name="ancestor_map_cte", recursive=True)
+    )
+
+    base_alias = aliased(base_case, name="p")
+    dir_alias = aliased(Directory, name="d")
+
+    recursive_case = select(
+        dir_alias.id,
+        dir_alias.parent_id,
+        (base_alias.c.name_path + " " + dir_alias.name).label("name_path"),
+        (base_alias.c.slug_path + "/" + dir_alias.slug).label("slug_path"),
+    ).join(base_alias, dir_alias.parent_id == base_alias.c.id)
+
+    cte = base_case.union_all(recursive_case)
+    stmt = select(cte.c.id, cte.c.name_path, cte.c.slug_path).where(
+        cte.c.id.in_(list(directory_ids))
+    )
+    result = await db.execute(stmt)
+    return {row.id: (row.name_path, row.slug_path) for row in result.all()}
+
+
 async def get_root_directories(
     db: AsyncSession, current_user_id: uuid.UUID | None = None
 ) -> dict[str, list[dict[str, typing.Any]]]:

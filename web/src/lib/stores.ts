@@ -44,6 +44,7 @@ interface UIState {
     hideFooter: boolean;
     materialActionsOpen: boolean;
     openSidebar: (tab: SidebarTab, target: SidebarTarget) => void;
+    setSidebarTarget: (tab: SidebarTab, target: SidebarTarget) => void;
     updateSidebarData: (data: Record<string, unknown>) => void;
     closeSidebar: () => void;
     setSidebarTab: (tab: SidebarTab) => void;
@@ -63,6 +64,8 @@ export const useUIStore = create<UIState>((set) => ({
     materialActionsOpen: false,
     openSidebar: (tab, target) =>
         set({ sidebarOpen: true, sidebarTab: tab, sidebarTarget: target }),
+    setSidebarTarget: (tab, target) =>
+        set({ sidebarTab: tab, sidebarTarget: target }),
     updateSidebarData: (data) =>
         set((state) => ({
             sidebarTarget: state.sidebarTarget

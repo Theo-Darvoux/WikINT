@@ -234,6 +234,9 @@ async def record_view(db: AsyncSession, user_id: str, material_id: str) -> None:
     uid = uuid.UUID(str(user_id))
     mid = uuid.UUID(str(material_id))
 
+    # Ensure material exists (raises NotFoundError if it doesn't)
+    await get_material_by_id(db, mid)
+
     # 1. Update counters on the Material itself (Atomic increment in SQL)
     await db.execute(
         update(Material)

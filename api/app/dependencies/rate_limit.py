@@ -9,7 +9,8 @@ from app.core.constants import PRIVILEGED_ROLES
 from app.core.database import get_db
 from app.core.exceptions import RateLimitError
 from app.core.redis import get_redis
-from app.dependencies.auth import CurrentUser
+from app.dependencies.auth import CurrentUser, get_optional_user
+from app.models.user import User
 from app.services.audit import flag_user_account
 
 
@@ -98,3 +99,26 @@ async def rate_limit_uploads(
         raise RateLimitError(
             f"Daily upload limit reached ({daily_limit} files). Please try again tomorrow."
         )
+
+
+async def rate_limit_search(
+    request: Request,
+    redis: Annotated[Redis, Depends(get_redis)],
+    user: Annotated[User | None, Depends(get_optional_user)] = None,
+) -> None:
+    """Rate limit for the public search endpoint: 30/min anonymous, 120/min authenticated."""
+    if user is not None:
+        key = f"ratelimit:search:user:{user.id}:min"
+        minute_limit = 300 if settings.is_dev else 120
+    else:
+        ip = (request.client.host if request.client else None) or "unknown"
+        key = f"ratelimit:search:ip:{ip}:min"
+        minute_limit = 300 if settings.is_dev else 30
+
+    async with redis.pipeline(transaction=True) as pipe:
+        await pipe.incr(key)
+        await pipe.expire(key, 60, nx=True)
+        results = await pipe.execute()
+
+    if results[0] > minute_limit:
+        raise RateLimitError("Too many search requests. Please slow down.")

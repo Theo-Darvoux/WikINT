@@ -179,5 +179,109 @@ export async function compressImageIfNeeded(file: File, skip = false): Promise<C
     }
 }
 
+/** MIME type → viewer type mapping. */
+export const MIME_TO_VIEWER: Record<string, string> = {
+    "application/pdf": "pdf",
+    "text/markdown": "markdown",
+    "text/x-markdown": "markdown",
+    "image/png": "image",
+    "image/jpeg": "image",
+    "image/gif": "image",
+    "image/webp": "image",
+    "image/svg+xml": "image",
+    "video/mp4": "video",
+    "video/webm": "video",
+    "video/ogg": "video",
+    "audio/mpeg": "audio",
+    "audio/wav": "audio",
+    "audio/ogg": "audio",
+    "audio/flac": "audio",
+    "audio/aac": "audio",
+    "audio/mp3": "audio",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "office",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "office",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "office",
+    "application/msword": "office",
+    "application/vnd.ms-excel": "office",
+    "application/vnd.ms-powerpoint": "office",
+    "application/vnd.oasis.opendocument.text": "office",
+    "application/vnd.oasis.opendocument.spreadsheet": "office",
+    "application/epub+zip": "epub",
+    "image/vnd.djvu": "djvu",
+    "image/x-djvu": "djvu",
+    "application/x-tex": "code",
+    "text/x-tex": "code",
+    "text/csv": "csv",
+    "application/csv": "csv",
+};
+
+/** Code extensions that should use the code viewer. */
+export const CODE_EXTENSIONS = new Set([
+    "js", "ts", "jsx", "tsx", "py", "java", "c", "cpp", "h", "hpp", "rs", "go",
+    "rb", "php", "cs", "swift", "kt", "scala", "html", "css", "scss", "json",
+    "yaml", "yml", "toml", "xml", "sql", "sh", "bash", "zsh", "fish", "ps1",
+    "lua", "r", "m", "ml", "hs", "ex", "exs", "clj", "txt", "log", "ini", "cfg",
+    "conf", "tex", "latex",
+]);
+
+/** Extension → viewer type fallback mapping. */
+export const EXT_TO_VIEWER: Record<string, string> = {
+    pdf: "pdf",
+    md: "markdown",
+    png: "image",
+    jpg: "image",
+    jpeg: "image",
+    gif: "image",
+    webp: "image",
+    svg: "image",
+    mp4: "video",
+    webm: "video",
+    ogg: "video",
+    mp3: "audio",
+    wav: "audio",
+    flac: "audio",
+    m4a: "audio",
+    aac: "audio",
+    docx: "office",
+    xlsx: "office",
+    pptx: "office",
+    doc: "office",
+    xls: "office",
+    ppt: "office",
+    odt: "office",
+    ods: "office",
+    epub: "epub",
+    djvu: "djvu",
+    djv: "djvu",
+    csv: "csv",
+};
+
+/**
+ * Determines the viewer type (e.g., 'pdf', 'image', 'code') based on MIME type and file name.
+ */
+export function getViewerType(mimeType: string, fileName: string): string {
+    const ext = getFileExtension(fileName);
+
+    // 1. Exact MIME match
+    if (MIME_TO_VIEWER[mimeType]) return MIME_TO_VIEWER[mimeType];
+
+    // 2. MIME prefix match
+    if (mimeType.startsWith("image/")) return "image";
+    if (mimeType.startsWith("video/")) return "video";
+    if (mimeType.startsWith("audio/")) return "audio";
+    if (mimeType.startsWith("text/")) return "code";
+
+    // 3. Force video player for video extensions if mime type is ambiguous
+    if (ext === "mp4" || ext === "webm" || ext === "ogg" || ext === "mov") {
+        return "video";
+    }
+
+    // 4. File extension fallback
+    if (EXT_TO_VIEWER[ext]) return EXT_TO_VIEWER[ext];
+    if (CODE_EXTENSIONS.has(ext)) return "code";
+
+    return "generic";
+}
+
 
 

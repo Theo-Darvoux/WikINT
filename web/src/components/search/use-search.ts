@@ -59,7 +59,7 @@ export function useSearch(query: string, delay = 300) {
 
         let isMounted = true;
 
-        apiFetch<SearchResponse>(`/search?q=${encodeURIComponent(debouncedQuery)}&limit=10`)
+        apiFetch<SearchResponse>(`/search?query=${encodeURIComponent(debouncedQuery)}&limit=10`)
             .then((data) => {
                 if (isMounted) {
                     setResults(data.items);

@@ -97,7 +97,7 @@ export function EpubViewer({ materialId }: EpubViewerProps) {
                     />
                 }
             />
-            <div className={`relative flex flex-1 w-full flex-col bg-muted/20 ${isFullscreen ? "" : "h-[800px]"}`}>
+            <div className={`relative flex flex-1 w-full flex-col bg-zinc-200 dark:bg-zinc-800/50 ${isFullscreen ? "" : "h-[800px]"}`}>
                 {loading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
                         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />

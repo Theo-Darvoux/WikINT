@@ -2,6 +2,9 @@ services:
   postgres:
     deploy:
       resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
         reservations:
           cpus: "0.5"
           memory: 512M
@@ -9,6 +12,9 @@ services:
   redis:
     deploy:
       resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
         reservations:
           cpus: "0.25"
           memory: 128M
@@ -16,6 +22,9 @@ services:
   meilisearch:
     deploy:
       resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
         reservations:
           cpus: "0.25"
           memory: 256M
@@ -27,6 +36,9 @@ services:
       - ENVIRONMENT=production
     deploy:
       resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
         reservations:
           cpus: "0.5"
           memory: 512M
@@ -38,6 +50,9 @@ services:
       - ENVIRONMENT=production
     deploy:
       resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
         reservations:
           cpus: "0.25"
           memory: 256M
@@ -49,6 +64,9 @@ services:
       - ENVIRONMENT=production
     deploy:
       resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
         reservations:
           cpus: "0.25"
           memory: 256M
@@ -60,6 +78,9 @@ services:
       - ENVIRONMENT=production
     deploy:
       resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
         reservations:
           cpus: "0.25"
           memory: 256M
@@ -68,6 +89,9 @@ services:
     image: ghcr.io/theo-darvoux/wikint/web:latest
     deploy:
       resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
         reservations:
           cpus: "0.25"
           memory: 256M
@@ -80,6 +104,9 @@ services:
       - ./infra/nginx/nginx.onlyoffice.snippet:/etc/nginx/nginx.onlyoffice.snippet:ro
     deploy:
       resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
         reservations:
           cpus: "0.1"
           memory: 64M

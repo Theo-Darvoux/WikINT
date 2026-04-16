@@ -5,14 +5,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.responses import JSONResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import settings
 from app.core.exceptions import AppError
+from app.core.limiter import limiter
 from app.routers.admin import router as admin_router
 from app.routers.annotations import (
     annotations_router,
@@ -37,12 +36,6 @@ from app.schemas.common import HealthResponse
 
 logger = logging.getLogger("wikint")
 
-limiter = Limiter(
-    key_func=get_remote_address,
-    storage_uri=settings.redis_url,
-    default_limits=["60/minute"],
-    enabled=not settings.is_dev,
-)
 
 
 @asynccontextmanager
@@ -89,6 +82,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from app.core.redis import redis_client
 
     await redis_client.close()
+
+    from app.core.meilisearch import meili_admin_client, meili_search_client
+
+    await meili_admin_client.aclose()
+    if meili_search_client is not meili_admin_client:
+        await meili_search_client.aclose()
 
 
 app = FastAPI(

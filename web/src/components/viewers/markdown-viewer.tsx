@@ -223,7 +223,7 @@ export function MarkdownViewer({
             />
             <div
                 ref={proseRef}
-                className={`flex-1 overflow-auto prose prose-sm max-w-none p-6 dark:prose-invert
+                className={`flex-1 overflow-auto bg-zinc-200 dark:bg-zinc-800/50 prose prose-sm max-w-none p-6 dark:prose-invert
                     prose-img:rounded-lg prose-img:shadow-sm
                     prose-a:text-primary prose-a:no-underline hover:prose-a:underline
                     prose-pre:bg-muted prose-pre:border prose-pre:border-border prose-pre:text-foreground

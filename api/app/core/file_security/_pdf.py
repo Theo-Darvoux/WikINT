@@ -13,6 +13,7 @@ import asyncio
 import io
 import logging
 import tempfile
+import zlib
 from pathlib import Path
 from typing import cast
 
@@ -240,48 +241,72 @@ def _pikepdf_repack_streams(file_path: Path, out_name: str, quality: int) -> boo
                     already_jpeg = existing_filter == pikepdf.Name("/DCTDecode")
                     if already_jpeg and not needs_resize:
                         continue
-
                     if needs_resize:
                         ratio = min(max_dim / w, max_dim / h)
                         w = int(w * ratio)
                         h = int(h * ratio)
                         pil_image = pil_image.resize((w, h), Image.Resampling.LANCZOS)
 
-                    # Flatten transparency; remove stale /SMask reference.
-                    if pil_image.mode in ("RGBA", "LA", "P"):
-                        pil_image = pil_image.convert("RGB")
-                        if "/SMask" in raw_image:
-                            del raw_image["/SMask"]
-                    elif pil_image.mode == "CMYK":
-                        pil_image = pil_image.convert("RGB")
+                    # Handle transparency by creating/updating Soft Mask (SMask)
+                    has_alpha = pil_image.mode in ("RGBA", "LA")
+                    smask = None
+                    if has_alpha:
+                        alpha_channel = pil_image.getchannel("A")
+                        # Alpha channel is always saved with FlateDecode (lossless)
+                        alpha_data = zlib.compress(alpha_channel.tobytes())
+                        smask = pdf.make_stream(alpha_data)
+                        smask.Type = pikepdf.Name("/XObject")
+                        smask.Subtype = pikepdf.Name("/Image")
+                        smask.Width = w
+                        smask.Height = h
+                        smask.ColorSpace = pikepdf.Name("/DeviceGray")
+                        smask.BitsPerComponent = 8
+                        smask.Filter = pikepdf.Name("/FlateDecode")
 
-                    # Detect line art by unique-colour sampling.
-                    sample = pil_image.convert("RGB").resize((64, 64))
+                    # Decide on compression strategy for the main image data
+                    # Line art (low unique color count) uses FlateDecode (lossless)
+                    # Photos/gradients use DCTDecode (lossy JPEG)
+                    sample = pil_image.convert("RGB").resize((min(w, 64), min(h, 64)))
                     unique_colors = len(set(sample.getdata()))
                     is_line_art = unique_colors < 256
 
-                    buf = io.BytesIO()
                     if is_line_art:
-                        pil_image.save(buf, format="PNG", optimize=True)
-                        img_data = buf.getvalue()
-                        raw_image.write(img_data, filter=pikepdf.Name("/FlateDecode"))
-                        raw_image.Width = w
-                        raw_image.Height = h
-                        if "/DecodeParms" in raw_image:
-                            del raw_image["/DecodeParms"]
-                    else:
-                        pil_image.save(buf, format="JPEG", quality=quality, optimize=True)
-                        img_data = buf.getvalue()
-                        raw_image.write(img_data, filter=pikepdf.Name("/DCTDecode"))
-                        raw_image.Width = w
-                        raw_image.Height = h
-                        raw_image.BitsPerComponent = 8
-                        if pil_image.mode == "L":
-                            raw_image.ColorSpace = pikepdf.Name("/DeviceGray")
-                        else:
+                        # Convert to base mode (RGB or L) for the stream
+                        if pil_image.mode in ("RGBA", "RGB"):
+                            img_to_save = pil_image.convert("RGB")
                             raw_image.ColorSpace = pikepdf.Name("/DeviceRGB")
-                        if "/DecodeParms" in raw_image:
-                            del raw_image["/DecodeParms"]
+                        else:
+                            img_to_save = pil_image.convert("L")
+                            raw_image.ColorSpace = pikepdf.Name("/DeviceGray")
+
+                        img_data = zlib.compress(img_to_save.tobytes())
+                        raw_image.write(img_data, filter=pikepdf.Name("/FlateDecode"))
+                        raw_image.BitsPerComponent = 8
+                    else:
+                        # Photo: JPEG compression
+                        if pil_image.mode in ("RGBA", "RGB"):
+                            img_to_save = pil_image.convert("RGB")
+                            raw_image.ColorSpace = pikepdf.Name("/DeviceRGB")
+                        else:
+                            img_to_save = pil_image.convert("L")
+                            raw_image.ColorSpace = pikepdf.Name("/DeviceGray")
+
+                        buf = io.BytesIO()
+                        img_to_save.save(buf, format="JPEG", quality=quality, optimize=True)
+                        raw_image.write(buf.getvalue(), filter=pikepdf.Name("/DCTDecode"))
+                        raw_image.BitsPerComponent = 8
+
+                    # Update common metadata
+                    raw_image.Width = w
+                    raw_image.Height = h
+                    if "/DecodeParms" in raw_image:
+                        del raw_image["/DecodeParms"]
+
+                    # Link the SMask if we have one, otherwise ensure any old one is removed
+                    if smask:
+                        raw_image.SMask = smask
+                    elif "/SMask" in raw_image:
+                        del raw_image["/SMask"]
 
                 except Exception as e:
                     logger.debug("Could not downsample PDF image %s: %s", name, e)

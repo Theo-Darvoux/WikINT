@@ -2,7 +2,7 @@ import logging
 import uuid
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import delete, desc, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.database import get_db
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
+from app.core.limiter import limiter
 from app.core.storage import object_exists
 from app.dependencies.auth import get_current_user
 from app.models.material import Material, MaterialVersion
@@ -25,7 +26,7 @@ from app.schemas.pull_request import (
     RejectRequest,
 )
 from app.services.notification import notify_user
-from app.services.pr import apply_pr
+from app.services.pr import apply_pr, revert_pr
 
 logger = logging.getLogger("wikint")
 
@@ -426,6 +427,94 @@ async def reject_pull_request(
     return {"status": "ok"}
 
 
+@router.post("/{id}/revert", response_model=PullRequestOut, status_code=201)
+async def revert_pull_request(
+    id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PullRequestOut:
+    if current_user.role not in (UserRole.BUREAU, UserRole.VIEUX):
+        raise ForbiddenError("Only administrators can revert contributions")
+
+    pr = await db.scalar(
+        select(PullRequest).where(PullRequest.id == id).options(joinedload(PullRequest.author))
+    )
+    if not pr:
+        raise NotFoundError("Pull request not found")
+
+    if pr.status != PRStatus.APPROVED:
+        raise BadRequestError("Only approved contributions can be reverted")
+
+    if pr.type == "revert":
+        raise BadRequestError("Revert contributions cannot themselves be reverted")
+
+    if pr.reverted_by_pr_id is not None:
+        raise BadRequestError("This contribution has already been reverted")
+
+    if not pr.is_revertable:
+        raise BadRequestError("The 7-day revert grace period has expired")
+
+    revert = await revert_pr(db, pr, current_user.id)
+    await db.flush()
+    await db.refresh(revert, ["author", "created_at", "updated_at"])
+
+    if pr.author_id and pr.author_id != current_user.id:
+        await notify_user(
+            db,
+            pr.author_id,
+            "pr_reverted",
+            f'Your contribution "{pr.title}" has been reverted',
+            link=f"/pull-requests/{revert.id}",
+        )
+
+    return PullRequestOut.model_validate(revert)
+
+
+@router.post("/{id}/cancel")
+async def cancel_pull_request(
+    id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """Author cancels their own open pull request.
+
+    Releases file claims and schedules deletion of any uploads/ staged files,
+    mirroring the reject flow. CAS keys are untouched — the upload cleanup
+    worker handles ref decrements when upload rows expire.
+    """
+    pr = await db.scalar(select(PullRequest).where(PullRequest.id == id))
+    if not pr:
+        raise NotFoundError("Pull request not found")
+
+    if pr.author_id != current_user.id:
+        raise ForbiddenError("Only the author can cancel this contribution")
+
+    if pr.status != PRStatus.OPEN:
+        raise BadRequestError("This contribution is no longer open")
+
+    pr.status = PRStatus.CANCELLED
+
+    uploads_to_delete: list[str] = []
+    for op in pr.payload:
+        fk = op.get("file_key")
+        if fk and str(fk).startswith("uploads/"):
+            uploads_to_delete.append(str(fk))
+        attachments = op.get("attachments")
+        if isinstance(attachments, list):
+            for att in attachments:
+                att_fk = att.get("file_key") if isinstance(att, dict) else None
+                if att_fk and str(att_fk).startswith("uploads/"):
+                    uploads_to_delete.append(str(att_fk))
+
+    if uploads_to_delete:
+        db.info["post_commit_jobs"].append(("delete_storage_objects", uploads_to_delete))
+
+    await db.execute(delete(PRFileClaim).where(PRFileClaim.pr_id == pr.id))
+
+    await db.commit()
+    return {"status": "ok"}
+
+
 @router.get("/{id}/diff")
 async def get_pull_request_diff(
     id: uuid.UUID,
@@ -546,7 +635,9 @@ async def list_pull_request_comments(
 
 
 @router.post("/{id}/comments", response_model=PRCommentOut)
+@limiter.limit("10/minute")
 async def create_pull_request_comment(
+    request: Request,
     id: uuid.UUID,
     data: PRCommentCreate,
     db: Annotated[AsyncSession, Depends(get_db)],

@@ -185,7 +185,7 @@ export function ReviewDrawer() {
         if (!hasFileKey(op) || !op.file_key) return;
 
         try {
-            const res = await apiFetch<{ url: string }>(`/api/upload/preview?file_key=${encodeURIComponent(op.file_key)}`);
+            const res = await apiFetch<{ url: string }>(`/upload/preview?file_key=${encodeURIComponent(op.file_key)}`);
             if (res.url) {
                 setPreviewUrl(res.url);
                 setPreviewName(op.file_name || undefined);

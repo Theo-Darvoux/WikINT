@@ -1,24 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { useRouter, usePathname } from "next/navigation";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Download,
-  MoreHorizontal,
-  Paperclip,
+  Printer,
+  MoreVertical,
   Loader2,
   PanelRight,
 } from "lucide-react";
 import { useIsMobile, useIsDesktop } from "@/hooks/use-media-query";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   formatFileSize,
-  getFileExtension,
   getFileBadgeColor,
   getFileBadgeLabel,
+  getViewerType,
 } from "@/lib/file-utils";
 import { useUIStore } from "@/lib/stores";
 // useUIStore provides: sidebarOpen, openSidebar, closeSidebar
@@ -139,6 +137,7 @@ import { ViewerFab } from "@/components/browse/viewer-fab";
 import { Breadcrumbs } from "@/components/browse/breadcrumbs";
 import { AnnotationSelectionTooltip } from "@/components/annotations/annotation-selection-tooltip";
 import { useAnnotations, AnnotationsContext } from "@/hooks/use-annotations";
+import { ItemActionsMenu, ItemActionsDropdownTrigger, type ItemData } from "@/components/browse/item-actions-menu";
 import { useDownload } from "@/hooks/use-download";
 import { usePrint } from "@/hooks/use-print";
 
@@ -147,159 +146,18 @@ interface MaterialViewerProps {
   breadcrumbs?: { id: string; name: string; slug: string }[];
 }
 
-const MIME_TO_VIEWER: Record<string, string> = {
-  "application/pdf": "pdf",
-  "text/markdown": "markdown",
-  "text/x-markdown": "markdown",
-  "image/png": "image",
-  "image/jpeg": "image",
-  "image/gif": "image",
-  "image/webp": "image",
-  "image/svg+xml": "image",
-  "video/mp4": "video",
-  "video/webm": "video",
-  "video/ogg": "video",
-  "audio/mpeg": "audio",
-  "audio/wav": "audio",
-  "audio/ogg": "audio",
-  "audio/flac": "audio",
-  "audio/aac": "audio",
-  "audio/mp3": "audio",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-    "office",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "office",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-    "office",
-  "application/msword": "office", // doc
-  "application/vnd.ms-excel": "office", // xls
-  "application/vnd.ms-powerpoint": "office", // ppt
-  "application/vnd.oasis.opendocument.text": "office", // odt
-  "application/vnd.oasis.opendocument.spreadsheet": "office", // ods
-  "application/epub+zip": "epub",
-  "image/vnd.djvu": "djvu",
-  "image/x-djvu": "djvu",
-  "application/x-tex": "code",
-  "text/x-tex": "code",
-  "text/csv": "csv",
-  "application/csv": "csv",
-};
 
-const CODE_EXTENSIONS = new Set([
-  "js",
-  "ts",
-  "jsx",
-  "tsx",
-  "py",
-  "java",
-  "c",
-  "cpp",
-  "h",
-  "hpp",
-  "rs",
-  "go",
-  "rb",
-  "php",
-  "cs",
-  "swift",
-  "kt",
-  "scala",
-  "html",
-  "css",
-  "scss",
-  "json",
-  "yaml",
-  "yml",
-  "toml",
-  "xml",
-  "sql",
-  "sh",
-  "bash",
-  "zsh",
-  "fish",
-  "ps1",
-  "lua",
-  "r",
-  "m",
-  "ml",
-  "hs",
-  "ex",
-  "exs",
-  "clj",
-  "txt",
-  "log",
-  "ini",
-  "cfg",
-  "conf",
-  "tex",
-  "latex",
-]);
-
-// Fallback: map file extensions to viewer types when MIME is unknown
-const EXT_TO_VIEWER: Record<string, string> = {
-  pdf: "pdf",
-  md: "markdown",
-  png: "image",
-  jpg: "image",
-  jpeg: "image",
-  gif: "image",
-  webp: "image",
-  svg: "image",
-  mp4: "video",
-  webm: "video",
-  ogg: "video",
-  mp3: "audio",
-  wav: "audio",
-  flac: "audio",
-  m4a: "audio",
-  aac: "audio",
-  docx: "office",
-  xlsx: "office",
-  pptx: "office",
-  doc: "office",
-  xls: "office",
-  ppt: "office",
-  odt: "office",
-  ods: "office",
-  epub: "epub",
-  djvu: "djvu",
-  djv: "djvu",
-  csv: "csv",
-};
-
-function getViewerType(mimeType: string, fileName: string): string {
-  const ext = getFileExtension(fileName);
-
-  // 1. Exact MIME match
-  if (MIME_TO_VIEWER[mimeType]) return MIME_TO_VIEWER[mimeType];
-
-  // 2. MIME prefix match
-  if (mimeType.startsWith("image/")) return "image";
-  if (mimeType.startsWith("video/")) return "video";
-  if (mimeType.startsWith("audio/")) return "audio";
-  if (mimeType.startsWith("text/")) return "code";
-
-  // 3. Force video player for video extensions if mime type is ambiguous (e.g. application/octet-stream)
-  if (ext === "mp4" || ext === "webm" || ext === "ogg" || ext === "mov") {
-    return "video";
-  }
-
-  // 4. File extension fallback (handles octet-stream / unknown MIME)
-  if (EXT_TO_VIEWER[ext]) return EXT_TO_VIEWER[ext];
-  if (CODE_EXTENSIONS.has(ext)) return "code";
-
-  return "generic";
-}
 
 export function MaterialViewer({
   material,
   breadcrumbs = [],
 }: MaterialViewerProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const isMobile = useIsMobile();
   const isDesktop = useIsDesktop();
   const {
     openSidebar,
+    setSidebarTarget,
     closeSidebar,
     sidebarOpen,
     setHideFooter,
@@ -351,7 +209,7 @@ export function MaterialViewer({
   const annotationsData = useAnnotations(materialId);
   const { createAnnotation, threads } = annotationsData;
   const { downloadMaterial, isDownloading } = useDownload();
-  const { print, canPrint } = usePrint({
+  const { print, isPrinting, canPrint } = usePrint({
     viewerType,
     materialId,
     fileName,
@@ -391,13 +249,13 @@ export function MaterialViewer({
 
   useEffect(() => {
     if (isDesktop) {
-      openSidebar("details", {
+      setSidebarTarget("details", {
         type: "material",
         id: materialId,
         data: { ...material, __viewerType: viewerType },
       });
     }
-  }, [materialId, isDesktop, material, openSidebar, viewerType]);
+  }, [materialId, isDesktop, material, setSidebarTarget, viewerType]);
 
   return (
     <AnnotationsContext.Provider value={annotationsData}>
@@ -448,42 +306,52 @@ export function MaterialViewer({
                 onClick={() => setMaterialActionsOpen(true)}
                 aria-label="Document actions"
               >
-                <MoreHorizontal className="h-5 w-5" />
+                <MoreVertical className="h-5 w-5" />
               </Button>
             ) : (
               <div className="flex items-center gap-2 shrink-0">
-                {!parentMaterialId && (
-                  <Button variant="outline" size="sm" asChild>
-                    <Link
-                      href={`${pathname}/attachments`}
-                      className="gap-2 border-violet-200 text-violet-700 hover:bg-violet-50 dark:border-violet-800/50 dark:text-violet-300 dark:hover:bg-violet-950/30"
-                    >
-                      <Paperclip className="h-3.5 w-3.5" />
-                      Attachments
-                      {attachmentCount > 0 && (
-                        <Badge
-                          variant="secondary"
-                          className="h-5 px-1.5 text-[10px] font-semibold bg-violet-200 text-violet-700 dark:bg-violet-800 dark:text-violet-200"
-                        >
-                          {attachmentCount}
-                        </Badge>
-                      )}
-                    </Link>
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  onClick={() => downloadMaterial(materialId)}
-                  disabled={isDownloading}
-                  className="gap-2"
+                <ItemActionsMenu
+                  item={{
+                    id: materialId,
+                    type: "material",
+                    data: material,
+                  } as ItemData}
                 >
-                  {isDownloading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Download className="h-3.5 w-3.5" />
-                  )}
-                  Download
-                </Button>
+                    <div className="flex items-center gap-2">
+                      <ItemActionsDropdownTrigger />
+                      {canPrint && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8 shrink-0"
+                          onClick={() => print()}
+                          disabled={isPrinting}
+                          title="Print document"
+                        >
+                          {isPrinting ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Printer className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => downloadMaterial(materialId)}
+                        disabled={isDownloading}
+                        title="Download document"
+                      >
+                        {isDownloading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                </ItemActionsMenu>
+
                 <Button
                   variant={sidebarOpen ? "secondary" : "outline"}
                   size="icon"
@@ -589,15 +457,7 @@ export function MaterialViewer({
           </div>
         </div>
 
-        {isDesktop ? (
-          sidebarOpen && (
-            <div className="sticky top-0 h-[calc(100vh-3.5rem)] w-80 shrink-0 border-l bg-background">
-              <SharedSidebar />
-            </div>
-          )
-        ) : (
-          <SharedSidebar />
-        )}
+        <SharedSidebar />
         {isMobile && (
           <ViewerFab
             material={material}

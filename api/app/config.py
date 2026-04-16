@@ -27,6 +27,9 @@ class Settings(BaseSettings):
 
     meili_url: str = "http://localhost:7700"
     meili_master_key: str = "change-me"
+    # Search-only key for public search route.  Provision via Meilisearch admin API and set here.
+    # If unset, falls back to master key with a startup warning (acceptable in dev).
+    meili_search_key: str | None = None
 
     max_file_size_mb: int = 100
 

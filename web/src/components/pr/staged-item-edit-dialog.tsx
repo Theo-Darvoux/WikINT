@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/ui/tag-input";
 import { useStagingStore, unwrapOp } from "@/lib/staging-store";
+import { sanitizeNameInput } from "@/lib/utils";
 import type { Operation } from "@/lib/staging-store";
 
 interface StagedItemEditDialogProps {
@@ -62,6 +63,8 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
         }
     }
 
+    const NAME_MAX = 32;
+
     const handleSave = () => {
         if (index === null || !op) return;
 
@@ -108,8 +111,12 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
                         <Input
                             placeholder="File or folder title"
                             value={title}
-                            onChange={(e) => setTitle(e.target.value)}
+                            onChange={(e) => setTitle(sanitizeNameInput(e.target.value))}
+                            maxLength={NAME_MAX}
                         />
+                        <p className={`text-[11px] text-right ${title.length >= NAME_MAX ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                            {title.length}/{NAME_MAX}
+                        </p>
                     </div>
 
                     <div className="space-y-1.5">

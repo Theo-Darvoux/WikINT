@@ -384,7 +384,7 @@ export function OfficeViewer({ materialId, fileName }: OfficeViewerProps) {
                 }
             />
 
-            <div className="relative flex-1 min-h-0 bg-muted/20">
+            <div className="relative flex-1 min-h-0 bg-zinc-200 dark:bg-zinc-800/50">
                 {loading && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-background/50 backdrop-blur-sm gap-4">
                         <div className="w-full max-w-md px-8 space-y-4">

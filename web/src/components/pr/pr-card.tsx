@@ -13,6 +13,7 @@ import {
     FolderX,
     ArrowRightLeft,
     ChevronRight,
+    Undo2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,7 @@ interface PullRequestProps {
 export function PRCard({ pr }: PullRequestProps) {
     const isApproved = pr.status === "approved";
     const isOpen = pr.status === "open";
+    const isCancelled = pr.status === "cancelled";
 
     const summaryTypes =
         pr.summary_types && pr.summary_types.length > 0
@@ -60,7 +62,9 @@ export function PRCard({ pr }: PullRequestProps) {
         ? "text-green-500"
         : isApproved
           ? "text-purple-500"
-          : "text-red-500";
+          : isCancelled
+            ? "text-muted-foreground"
+            : "text-red-500";
 
     return (
         <Link
@@ -76,6 +80,18 @@ export function PRCard({ pr }: PullRequestProps) {
                     <span className="font-medium text-sm group-hover:underline truncate">
                         {pr.title}
                     </span>
+                    {pr.reverted_by_pr_id && (
+                        <Badge variant="outline" className="shrink-0 gap-0.5 text-[10px] h-5 font-normal border-amber-200 text-amber-600 dark:border-amber-800">
+                            <Undo2 className="h-2.5 w-2.5" />
+                            Reverted
+                        </Badge>
+                    )}
+                    {pr.type === "revert" && (
+                        <Badge variant="outline" className="shrink-0 gap-0.5 text-[10px] h-5 font-normal border-blue-200 text-blue-600 dark:border-blue-800">
+                            <Undo2 className="h-2.5 w-2.5" />
+                            Revert
+                        </Badge>
+                    )}
                     {summaryTypes.map((st) => {
                         const Icon = OP_ICONS[st];
                         return (

@@ -2,8 +2,9 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Discriminator, Field, Tag, field_validator
+from pydantic import BaseModel, BeforeValidator, Discriminator, Field, Tag, field_validator
 
+from app.core.sanitization import NameStr, SanitizedStr, strip_null_chars
 from app.models.security import VirusScanResult
 from app.schemas.user import UserOut
 
@@ -83,7 +84,7 @@ def _validate_file_name(file_name: str | None) -> str | None:
 
 
 class AttachmentOp(BaseModel):
-    title: str = Field(..., min_length=1, max_length=100, pattern=r"^\s*\S.*$")
+    title: NameStr = Field(..., min_length=1, max_length=100, pattern=r"^\s*\S.*$")
     type: str
     file_key: str | None = None
     file_name: str | None = None
@@ -133,9 +134,9 @@ class CreateMaterialOp(BaseModel):
         None,
         description="Real UUID or $temp-id of a directory created in this batch (None for root)",
     )
-    title: str = Field(..., min_length=1, max_length=100, pattern=r"^\s*\S.*$")
+    title: NameStr = Field(..., min_length=1, max_length=100, pattern=r"^\s*\S.*$")
     type: str
-    description: str | None = Field(None, max_length=1000)
+    description: SanitizedStr | None = Field(None, max_length=1000)
     tags: list[str] = Field(default_factory=list)
     file_key: str | None = None
     file_name: str | None = None
@@ -177,9 +178,9 @@ class CreateMaterialOp(BaseModel):
 class EditMaterialOp(BaseModel):
     op: Literal["edit_material"] = "edit_material"
     material_id: uuid.UUID | str
-    title: str | None = Field(None, min_length=1, max_length=100, pattern=r"^\s*\S.*$")
+    title: NameStr | None = Field(None, min_length=1, max_length=32, pattern=r"^\s*\S.*$")
     type: str | None = None
-    description: str | None = Field(None, max_length=1000)
+    description: SanitizedStr | None = Field(None, max_length=1000)
     tags: list[str] | None = None
     file_key: str | None = None
     file_name: str | None = None
@@ -231,9 +232,9 @@ class CreateDirectoryOp(BaseModel):
         description="Client-assigned temp ID starting with $ for inter-op references",
     )
     parent_id: uuid.UUID | str | None = None
-    name: str = Field(..., min_length=1, max_length=100, pattern=r"^\s*\S.*$")
+    name: NameStr = Field(..., min_length=1, max_length=100, pattern=r"^\s*\S.*$")
     type: str = "folder"
-    description: str | None = Field(None, max_length=1000)
+    description: SanitizedStr | None = Field(None, max_length=1000)
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, object] = Field(default_factory=dict)
 
@@ -258,9 +259,9 @@ class CreateDirectoryOp(BaseModel):
 class EditDirectoryOp(BaseModel):
     op: Literal["edit_directory"] = "edit_directory"
     directory_id: uuid.UUID | str
-    name: str | None = Field(None, min_length=1, max_length=100, pattern=r"^\s*\S.*$")
+    name: NameStr | None = Field(None, min_length=1, max_length=100, pattern=r"^\s*\S.*$")
     type: str | None = None
-    description: str | None = Field(None, max_length=1000)
+    description: SanitizedStr | None = Field(None, max_length=1000)
     tags: list[str] | None = None
     metadata: dict[str, object] | None = None
 
@@ -293,9 +294,16 @@ class MoveItemOp(BaseModel):
     target_id: uuid.UUID | str
     new_parent_id: uuid.UUID | str | None
     # Enrichment for ghost rendering in PR previews
-    target_name: str | None = None
-    target_title: str | None = None
+    target_name: str | None = Field(None, max_length=100)
+    target_title: str | None = Field(None, max_length=100)
     target_material_type: str | None = None
+
+    @field_validator("target_material_type")
+    @classmethod
+    def validate_target_material_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in ALLOWED_MATERIAL_TYPES:
+            raise ValueError(f"Invalid material type: {v}")
+        return v
 
 
 def _get_op_discriminator(v: dict[str, object] | BaseModel) -> str:
@@ -329,9 +337,9 @@ MAX_OPERATIONS = 50
 
 
 class PullRequestCreate(BaseModel):
-    title: str = Field(..., min_length=3, max_length=300, pattern=r"^\s*\S.*$")
-    description: str | None = Field(None, max_length=1000)
-    operations: list[Operation] = Field(..., min_length=1)
+    title: SanitizedStr = Field(..., min_length=3, max_length=300, pattern=r"^\s*\S.*$")
+    description: SanitizedStr | None = Field(None, max_length=1000)
+    operations: Annotated[list[Operation], BeforeValidator(strip_null_chars)] = Field(..., min_length=1)
 
     @field_validator("operations")
     @classmethod
@@ -353,8 +361,6 @@ class PullRequestOut(BaseModel):
     title: str
     description: str | None
     payload: list[dict[str, object]]
-    # Enriched operations populated after approval (result_id, result_browse_path per op).
-    # None for open/rejected PRs.
     applied_result: list[dict[str, object]] | None = None
     summary_types: list[str] = Field(default_factory=list)
     author_id: uuid.UUID | None
@@ -365,16 +371,30 @@ class PullRequestOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     expires_at: datetime | None = None
+    approved_at: datetime | None = None
+    reverts_pr_id: uuid.UUID | None = None
+    reverted_by_pr_id: uuid.UUID | None = None
+    revert_grace_expires_at: datetime | None = None
+    can_revert: bool = False
 
     model_config = {"from_attributes": True}
 
+    @classmethod
+    def model_validate(cls, obj: object, **kwargs: object) -> "PullRequestOut":
+        instance = super().model_validate(obj, **kwargs)
+        if hasattr(obj, "is_revertable"):
+            instance.can_revert = obj.is_revertable
+        if hasattr(obj, "revert_grace_expires_at"):
+            instance.revert_grace_expires_at = obj.revert_grace_expires_at
+        return instance
+
 
 class RejectRequest(BaseModel):
-    reason: str = Field(..., min_length=10, max_length=1000)
+    reason: SanitizedStr = Field(..., min_length=10, max_length=1000)
 
 
 class PRCommentCreate(BaseModel):
-    body: str = Field(..., min_length=1, max_length=10000)
+    body: SanitizedStr = Field(..., min_length=1, max_length=10000)
     parent_id: uuid.UUID | None = None
 
 

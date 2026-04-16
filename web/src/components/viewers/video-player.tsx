@@ -43,7 +43,7 @@ export function VideoPlayer({ materialId, material }: VideoPlayerProps) {
                     />
                 }
             />
-            <div className={`flex flex-1 w-full flex-col items-center justify-center bg-black/5 p-4 dark:bg-white/5 ${isFullscreen ? "min-h-0" : ""}`}>
+            <div className={`flex flex-1 w-full flex-col items-center justify-center bg-zinc-200 dark:bg-zinc-800/50 p-4 ${isFullscreen ? "min-h-0" : ""}`}>
                 {embedUrl ? (
                     <div className="aspect-video w-full max-w-5xl">
                         <iframe
