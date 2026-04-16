@@ -152,7 +152,12 @@ async def thumbnail_material(
 ) -> dict[str, str]:
     """
     Generate a presigned URL for a material version's thumbnail.
-    If no dedicated thumbnail exists, falls back to /inline for images/PDFs.
+    Returns {"url": ..., "thumbnail_type": "webp" | "fallback"}.
+    - "webp": a real generated WebP thumbnail is served.
+    - "fallback": no dedicated thumbnail; the original file URL is returned so
+      the frontend can render it natively (react-pdf for PDFs, <video> for videos,
+      <img> for images).
+    Raises 404 for types without any renderable fallback (Office, audio, etc.).
     """
     from app.services.material import check_material_access, get_material_with_version
 
@@ -168,11 +173,20 @@ async def thumbnail_material(
     # 1. Prefer dedicated stored thumbnail
     target_key = getattr(version, "thumbnail_key", None)
     content_type = "image/webp"
+    is_dedicated = bool(target_key)
 
-    # 2. Fallback to main file if it's an image (natively previewable)
+    # 2. Fallback to main file for types the browser can natively render inline
+    #    (images, videos, PDFs). Audio, Office, and generic blobs are excluded
+    #    because the browser cannot render them in an <img> / <video> thumbnail.
     if not target_key:
         file_mime = getattr(version, "file_mime_type", "") or ""
         if file_mime.startswith("image/"):
+            target_key = version.file_key
+            content_type = file_mime
+        elif file_mime.startswith("video/"):
+            target_key = version.file_key
+            content_type = file_mime
+        elif file_mime == "application/pdf":
             target_key = version.file_key
             content_type = file_mime
         else:
@@ -184,7 +198,10 @@ async def thumbnail_material(
         filename=f"thumb_{version.file_name or 'file'}.webp",
         content_type=content_type,
     )
-    return {"url": url}
+    return {
+        "url": url,
+        "thumbnail_type": "webp" if is_dedicated else "fallback",
+    }
 
 
 @router.get("/{material_id}/file")

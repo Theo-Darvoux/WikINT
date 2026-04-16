@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import {
   ArrowLeft,
   Download,
@@ -153,6 +153,20 @@ export function MaterialViewer({
   breadcrumbs = [],
 }: MaterialViewerProps) {
   const router = useRouter();
+  const params = useParams();
+
+  // Derive the parent folder URL by dropping the last path segment
+  const parentFolderHref = (() => {
+    const segments = Array.isArray(params.path)
+      ? params.path
+      : params.path
+        ? [params.path]
+        : [];
+    const parentSegments = segments.slice(0, -1);
+    return parentSegments.length > 0
+      ? `/browse/${parentSegments.join("/")}`
+      : "/browse";
+  })();
   const isMobile = useIsMobile();
   const isDesktop = useIsDesktop();
   const {
@@ -275,8 +289,8 @@ export function MaterialViewer({
                 variant="ghost"
                 size="icon"
                 className="shrink-0"
-                onClick={() => router.back()}
-                title="Back"
+                onClick={() => router.push(parentFolderHref)}
+                title="Back to parent folder"
               >
                 <ArrowLeft className="h-5 w-5" />
               </Button>

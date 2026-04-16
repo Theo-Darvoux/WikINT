@@ -12,11 +12,11 @@ OptStrFromUUID = Annotated[str | None, BeforeValidator(lambda v: str(v) if v is 
 class CommentCreateIn(BaseModel):
     target_type: Literal["directory", "material"]
     target_id: str
-    body: SanitizedStr = Field(min_length=1, max_length=10000)
+    body: SanitizedStr = Field(min_length=1, max_length=1000)
 
 
 class CommentUpdateIn(BaseModel):
-    body: SanitizedStr = Field(min_length=1, max_length=10000)
+    body: SanitizedStr = Field(min_length=1, max_length=1000)
 
 
 class CommentAuthor(BaseModel):

@@ -61,7 +61,11 @@ Generates a presigned download URL for the latest version.
 Generates a presigned download URL configured with inline content disposition for natively viewable formats (images, videos, PDFs).
 
 ### `GET /api/materials/{id}/thumbnail`
-Generates a presigned download URL for the material's auto-generated thumbnail preview. Falls back to original file for natively web-renderable images.
+Generates a presigned download URL for the material's auto-generated thumbnail preview. Returns `{"url": ..., "thumbnail_type": "webp" | "fallback"}`:
+- `"webp"` — a real server-generated WebP thumbnail (`thumbnails/{id}.webp`) is served; render as `<img>`.
+- `"fallback"` — no dedicated thumbnail has been generated yet; the original file URL is returned. The frontend renders it natively: react-pdf for PDFs, `<video>` for videos, `<img>` for images.
+
+Returns 404 for types without any renderable fallback (Office, audio, generic blobs).
 
 ### `GET /api/materials/{id}/file`
 Redirects the client directly to the presigned S3 object URL, allowing browsers to perform HTTP Range requests natively. Handles custom auth via query parameter.

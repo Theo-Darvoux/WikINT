@@ -37,6 +37,7 @@ import { apiRequest } from "@/lib/api-client";
 import { uploadFile, logicalFileSize } from "@/lib/upload-client";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import type { Monaco } from "@monaco-editor/react";
 
 // Monaco is lazy-loaded to keep initial bundle tight
 const MonacoEditor = dynamic(
@@ -80,6 +81,33 @@ function isTextEditable(mimeType: string, fileName: string): boolean {
     // Previously gzip-compressed text is still editable
     if (m === "application/gzip" || name.endsWith(".gz")) return true;
     return isTextMime(m);
+}
+
+/** Register a Monarch tokenizer for LaTeX (not built into Monaco). */
+function registerLatex(monaco: Monaco) {
+    monaco.languages.register({ id: "latex", aliases: ["LaTeX", "TeX", "tex"] });
+    monaco.languages.setMonarchTokensProvider("latex", {
+        tokenizer: {
+            root: [
+                [/%.*$/, "comment"],
+                [/\$\$/, { token: "string", next: "@mathDouble" }],
+                [/\$/, { token: "string", next: "@mathSingle" }],
+                [/\\[a-zA-Z@*]+/, "keyword"],
+                [/[{}]/, "delimiter.curly"],
+                [/\[|\]/, "delimiter.square"],
+            ],
+            mathDouble: [
+                [/\$\$/, { token: "string", next: "@pop" }],
+                [/\\[a-zA-Z@*]+/, "string.escape"],
+                [/./, "string"],
+            ],
+            mathSingle: [
+                [/\$/, { token: "string", next: "@pop" }],
+                [/\\[a-zA-Z@*]+/, "string.escape"],
+                [/./, "string"],
+            ],
+        },
+    });
 }
 
 /** Map file extension → Monaco language id */
@@ -772,6 +800,7 @@ export function FileEditDialog({
                                                 height="100%"
                                                 language={monacoLang}
                                                 value={editorText}
+                                                beforeMount={registerLatex}
                                                 onChange={(v) =>
                                                     setEditorText(v ?? "")
                                                 }

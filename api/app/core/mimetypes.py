@@ -41,12 +41,16 @@ ALLOWED_EXTENSIONS: Final[frozenset[str]] = frozenset(
         ".odt",
         ".ods",
         ".odp",
-        # Text / code
+        # Text / markup
         ".md",
         ".markdown",
+        ".rst",
+        ".adoc",
         ".txt",
         ".csv",
         ".json",
+        ".json5",
+        ".jsonc",
         ".xml",
         ".yaml",
         ".yml",
@@ -54,41 +58,125 @@ ALLOWED_EXTENSIONS: Final[frozenset[str]] = frozenset(
         ".ini",
         ".cfg",
         ".conf",
+        ".log",
+        ".env",
+        # TeX / LaTeX
         ".tex",
         ".latex",
-        ".log",
+        ".sty",
+        ".cls",
+        ".bib",
+        ".dtx",
+        ".ins",
+        # C / C++
+        ".c",
+        ".h",
+        ".cpp",
+        ".cxx",
+        ".cc",
+        ".hpp",
+        ".hxx",
+        # Python
+        ".py",
+        ".pyw",
+        ".pyi",
+        # Java / JVM
+        ".java",
+        ".kt",
+        ".kts",
+        ".scala",
+        ".groovy",
+        ".gradle",
+        # Web
         ".js",
+        ".mjs",
+        ".cjs",
         ".ts",
         ".jsx",
         ".tsx",
-        ".py",
-        ".java",
-        ".c",
-        ".cpp",
-        ".h",
-        ".hpp",
-        ".rs",
-        ".go",
-        ".rb",
-        ".php",
-        ".cs",
-        ".swift",
-        ".kt",
-        ".scala",
+        ".vue",
+        ".svelte",
+        ".html",
+        ".htm",
         ".css",
         ".scss",
-        ".sql",
+        ".sass",
+        ".less",
+        # Systems / Low-level
+        ".rs",
+        ".go",
+        ".zig",
+        ".v",
+        ".nim",
+        ".odin",
+        ".d",
+        # Scripting
+        ".rb",
+        ".php",
+        ".pl",
+        ".pm",
         ".sh",
         ".bash",
         ".zsh",
+        ".fish",
+        ".ps1",
+        ".psm1",
+        ".psd1",
         ".lua",
+        ".tcl",
+        # .NET
+        ".cs",
+        ".vb",
+        ".fs",
+        ".fsx",
+        ".swift",
+        # Data science / stats
         ".r",
+        ".rmd",
+        ".ipynb",
+        ".jl",
         ".m",
+        # ML / AI
         ".ml",
+        ".mli",
+        # Functional
         ".hs",
+        ".lhs",
         ".ex",
         ".exs",
+        ".erl",
+        ".hrl",
         ".clj",
+        ".cljs",
+        ".cljc",
+        ".edn",
+        ".elm",
+        ".ml",
+        # Dart / Flutter
+        ".dart",
+        # Database / Query
+        ".sql",
+        ".graphql",
+        ".gql",
+        # Config / Build
+        ".makefile",
+        ".cmake",
+        ".dockerfile",
+        ".tf",
+        ".hcl",
+        ".nix",
+        ".bazel",
+        ".bzl",
+        ".proto",
+        ".thrift",
+        ".capnp",
+        # Other
+        ".diff",
+        ".patch",
+        ".asm",
+        ".s",
+        ".wat",
+        ".wasm",
     }
 )
 
@@ -121,6 +209,7 @@ EXTENSION_MAPPING: Final[dict[str, list[str]]] = {
     ".odt": ["application/vnd.oasis.opendocument.text"],
     ".ods": ["application/vnd.oasis.opendocument.spreadsheet"],
     ".odp": ["application/vnd.oasis.opendocument.presentation"],
+    ".tex": ["application/x-tex", "text/x-tex"],
 }
 
 # Reverse mapping: MIME type -> canonical extension
@@ -191,24 +280,94 @@ ALLOWED_MIME_TYPES: Final[frozenset[str]] = frozenset(
     {
         # Flattened from EXTENSION_MAPPING
         *[mime for mimes in EXTENSION_MAPPING.values() for mime in mimes],
-        # Text / code types (often guessed as text/plain or specialized mimetypes)
+        # Plain text (catch-all for many code files)
         "text/plain",
+        # Markdown
         "text/markdown",
+        "text/x-markdown",
+        # CSV
         "text/csv",
+        "application/csv",
+        # Web
+        "text/html",
         "text/css",
         "text/javascript",
-        "text/x-python",
-        "text/x-java-source",
-        "text/x-c",
-        "text/x-c++",
-        "application/json",
-        "application/xml",
-        "application/x-yaml",
-        "text/yaml",
         "application/javascript",
         "application/typescript",
+        "text/typescript",
+        # Python
+        "text/x-python",
+        "application/x-python",
+        "application/x-python-code",
+        # C / C++
+        "text/x-c",
+        "text/x-csrc",
+        "text/x-chdr",
+        "text/x-c++",
+        "text/x-c++src",
+        "text/x-c++hdr",
+        # Java / JVM
+        "text/x-java-source",
+        "text/x-java",
+        "text/x-kotlin",
+        "text/x-scala",
+        # Shell
         "application/x-sh",
+        "application/x-bash",
+        "text/x-shellscript",
+        # Ruby
+        "application/x-ruby",
+        "text/x-ruby",
+        # PHP
+        "application/x-php",
+        "text/x-php",
+        # Go
+        "text/x-go",
+        # Rust
+        "text/x-rust",
+        # Swift
+        "text/x-swift",
+        # Data formats
+        "application/json",
+        "application/xml",
+        "text/xml",
+        "application/x-yaml",
+        "text/yaml",
+        "application/toml",
+        "application/x-toml",
+        # SQL
         "application/sql",
+        "text/x-sql",
+        # TeX
+        "application/x-tex",
+        "text/x-tex",
+        # R
+        "text/x-r",
+        "text/x-r-source",
+        # Lua
+        "text/x-lua",
+        # Diff / patch
+        "text/x-diff",
+        "text/x-patch",
+        # Other code mime types OSes may report
+        "text/x-haskell",
+        "text/x-lisp",
+        "text/x-clojure",
+        "text/x-elixir",
+        "text/x-erlang",
+        "text/x-julia",
+        "text/x-dart",
+        "text/x-swift",
+        "text/x-nim",
+        "text/x-zig",
+        "text/x-powershell",
+        "application/x-powershell",
+        "text/x-graphql",
+        "application/graphql",
+        "text/x-protobuf",
+        "application/protobuf",
+        "application/x-nix",
+        "text/x-nix",
     }
 )
 
@@ -280,9 +439,10 @@ def guess_mime_from_bytes(data: bytes, default: str = "application/octet-stream"
             return "audio/mp4"
         return "video/mp4"
 
-    # Legacy MS Office (OLE2)
-    if data.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
-        return default
+    # TeX / LaTeX
+    _tex_stripped = data[:100].lstrip()
+    if _tex_stripped.startswith((b"\\documentclass", b"\\documentstyle", b"\\begin{")):
+        return "text/x-tex"
 
     return default
 
@@ -312,7 +472,9 @@ class MimeRegistry:
     @staticmethod
     def is_allowed_mime(mime_type: str) -> bool:
         """Strict check: is this MIME type explicitly allowed for upload?"""
-        return mime_type.lower() in ALLOWED_MIME_TYPES
+        # Strip parameters like "; charset=utf-8"
+        base_mime = mime_type.split(";")[0].strip().lower()
+        return base_mime in ALLOWED_MIME_TYPES
 
     @staticmethod
     def get_authoritative_mime(filename: str, magic_mime: str) -> str:

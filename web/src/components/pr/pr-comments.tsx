@@ -12,6 +12,7 @@ import { useAuthStore } from "@/lib/stores";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { FlagButton } from "@/components/flags/flag-button";
+import { ExpandableText } from "@/components/ui/expandable-text";
 
 interface PRComment {
     id: string;
@@ -21,7 +22,7 @@ interface PRComment {
     created_at: string;
 }
 
-const MAX_COMMENT_LENGTH = 10000;
+const MAX_COMMENT_LENGTH = 1000;
 
 export function PRComments({ prId }: { prId: string }) {
     const isMobile = useIsMobile();
@@ -191,9 +192,13 @@ export function PRComments({ prId }: { prId: string }) {
                                     })}
                                 </span>
                             </div>
-                            <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap">
-                                {c.body}
-                            </p>
+                            <ExpandableText
+                                text={c.body}
+                                clampedLines={4}
+                                className="mt-1 text-sm leading-relaxed"
+                                showMoreLabel="See more"
+                                showLessLabel="See less"
+                            />
                             <div className="mt-1 flex flex-wrap gap-1">
                                 {canEdit && (
                                     <button
@@ -231,6 +236,7 @@ export function PRComments({ prId }: { prId: string }) {
                     placeholder="Leave a comment…"
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
+                    maxLength={MAX_COMMENT_LENGTH}
                     className="flex-1 text-sm bg-muted/40 focus-visible:bg-background transition-all resize-none overflow-hidden py-2"
                     onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey && !isMobile) {

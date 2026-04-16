@@ -4,11 +4,17 @@ import React, { useEffect, useState, useMemo, useRef, useCallback } from "react"
 import { Loader2 } from "lucide-react";
 import { fetchMaterialFile } from "@/lib/api-client";
 import { useFullscreen } from "@/hooks/use-fullscreen";
+import { usePinchZoom } from "@/hooks/use-pinch-zoom";
 import { FullscreenToggle } from "./fullscreen-toggle";
 import { ViewerToolbar } from "./viewer-toolbar";
+import { ZoomControls } from "./zoom-controls";
 import type { ThreadData } from "@/hooks/use-annotations";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { registerMarkdownPrint, unregisterMarkdownPrint } from "@/lib/markdown-print-registry";
+
+const MIN_ZOOM = 50;
+const MAX_ZOOM = 200;
+const ZOOM_STEP = 10;
 
 interface MarkdownViewerProps {
     fileKey: string;
@@ -114,7 +120,16 @@ export function MarkdownViewer({
 }: MarkdownViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const proseRef = useRef<HTMLDivElement>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
     const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
+    const { zoom, zoomIn, zoomOut, resetZoom } = usePinchZoom({
+        initial: 100,
+        min: MIN_ZOOM,
+        max: MAX_ZOOM,
+        step: ZOOM_STEP,
+        targetRef: scrollRef,
+        handleKeyboard: true,
+    });
     const [content, setContent] = useState<string>("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -135,7 +150,7 @@ export function MarkdownViewer({
             fetchMaterialFile(materialId)
                 .then((res) => res.text())
                 .then((text) => {
-                    const parsed = text.replace(/!\[\[(.*?)\]\]/g, "![$1]($1)");
+                    const parsed = text.replace(/!\[\[(.*?)\]\]/g, (_, p1) => `![${p1}](${encodeURIComponent(p1)})`);
                     if (!cancelled) setContent(parsed);
                 })
                 .catch(() => {
@@ -214,16 +229,32 @@ export function MarkdownViewer({
             <ViewerToolbar 
                 isFullscreen={isFullscreen}
                 right={
-                    <FullscreenToggle 
-                        isFullscreen={isFullscreen} 
-                        onToggle={toggleFullscreen} 
-                        disabled={loading || error}
-                    />
+                    <>
+                        <ZoomControls
+                            zoom={zoom}
+                            onZoomIn={zoomIn}
+                            onZoomOut={zoomOut}
+                            onReset={resetZoom}
+                            min={MIN_ZOOM}
+                            max={MAX_ZOOM}
+                            disabled={loading || error}
+                        />
+                        <FullscreenToggle 
+                            isFullscreen={isFullscreen} 
+                            onToggle={toggleFullscreen} 
+                            disabled={loading || error}
+                        />
+                    </>
                 }
             />
             <div
+                ref={scrollRef}
+                className="flex-1 overflow-auto bg-zinc-200 dark:bg-zinc-800/50"
+                style={{ touchAction: "pan-x pan-y" }}
+            >
+            <div
                 ref={proseRef}
-                className={`flex-1 overflow-auto bg-zinc-200 dark:bg-zinc-800/50 prose prose-sm max-w-none p-6 dark:prose-invert
+                className={`prose prose-sm max-w-none p-6 dark:prose-invert
                     prose-img:rounded-lg prose-img:shadow-sm
                     prose-a:text-primary prose-a:no-underline hover:prose-a:underline
                     prose-pre:bg-muted prose-pre:border prose-pre:border-border prose-pre:text-foreground
@@ -234,6 +265,7 @@ export function MarkdownViewer({
                     prose-headings:scroll-mt-20
                     relative
                     [&_mark]:bg-yellow-200 [&_mark]:text-yellow-900 dark:[&_mark]:bg-yellow-500/20 dark:[&_mark]:text-yellow-200`}
+                style={{ fontSize: `${zoom}%` }}
             >
                 {rendered}
                 
@@ -257,6 +289,7 @@ export function MarkdownViewer({
                         className="rounded-sm"
                     />
                 ))}
+            </div>
             </div>
         </div>
     );

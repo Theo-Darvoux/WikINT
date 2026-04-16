@@ -1096,7 +1096,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             <div className="rounded-lg border bg-card shadow-sm">
                 <div className="space-y-4 p-6">
                     <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-4 flex-1">
+                        <div className="space-y-4 flex-1 min-w-0">
                             {/* Status row */}
                             <div className="flex items-center gap-2 flex-wrap">
                                 <span
@@ -1108,7 +1108,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             </div>
 
                             {/* Title */}
-                            <h1 className="text-xl font-semibold leading-tight">
+                            <h1 className="text-xl font-semibold leading-tight [overflow-wrap:anywhere]">
                                 {pr.title}
                             </h1>
                         </div>

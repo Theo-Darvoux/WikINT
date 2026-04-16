@@ -155,7 +155,7 @@ function CommentItem({
   );
 }
 
-const MAX_COMMENT_LENGTH = 10000;
+const MAX_COMMENT_LENGTH = 1000;
 
 interface ChatTabProps {
   target: SidebarTarget | null;

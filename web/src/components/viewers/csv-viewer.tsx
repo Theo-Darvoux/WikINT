@@ -5,8 +5,14 @@ import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import Papa from "papaparse";
 import { fetchMaterialFile } from "@/lib/api-client";
 import { useFullscreen } from "@/hooks/use-fullscreen";
+import { usePinchZoom } from "@/hooks/use-pinch-zoom";
 import { FullscreenToggle } from "./fullscreen-toggle";
 import { ViewerToolbar } from "./viewer-toolbar";
+import { ZoomControls } from "./zoom-controls";
+
+const MIN_ZOOM = 50;
+const MAX_ZOOM = 200;
+const ZOOM_STEP = 10;
 
 const MAX_FETCH_BYTES = 10 * 1024 * 1024; // 10 MiB hard cap before parsing
 const PAGE_SIZE = 100;
@@ -20,13 +26,21 @@ interface CsvViewerProps {
 export function CsvViewer({ materialId }: CsvViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
+    const tableContainerRef = useRef<HTMLDivElement>(null);
+    const { zoom, zoomIn, zoomOut, resetZoom } = usePinchZoom({
+        initial: 100,
+        min: MIN_ZOOM,
+        max: MAX_ZOOM,
+        step: ZOOM_STEP,
+        targetRef: tableContainerRef,
+        handleKeyboard: true,
+    });
     const [headers, setHeaders] = useState<string[]>([]);
     const [rows, setRows] = useState<string[][]>([]);
     const [truncated, setTruncated] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [page, setPage] = useState(0);
-    const tableContainerRef = useRef<HTMLDivElement>(null);
 
     const [prevMaterialId, setPrevMaterialId] = useState(materialId);
     if (materialId !== prevMaterialId) {
@@ -132,11 +146,22 @@ export function CsvViewer({ materialId }: CsvViewerProps) {
                     </span>
                 }
                 right={
-                    <FullscreenToggle 
-                        isFullscreen={isFullscreen} 
-                        onToggle={toggleFullscreen} 
-                        disabled={loading}
-                    />
+                    <>
+                        <ZoomControls
+                            zoom={zoom}
+                            onZoomIn={zoomIn}
+                            onZoomOut={zoomOut}
+                            onReset={resetZoom}
+                            min={MIN_ZOOM}
+                            max={MAX_ZOOM}
+                            disabled={loading}
+                        />
+                        <FullscreenToggle 
+                            isFullscreen={isFullscreen} 
+                            onToggle={toggleFullscreen} 
+                            disabled={loading}
+                        />
+                    </>
                 }
             />
             <div className="flex h-full flex-col min-h-0">
@@ -147,7 +172,11 @@ export function CsvViewer({ materialId }: CsvViewerProps) {
                 )}
 
                 {/* Table */}
-                <div ref={tableContainerRef} className="flex-1 overflow-auto bg-zinc-200 dark:bg-zinc-800/50">
+                <div
+                    ref={tableContainerRef}
+                    className="flex-1 overflow-auto bg-zinc-200 dark:bg-zinc-800/50"
+                    style={{ fontSize: `${zoom}%`, touchAction: "pan-x pan-y" }}
+                >
                     <table className="w-full border-collapse text-sm">
                         <thead className="sticky top-0 z-10 bg-muted">
                             <tr>

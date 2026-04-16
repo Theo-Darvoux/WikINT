@@ -15,13 +15,37 @@ export const ACCEPTED_FILE_TYPES = [
     // Office (modern + legacy + ODF)
     ".docx", ".xlsx", ".pptx", ".doc", ".xls", ".ppt", ".odt", ".ods",
     // Text / markup
-    ".md", ".markdown", ".txt", ".csv", ".json", ".xml", ".yaml", ".yml", ".toml",
-    ".ini", ".cfg", ".conf", ".tex", ".latex", ".log",
-    // Code
-    ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".c", ".cpp", ".h", ".hpp",
-    ".rs", ".go", ".rb", ".php", ".cs", ".swift", ".kt", ".scala",
-    ".css", ".scss", ".sql", ".sh", ".bash", ".zsh", ".lua", ".r", ".m", ".ml",
-    ".hs", ".ex", ".exs", ".clj",
+    ".md", ".markdown", ".rst", ".adoc",
+    ".txt", ".csv", ".log", ".env",
+    ".json", ".json5", ".jsonc", ".xml", ".yaml", ".yml", ".toml",
+    ".ini", ".cfg", ".conf",
+    // TeX / LaTeX
+    ".tex", ".latex", ".sty", ".cls", ".bib", ".dtx", ".ins",
+    // C / C++
+    ".c", ".h", ".cpp", ".cxx", ".cc", ".hpp", ".hxx",
+    // Python
+    ".py", ".pyw", ".pyi",
+    // Java / JVM
+    ".java", ".kt", ".kts", ".scala", ".groovy", ".gradle",
+    // Web
+    ".js", ".mjs", ".cjs", ".ts", ".jsx", ".tsx", ".vue", ".svelte",
+    ".html", ".htm", ".css", ".scss", ".sass", ".less",
+    // Systems / Low-level
+    ".rs", ".go", ".zig", ".v", ".nim", ".odin", ".d",
+    // Scripting
+    ".rb", ".php", ".pl", ".pm", ".sh", ".bash", ".zsh", ".fish", ".lua", ".tcl",
+    ".ps1", ".psm1", ".psd1",
+    // .NET
+    ".cs", ".vb", ".fs", ".fsx", ".swift",
+    // Data science / stats
+    ".r", ".rmd", ".jl", ".m",
+    // Functional / other
+    ".ml", ".mli", ".hs", ".lhs", ".ex", ".exs", ".erl", ".hrl",
+    ".clj", ".cljs", ".cljc", ".edn", ".elm",
+    // Dart, SQL, GraphQL
+    ".dart", ".sql", ".graphql", ".gql",
+    // Config / Build
+    ".tf", ".hcl", ".nix", ".proto", ".diff", ".patch", ".asm", ".s",
 ].join(",");
 
 export function formatFileSize(bytes: number): string {
@@ -181,23 +205,30 @@ export async function compressImageIfNeeded(file: File, skip = false): Promise<C
 
 /** MIME type → viewer type mapping. */
 export const MIME_TO_VIEWER: Record<string, string> = {
+    // Documents
     "application/pdf": "pdf",
+    // Markdown
     "text/markdown": "markdown",
     "text/x-markdown": "markdown",
+    // Images
     "image/png": "image",
     "image/jpeg": "image",
     "image/gif": "image",
     "image/webp": "image",
     "image/svg+xml": "image",
+    // Video
     "video/mp4": "video",
     "video/webm": "video",
     "video/ogg": "video",
+    // Audio
     "audio/mpeg": "audio",
     "audio/wav": "audio",
     "audio/ogg": "audio",
     "audio/flac": "audio",
     "audio/aac": "audio",
     "audio/mp3": "audio",
+    "audio/mp4": "audio",
+    // Office
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "office",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "office",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": "office",
@@ -206,22 +237,111 @@ export const MIME_TO_VIEWER: Record<string, string> = {
     "application/vnd.ms-powerpoint": "office",
     "application/vnd.oasis.opendocument.text": "office",
     "application/vnd.oasis.opendocument.spreadsheet": "office",
+    "application/vnd.oasis.opendocument.presentation": "office",
+    // E-books
     "application/epub+zip": "epub",
+    // DjVu
     "image/vnd.djvu": "djvu",
     "image/x-djvu": "djvu",
-    "application/x-tex": "code",
-    "text/x-tex": "code",
+    // CSV
     "text/csv": "csv",
     "application/csv": "csv",
+    // Code / text — explicit MIME entries
+    "text/plain": "code",
+    "application/x-tex": "code",
+    "text/x-tex": "code",
+    "text/x-python": "code",
+    "application/x-python": "code",
+    "application/x-python-code": "code",
+    "text/x-c": "code",
+    "text/x-csrc": "code",
+    "text/x-chdr": "code",
+    "text/x-c++": "code",
+    "text/x-c++src": "code",
+    "text/x-c++hdr": "code",
+    "text/x-java-source": "code",
+    "text/x-java": "code",
+    "text/x-kotlin": "code",
+    "text/x-scala": "code",
+    "text/x-ruby": "code",
+    "application/x-ruby": "code",
+    "text/x-php": "code",
+    "application/x-php": "code",
+    "text/x-go": "code",
+    "text/x-rust": "code",
+    "text/x-swift": "code",
+    "text/javascript": "code",
+    "application/javascript": "code",
+    "application/typescript": "code",
+    "text/typescript": "code",
+    "text/css": "code",
+    "text/html": "code",
+    "application/json": "code",
+    "application/xml": "code",
+    "text/xml": "code",
+    "application/x-yaml": "code",
+    "text/yaml": "code",
+    "application/toml": "code",
+    "application/x-toml": "code",
+    "application/sql": "code",
+    "text/x-sql": "code",
+    "text/x-r": "code",
+    "text/x-r-source": "code",
+    "text/x-lua": "code",
+    "text/x-shellscript": "code",
+    "application/x-sh": "code",
+    "application/x-bash": "code",
+    "text/x-diff": "code",
+    "text/x-patch": "code",
+    "text/x-haskell": "code",
+    "text/x-lisp": "code",
+    "text/x-clojure": "code",
+    "text/x-elixir": "code",
+    "text/x-erlang": "code",
+    "text/x-julia": "code",
+    "text/x-dart": "code",
+    "text/x-nim": "code",
+    "text/x-zig": "code",
+    "text/x-powershell": "code",
+    "application/x-powershell": "code",
+    "text/x-graphql": "code",
+    "application/graphql": "code",
+    "text/x-protobuf": "code",
+    "text/x-nix": "code",
 };
 
 /** Code extensions that should use the code viewer. */
 export const CODE_EXTENSIONS = new Set([
-    "js", "ts", "jsx", "tsx", "py", "java", "c", "cpp", "h", "hpp", "rs", "go",
-    "rb", "php", "cs", "swift", "kt", "scala", "html", "css", "scss", "json",
-    "yaml", "yml", "toml", "xml", "sql", "sh", "bash", "zsh", "fish", "ps1",
-    "lua", "r", "m", "ml", "hs", "ex", "exs", "clj", "txt", "log", "ini", "cfg",
-    "conf", "tex", "latex",
+    // JavaScript / TypeScript / Web
+    "js", "mjs", "cjs", "ts", "jsx", "tsx", "vue", "svelte",
+    "html", "htm", "css", "scss", "sass", "less",
+    // Python
+    "py", "pyw", "pyi",
+    // Java / JVM
+    "java", "kt", "kts", "scala", "groovy", "gradle",
+    // C / C++
+    "c", "h", "cpp", "cxx", "cc", "hpp", "hxx",
+    // Systems
+    "rs", "go", "zig", "v", "nim", "odin", "d",
+    // Scripting
+    "rb", "php", "pl", "pm", "sh", "bash", "zsh", "fish", "lua", "tcl",
+    "ps1", "psm1", "psd1",
+    // .NET
+    "cs", "vb", "fs", "fsx", "swift",
+    // Data / Query
+    "sql", "graphql", "gql", "r", "rmd", "jl",
+    // Config / markup
+    "json", "json5", "jsonc", "yaml", "yml", "toml", "xml", "ini", "cfg", "conf", "env",
+    "tf", "hcl", "nix", "proto", "diff", "patch", "asm", "s",
+    // TeX / LaTeX
+    "tex", "latex", "sty", "cls", "bib", "dtx", "ins",
+    // Functional
+    "ml", "mli", "hs", "lhs", "ex", "exs", "erl", "hrl",
+    "clj", "cljs", "cljc", "edn", "elm",
+    // Dart
+    "dart",
+    // Text / misc
+    "m", "txt", "log", "md", "markdown", "rst", "adoc",
 ]);
 
 /** Extension → viewer type fallback mapping. */

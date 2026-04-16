@@ -32,8 +32,8 @@ async def update_pr_comment(
     if data.body is not None:
         comment.body = data.body
 
-    await db.flush()
-    await db.refresh(comment, ["author"])
+    await db.commit()
+    await db.refresh(comment, ["author", "updated_at"])
     return PRCommentOut.model_validate(comment)
 
 

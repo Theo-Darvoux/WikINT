@@ -315,6 +315,26 @@ async def _get_file_info(file_key: str) -> dict[str, typing.Any]:
     return info
 
 
+async def _resolve_thumbnail_key(db: AsyncSession, cas_file_key: str) -> str | None:
+    """Return the thumbnail_key stored in the uploads table for the given CAS file key.
+
+    When a file is processed by the upload pipeline the resulting WebP thumbnail
+    path is persisted in `uploads.thumbnail_key` (e.g. ``thumbnails/<sha256>.webp``).
+    This key must be copied to `MaterialVersion.thumbnail_key` so the thumbnail
+    endpoint can serve it — previously this step was missing, causing all newly
+    uploaded materials to have no thumbnail.
+    """
+    from app.models.upload import Upload as _Upload
+
+    return await db.scalar(
+        select(_Upload.thumbnail_key)
+        .where(_Upload.final_key == cas_file_key)
+        .where(_Upload.thumbnail_key.isnot(None))
+        .order_by(_Upload.updated_at.desc())
+        .limit(1)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Individual operation executors
 # ---------------------------------------------------------------------------
@@ -376,6 +396,9 @@ async def _exec_create_material(
                 ("delete_storage_objects", [str(p["file_key"])])
             )
 
+        # Resolve thumbnail_key from the upload record (CAS V2: keyed by final_key)
+        thumbnail_key_val = await _resolve_thumbnail_key(db, file_key) if file_key.startswith("cas/") else None
+
         mv = MaterialVersion(
             id=uuid.uuid4(),
             material_id=m.id,
@@ -388,6 +411,7 @@ async def _exec_create_material(
             author_id=pr.author_id,
             pr_id=pr.id,
             virus_scan_result=VirusScanResult.CLEAN,
+            thumbnail_key=thumbnail_key_val,
         )
         db.add(mv)
         await db.flush()
@@ -456,6 +480,9 @@ async def _exec_create_material(
                     )
                     att_fk = new_att_fk
 
+                # Resolve thumbnail_key from the upload record
+                att_thumb_key = await _resolve_thumbnail_key(db, att_fk) if att_fk.startswith("cas/") else None
+
                 v = MaterialVersion(
                     id=uuid.uuid4(),
                     material_id=att_m.id,
@@ -468,6 +495,7 @@ async def _exec_create_material(
                     author_id=pr.author_id,
                     pr_id=pr.id,
                     virus_scan_result=VirusScanResult.CLEAN,
+                    thumbnail_key=att_thumb_key,
                 )
                 db.add(v)
                 await db.flush()
@@ -553,6 +581,9 @@ async def _exec_edit_material(
 
         _next_version_lock = (_latest_mv.version_lock + 1) if _latest_mv is not None else 0
 
+        # Resolve thumbnail_key from the upload record (CAS V2: keyed by final_key)
+        edit_thumbnail_key = await _resolve_thumbnail_key(db, file_key) if file_key.startswith("cas/") else None
+
         mv = MaterialVersion(
             id=uuid.uuid4(),
             material_id=mat.id,
@@ -567,6 +598,7 @@ async def _exec_edit_material(
             pr_id=pr.id,
             virus_scan_result=VirusScanResult.CLEAN,
             version_lock=_next_version_lock,
+            thumbnail_key=edit_thumbnail_key,
         )
         mat.current_version += 1
         db.add(mv)

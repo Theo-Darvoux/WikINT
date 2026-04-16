@@ -26,7 +26,15 @@ The worker is now split into three layers:
 ### Thumbnail Generation (`stages/thumbnail.py`)
 
 `run_thumbnail_stage` runs after compression and before finalization. It dispatches
-on MIME type to produce a `640×360` WebP stored at `thumbnails/{version_id}.webp`:
+on MIME type to produce a `640×360` WebP stored at `thumbnails/{cas_sha256}.webp`:
+
+> **Important**: `run_thumbnail_stage` stores the thumbnail path in `uploads.thumbnail_key`
+> during finalization. When a PR is later applied, `_exec_create_material` /
+> `_exec_edit_material` in `services/pr.py` must read this key from `uploads` and copy it
+> into `MaterialVersion.thumbnail_key`. This is done via `_resolve_thumbnail_key()` which
+> looks up `uploads` by `final_key = file_key`. Without this step, `thumbnail_key` in
+> `material_versions` would always be NULL and no server-generated thumbnail would be served.
+
 
 | File type | Tool used |
 |---|---|

@@ -147,7 +147,7 @@ export function MarkdownRenderer({ content, material, className, previewMode }: 
 
             if (firstNodeText) {
                 // Match the marker, allowing a few random leading characters to avoid BOM or zero-width-space issues
-                const match = firstNodeText.match(/^.{0,5}?\[!(\w+)([+-]?)\]/);
+                const match = firstNodeText.match(/^.{0,5}?\[!(\w+)\]([+-]?)/);
                 
                 if (match) {
                     const type = match[1].toLowerCase() as CalloutType;

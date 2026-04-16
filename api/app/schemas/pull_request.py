@@ -394,7 +394,7 @@ class RejectRequest(BaseModel):
 
 
 class PRCommentCreate(BaseModel):
-    body: SanitizedStr = Field(..., min_length=1, max_length=10000)
+    body: SanitizedStr = Field(..., min_length=1, max_length=1000)
     parent_id: uuid.UUID | None = None
 
 

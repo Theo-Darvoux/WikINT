@@ -4,8 +4,14 @@ import { useEffect, useState, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchMaterialBlob } from "@/lib/api-client";
 import { useFullscreen } from "@/hooks/use-fullscreen";
+import { usePinchZoom } from "@/hooks/use-pinch-zoom";
 import { FullscreenToggle } from "./fullscreen-toggle";
 import { ViewerToolbar } from "./viewer-toolbar";
+import { ZoomControls } from "./zoom-controls";
+
+const MIN_ZOOM = 25;
+const MAX_ZOOM = 500;
+const ZOOM_STEP = 25;
 
 interface ImageViewerProps {
     fileKey: string;
@@ -15,10 +21,20 @@ interface ImageViewerProps {
 
 export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
     const containerRef = useRef<HTMLDivElement>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
     const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
     const [blobUrl, setBlobUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    const { zoom, zoomIn, zoomOut, resetZoom } = usePinchZoom({
+        initial: 100,
+        min: MIN_ZOOM,
+        max: MAX_ZOOM,
+        step: ZOOM_STEP,
+        targetRef: scrollRef,
+        handleKeyboard: true,
+    });
 
     useEffect(() => {
         let objectUrl: string | null = null;
@@ -58,14 +74,29 @@ export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
             <ViewerToolbar 
                 isFullscreen={isFullscreen}
                 right={
-                    <FullscreenToggle 
-                        isFullscreen={isFullscreen} 
-                        onToggle={toggleFullscreen} 
-                        disabled={loading || !!error}
-                    />
+                    <>
+                        <ZoomControls
+                            zoom={zoom}
+                            onZoomIn={zoomIn}
+                            onZoomOut={zoomOut}
+                            onReset={resetZoom}
+                            min={MIN_ZOOM}
+                            max={MAX_ZOOM}
+                            disabled={loading || !!error}
+                        />
+                        <FullscreenToggle 
+                            isFullscreen={isFullscreen} 
+                            onToggle={toggleFullscreen} 
+                            disabled={loading || !!error}
+                        />
+                    </>
                 }
             />
-            <div className={`relative flex flex-1 w-full items-center justify-center bg-zinc-200 dark:bg-zinc-800/50 ${isFullscreen ? "" : "h-[calc(100vh-10rem)]"}`}>
+            <div
+                ref={scrollRef}
+                className={`relative flex flex-1 w-full items-center justify-center bg-zinc-200 dark:bg-zinc-800/50 overflow-auto ${isFullscreen ? "" : "h-[calc(100vh-10rem)]"}`}
+                style={{ touchAction: "pan-x pan-y" }}
+            >
                 {loading && (
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 )}
@@ -77,7 +108,13 @@ export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
                     <img
                         src={blobUrl}
                         alt={fileName}
+                        style={{
+                            transform: `scale(${zoom / 100})`,
+                            transformOrigin: "center center",
+                            transition: "transform 0.15s ease",
+                        }}
                         className={`${isFullscreen ? "max-h-[90vh]" : "max-h-[80vh]"} max-w-full object-contain`}
+                        draggable={false}
                     />
                 )}
             </div>

@@ -112,18 +112,20 @@ These components power the home page, the `/popular` page, and the admin feature
 - `EmptyDirectory` — Empty state with upload CTA
 
 ### Viewer Components (`components/viewers/`)
-Each viewer handles a specific file type:
-- `PDFViewer` — PDF rendering (pdf.js based)
-- `ImageViewer` — Image display with zoom
+Each viewer handles a specific file type. All viewers that support zoom include `ZoomControls` in their `ViewerToolbar` and support pinch-to-zoom on touch screens and Ctrl+wheel on pointer devices via the `usePinchZoom` hook.
+- `PDFViewer` — PDF rendering (pdf.js based). Zoom adjusts rendered page width. Supports Ctrl+= / Ctrl+- / Ctrl+0 keyboard shortcuts, Ctrl+wheel, and pinch-to-zoom.
+- `ImageViewer` — Image display with zoom via CSS `transform: scale(zoom/100)`. Supports ZoomControls, Ctrl+wheel, and pinch-to-zoom (25%–500%).
 - `VideoPlayer` — HTML5 video player
 - `AudioPlayer` — HTML5 audio player
-- `CodeViewer` — Syntax-highlighted code (highlight.js or similar)
-- `MarkdownViewer` — Rendered markdown (with GFM, WikiLinks, Mermaid diagrams, and Obsidian callouts)
+- `CodeViewer` — Syntax-highlighted code (highlight.js). Zoom adjusts `fontSize` on the `<pre>` element (50%–200%). Supports a large set of languages via the common bundle plus individually imported grammars: C/C++, Python, Java/Kotlin/Scala/Groovy, JavaScript/TypeScript, Rust, Go, Ruby, PHP, C#/F#/VB.NET, Swift, Dart, Haskell, OCaml, Elixir, Erlang, Clojure, Elm, Julia, Lua, Perl, Tcl, PowerShell, Bash/Shell, SQL, GraphQL, Protobuf, Nix, Nim, D, x86 ASM, CMake, TeX/LaTeX, Diff, and more. Languages without a dedicated HLJS grammar (Zig, V, HCL/Terraform, TOML) get best-effort highlighting via a close analogue.
+- `MarkdownViewer` — Rendered markdown (with GFM, WikiLinks, Mermaid diagrams, and Obsidian callouts). Zoom adjusts `fontSize` on the prose container (50%–200%).
+- `CsvViewer` — Paginated CSV table viewer. Zoom adjusts `fontSize` on the table container (50%–200%).
 - `EpubViewer` — EPUB reader
 - `DjvuViewer` — DjVu document viewer
 - `OfficeViewer` — OnlyOffice integration for docx/xlsx/pptx
 - `GenericViewer` — Fallback download-only view
 - `FullscreenToggle` — Fullscreen mode control
+- `ZoomControls` — Shared zoom toolbar cluster (ZoomOut | `N%` | ZoomIn) used across all zoomable viewers. Accepts `min`, `max`, `onZoomIn`, `onZoomOut`, `onReset`, and `disabled` props.
 
 ### PR Components (`components/pr/`)
 - `PRList` — Paginated PR list with status filtering (Pending / Approved / Rejected / All). The tab bar uses `overflow-x-auto` with hidden scrollbar so tabs remain scrollable on narrow screens without wrapping.

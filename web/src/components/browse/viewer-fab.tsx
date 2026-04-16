@@ -82,7 +82,7 @@ function ActionCell({
     </span>
   );
 
-  const wrap = "flex flex-col items-center gap-2 overflow-hidden";
+  const wrap = "flex flex-col items-center gap-2";
 
   if (href) {
     return (
@@ -364,7 +364,7 @@ export function ViewerFab({
           )}
 
           {/* ── Report ── */}
-          <div className="flex flex-col items-center gap-2 overflow-hidden">
+          <div className="flex flex-col items-center gap-2">
             <FlagButton
               targetType="material"
               targetId={materialId}

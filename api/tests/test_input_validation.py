@@ -931,11 +931,11 @@ class TestCommentCreateIn:
 
     def test_rejects_body_too_long(self):
         with pytest.raises(ValidationError):
-            self._make(body="a" * 10001)
+            self._make(body="a" * 1001)
 
     def test_body_max_length_ok(self):
-        m = self._make(body="a" * 10000)
-        assert len(m.body) == 10000
+        m = self._make(body="a" * 1000)
+        assert len(m.body) == 1000
 
     def test_strips_null_from_body(self):
         m = self._make(body="hel\x00lo")
@@ -952,7 +952,7 @@ class TestCommentCreateIn:
     @pytest.mark.parametrize("payload", SQL_INJECTIONS)
     def test_sql_payload_passes_as_text(self, payload):
         # SQL payloads are valid text — escaping is the ORM's job
-        m = self._make(body=payload[:10000])
+        m = self._make(body=payload[:1000])
         for char in CONTROL_CHARS + BIDI_CHARS:
             assert char not in m.body
 
@@ -972,7 +972,7 @@ class TestCommentUpdateIn:
 
     def test_rejects_too_long(self):
         with pytest.raises(ValidationError):
-            self._make("a" * 10001)
+            self._make("a" * 1001)
 
     def test_strips_null(self):
         m = self._make("hel\x00lo world")
@@ -1000,11 +1000,11 @@ class TestPRCommentCreate:
 
     def test_rejects_too_long(self):
         with pytest.raises(ValidationError):
-            self._make(body="a" * 10001)
+            self._make(body="a" * 1001)
 
     def test_body_max_length_ok(self):
-        m = self._make(body="a" * 10000)
-        assert len(m.body) == 10000
+        m = self._make(body="a" * 1000)
+        assert len(m.body) == 1000
 
     def test_strips_null(self):
         m = self._make(body="hel\x00lo")

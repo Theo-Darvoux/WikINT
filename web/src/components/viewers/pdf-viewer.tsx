@@ -9,6 +9,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 import type { ThreadData } from "@/hooks/use-annotations";
 import { fetchMaterialBlob } from "@/lib/api-client";
 import { useFullscreen } from "@/hooks/use-fullscreen";
+import { usePinchZoom } from "@/hooks/use-pinch-zoom";
 import { FullscreenToggle } from "./fullscreen-toggle";
 import { ViewerToolbar } from "./viewer-toolbar";
 
@@ -214,7 +215,21 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
-    const [zoom, setZoom] = useState(100);
+
+    // usePinchZoom is the single source of truth for zoom:
+    // - Touch pinch and Ctrl+wheel are handled by the hook.
+    // - Keyboard (Ctrl+= / Ctrl+- / Ctrl+0) is handled separately below
+    //   so it can preventDefault before the print handler in material-viewer.
+    // - The buttons call setZoom / zoomIn / zoomOut directly from the hook.
+    const { zoom, setZoom } = usePinchZoom({
+        initial: 100,
+        min: MIN_ZOOM,
+        max: MAX_ZOOM,
+        step: ZOOM_STEP,
+        targetRef: scrollRef,
+        handleKeyboard: false,
+    });
+
     const [fileUrl, setFileUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [numPages, setNumPages] = useState<number>(0);
@@ -290,7 +305,7 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, []);
+    }, [setZoom]);
 
     const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
         setNumPages(numPages);
@@ -403,6 +418,7 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
                 ref={scrollRef}
                 className={`overflow-auto bg-zinc-200 dark:bg-zinc-800/50 flex flex-col ${isFullscreen ? "flex-1" : "flex-1"
                     }`}
+                style={{ touchAction: "pan-x pan-y" }}
             >
                 {error && (
                     <div className="flex w-full flex-col items-center justify-center p-8 text-center">
