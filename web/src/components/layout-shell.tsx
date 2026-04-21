@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores";
 
 export function LayoutShell({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading, fetchMe } = useAuth();
+  const { user, isAuthenticated, isLoading, fetchMe } = useAuth();
   const { hideFooter } = useUIStore();
   const pathname = usePathname();
   const router = useRouter();
@@ -42,14 +42,40 @@ export function LayoutShell({ children }: { children: ReactNode }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const isPublicRoute = pathname === "/login" || pathname === "/login/verify";
-    if (!isLoading && !isAuthenticated && !isPublicRoute) {
-      router.push("/login");
-    }
-  }, [isLoading, isAuthenticated, pathname, router]);
+    const isPublicRoute = pathname === "/login" || pathname === "/login/verify" || pathname === "/privacy";
+    const isOnboardingRoute = pathname === "/onboarding";
 
-  const isPublicPage = pathname === "/login" || pathname === "/login/verify";
-  const shouldHideContent = !isPublicPage && (isLoading || !isAuthenticated);
+    if (isLoading) return;
+
+    if (!isAuthenticated) {
+      if (!isPublicRoute) router.push("/login");
+      return;
+    }
+
+    // Authenticated user checks
+    if (!user) return; // Wait for user data
+
+    if (user.role === "pending" && pathname !== "/pending-approval") {
+      router.push("/pending-approval");
+      return;
+    }
+
+    if (!user.onboarded && !isOnboardingRoute && !isPublicRoute) {
+      router.push("/onboarding");
+    }
+  }, [isLoading, isAuthenticated, user, pathname, router]);
+
+  const isPublicPage = pathname === "/login" || pathname === "/login/verify" || pathname === "/privacy";
+  const isOnboardingPage = pathname === "/onboarding";
+  const isPendingPage = pathname === "/pending-approval";
+
+  // Content visibility logic
+  const shouldHideContent = !isPublicPage && (
+    isLoading || 
+    !isAuthenticated || 
+    (user && !user.onboarded && !isOnboardingPage) ||
+    (user && user.role === "pending" && !isPendingPage)
+  );
   const isOffline = useOffline();
 
   return (
@@ -66,25 +92,25 @@ export function LayoutShell({ children }: { children: ReactNode }) {
         <WifiOff className="h-3.5 w-3.5" />
         You appear to be offline. Some features may not work.
       </div>
-      <Navbar />
+      {!shouldHideContent && <Navbar />}
       <main className="flex-1 w-full flex flex-col overflow-x-hidden">
         {shouldHideContent ? (
           <div className="flex-1 flex flex-col items-center justify-center min-h-[50vh] animate-in fade-in duration-500">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4" />
             <p className="text-sm text-muted-foreground font-medium animate-pulse">
-              Récupération de la session...
+              {(user && !user.onboarded) ? "Redirecting to setup..." : "Récupération de la session..."}
             </p>
           </div>
         ) : (
           children
         )}
       </main>
-      {!hideFooter && (
+      {!hideFooter && !shouldHideContent && (
         <div className="hidden md:block">
           <Footer />
         </div>
       )}
-      <MobileBottomBar />
+      {!shouldHideContent && <MobileBottomBar />}
       <ConfirmDialog />
 
       <StagingFab />

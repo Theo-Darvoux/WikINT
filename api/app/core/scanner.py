@@ -22,6 +22,10 @@ class MalwareScanner:
         self.rules: yara.Rules | None = None
         self.client: httpx.AsyncClient | None = None
 
+    @property
+    def initialized(self) -> bool:
+        return self.rules is not None
+
     def initialize(self) -> None:
         """Compile YARA rules from disk. Fails hard if no rules found."""
         rules_dir = Path(settings.yara_rules_dir)
@@ -113,7 +117,8 @@ class MalwareScanner:
 
             bazaar_hash = await asyncio.to_thread(_hash_file)
 
-        assert bazaar_hash is not None
+        if bazaar_hash is None:
+            raise RuntimeError("Malware hash calculation failed")
         yara_result, bazaar_result = await asyncio.gather(
             self._scan_yara_path(file_path, filename),
             self._check_malwarebazaar(bazaar_hash, filename),
@@ -296,7 +301,8 @@ async def scan_file(file_bytes: bytes, filename: str, *, bazaar_hash: str | None
         # Auto-init if accessed before main.py lifespan (useful for tests)
         init_scanner()
 
-    assert _global_scanner is not None
+    if _global_scanner is None:
+        raise RuntimeError("Malware scanner failed to initialize")
     await _global_scanner.scan_file(file_bytes, filename, bazaar_hash=bazaar_hash)
 
 

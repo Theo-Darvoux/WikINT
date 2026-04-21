@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Trash2, Search } from "lucide-react";
+import { Trash2, Search, CheckCircle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,10 +11,12 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface AdminUser {
     id: string;
@@ -31,6 +33,14 @@ interface PaginatedUsers {
     page: number;
     pages: number;
 }
+
+const ROLE_BADGE: Record<string, string> = {
+    pending: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
+    student: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+    moderator: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
+    bureau: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    vieux: "bg-gray-100 text-gray-800 dark:bg-gray-800/50 dark:text-gray-300",
+};
 
 export default function AdminUsersPage() {
     const { user } = useAuth();
@@ -81,6 +91,40 @@ export default function AdminUsersPage() {
         }
     };
 
+    const handleApprove = async (userId: string, email: string) => {
+        show(
+            "Approve user?",
+            `Grant ${email} full student access?`,
+            async () => {
+                try {
+                    const updated = await apiFetch<AdminUser>(`/admin/users/${userId}/approve`, { method: "POST" });
+                    setUsers((prev) =>
+                        prev.map((u) => (u.id === userId ? { ...u, role: updated.role } : u))
+                    );
+                    toast.success("User approved");
+                } catch {
+                    toast.error("Failed to approve user");
+                }
+            }
+        );
+    };
+
+    const handleReject = async (userId: string, email: string) => {
+        show(
+            "Reject and delete user?",
+            `This will permanently delete ${email}'s account. They will need to re-register if they want access.`,
+            async () => {
+                try {
+                    await apiFetch(`/admin/users/${userId}/reject`, { method: "POST" });
+                    setUsers((prev) => prev.filter((u) => u.id !== userId));
+                    toast.success("User rejected and deleted");
+                } catch {
+                    toast.error("Failed to reject user");
+                }
+            }
+        );
+    };
+
     const handleDelete = (userId: string, email: string) => {
         show(
             "Soft-delete user?",
@@ -97,8 +141,33 @@ export default function AdminUsersPage() {
         );
     };
 
+    const pendingCount = users.filter((u) => u.role === "pending").length;
+
     return (
         <div className="space-y-4">
+            {/* Pending banner */}
+            {roleFilter === "pending" || pendingCount > 0 ? (
+                <div
+                    role="alert"
+                    className={cn(
+                        "flex items-center gap-3 rounded-lg border px-4 py-3 text-sm",
+                        "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+                    )}
+                >
+                    <span className="font-medium">
+                        {pendingCount} pending {pendingCount === 1 ? "user" : "users"} awaiting approval
+                    </span>
+                    {roleFilter !== "pending" && (
+                        <button
+                            onClick={() => setRoleFilter("pending")}
+                            className="ml-auto text-xs underline underline-offset-2 hover:no-underline"
+                        >
+                            Show only pending
+                        </button>
+                    )}
+                </div>
+            ) : null}
+
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                 <div className="relative flex-1">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -115,6 +184,7 @@ export default function AdminUsersPage() {
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem value="all">All roles</SelectItem>
+                        <SelectItem value="pending">⏳ Pending</SelectItem>
                         <SelectItem value="student">Student</SelectItem>
                         <SelectItem value="moderator">Moderator</SelectItem>
                         <SelectItem value="bureau">Bureau</SelectItem>
@@ -136,13 +206,19 @@ export default function AdminUsersPage() {
                         </thead>
                         <tbody className="divide-y">
                             {users.map((u) => (
-                                <tr key={u.id} className="transition-colors hover:bg-muted/30">
+                                <tr
+                                    key={u.id}
+                                    className={cn(
+                                        "transition-colors hover:bg-muted/30",
+                                        u.role === "pending" && "bg-amber-50/50 dark:bg-amber-900/10"
+                                    )}
+                                >
                                     <td className="p-4 font-medium">{u.email}</td>
                                     <td className="p-4 text-muted-foreground">
                                         {u.display_name ?? "-"}
                                     </td>
                                     <td className="p-4">
-                                        {canManageRoles && u.id !== user?.id ? (
+                                        {canManageRoles && u.id !== user?.id && u.role !== "pending" ? (
                                             <Select
                                                 value={u.role || "student"}
                                                 onValueChange={(val) => handleRoleChange(u.id, val)}
@@ -158,23 +234,54 @@ export default function AdminUsersPage() {
                                                 </SelectContent>
                                             </Select>
                                         ) : (
-                                            <span className="capitalize text-muted-foreground">
-                                                {u.role}
-                                            </span>
+                                            <Badge
+                                                className={cn(
+                                                    "capitalize text-xs font-medium border-0",
+                                                    ROLE_BADGE[u.role ?? "student"] ?? ROLE_BADGE.student
+                                                )}
+                                            >
+                                                {u.role === "pending" ? "⏳ Pending" : u.role}
+                                            </Badge>
                                         )}
                                     </td>
                                     <td className="p-4 text-right">
-                                        {canManageRoles && u.id !== user?.id && (
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => handleDelete(u.id, u.email)}
-                                                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                                title="Delete user"
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        )}
+                                        <div className="flex items-center justify-end gap-1">
+                                            {/* Pending user: approve + reject */}
+                                            {canManageRoles && u.role === "pending" && (
+                                                <>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => handleApprove(u.id, u.email)}
+                                                        className="text-green-600 hover:bg-green-50 hover:text-green-700 dark:hover:bg-green-900/20"
+                                                        title="Approve user"
+                                                    >
+                                                        <CheckCircle className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => handleReject(u.id, u.email)}
+                                                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                                        title="Reject and delete user"
+                                                    >
+                                                        <XCircle className="h-4 w-4" />
+                                                    </Button>
+                                                </>
+                                            )}
+                                            {/* Non-pending: delete */}
+                                            {canManageRoles && u.id !== user?.id && u.role !== "pending" && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => handleDelete(u.id, u.email)}
+                                                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                                    title="Delete user"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

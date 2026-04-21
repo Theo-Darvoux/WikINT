@@ -21,6 +21,7 @@ async def run_compress_stage(
     mime_type: str,
     original_filename: str,
     tracer: Any,
+    config: dict | None = None,
 ) -> CompressResult:
     final_mime = mime_type
     content_encoding = None
@@ -33,6 +34,7 @@ async def run_compress_stage(
                     pf.path,
                     mime_type,
                     original_filename,
+                    config=config,
                 ),
                 timeout=comp_timeout,
             )

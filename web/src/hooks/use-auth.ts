@@ -72,11 +72,36 @@ export function useAuth() {
         } catch (err) {
             if (err instanceof ApiError && err.status === 401) {
                 performLogout();
+            } else if (err instanceof ApiError && err.status === 403 && err.error_code === "USER_PENDING") {
+                // User exists but is pending approval — keep them "authenticated" so the
+                // pending-approval page can render, but do NOT log them out.
+                // The auth-guard will redirect them away from protected pages.
+                if (typeof window !== "undefined" && !window.location.pathname.startsWith("/pending-approval")) {
+                    window.location.replace("/pending-approval");
+                }
             }
         } finally {
             setLoading(false);
         }
     }, [setUser, setLoading]);
 
-    return { user, isAuthenticated, isLoading, requestCode, verifyCode, verifyMagicLink, logout, fetchMe };
+    const verifyGoogleOAuth = useCallback(async (credential: string) => {
+        const data = await apiFetch<{
+            access_token: string;
+            user: UserBrief;
+            is_new_user: boolean;
+        }>("/auth/google", {
+            method: "POST",
+            body: JSON.stringify({ credential }),
+            skipAuth: true,
+        });
+
+        setAccessToken(data.access_token);
+        setUser(data.user);
+        scheduleRefreshTimer(data.access_token);
+        broadcastTokenAcquired(data.access_token);
+        return data;
+    }, [setUser]);
+
+    return { user, isAuthenticated, isLoading, requestCode, verifyCode, verifyMagicLink, verifyGoogleOAuth, logout, fetchMe };
 }

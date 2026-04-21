@@ -108,3 +108,32 @@ export const useNotificationStore = create<NotificationState>((set) => ({
     increment: () => set((state) => ({ unreadCount: state.unreadCount + 1 })),
 }));
 
+export interface PublicConfig {
+    site_name: string;
+    site_description: string;
+    site_logo_url: string | null;
+    site_favicon_url: string | null;
+    primary_color: string;
+    footer_text: string;
+    organization_url: string | null;
+    totp_enabled: boolean;
+    google_enabled: boolean;
+    google_client_id: string | null;
+    classic_enabled: boolean;
+    allow_all_domains: boolean;
+}
+
+interface ConfigState {
+    config: PublicConfig | null;
+    setConfig: (config: PublicConfig) => void;
+    updateConfig: (patch: Partial<PublicConfig>) => void;
+}
+
+export const useConfigStore = create<ConfigState>((set) => ({
+    config: null,
+    setConfig: (config) => set({ config }),
+    updateConfig: (patch) => set((state) => ({
+        config: state.config ? { ...state.config, ...patch } : null
+    })),
+}));
+

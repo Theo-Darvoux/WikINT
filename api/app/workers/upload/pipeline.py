@@ -99,6 +99,7 @@ class UploadPipeline:
         self.initial_size = 0
         self.original_sha256 = ""
         self.cas_key = ""
+        self.auth_config: dict[str, Any] = {}
 
         self.final_mime = mime_type
         self.content_encoding: str | None = None
@@ -164,8 +165,8 @@ class UploadPipeline:
         # Checkpoint 1: Metadata Strip + Scan
         if self.completed_stage < 2:
             await self._check_deadline("scan_strip")
-            assert self.pf is not None
-            assert self.tmp_path is not None
+            if self.pf is None or self.tmp_path is None:
+                raise UploadError(UploadStatus.FAILED, "Pipeline state missing at scan_strip stage")
             if self.completed_stage == 1:
                 await self.emit_status(UploadStatus.PROCESSING, detail="Stripping metadata", stage_name_or_label="stripping", stage_percent=0.5)
                 await run_strip_only(self.pf, self.tmp_path, self.mime_type, self.upload_id, self.tracer)
@@ -190,7 +191,8 @@ class UploadPipeline:
                         pass
             await self.repo.checkpoint_pipeline_stage(self.upload_id, 2)
 
-        assert self.pf is not None
+        if self.pf is None:
+            raise UploadError(UploadStatus.FAILED, "Pipeline state missing after scan+strip stage")
         await run_post_strip_pdf_check(self.pf, self.mime_type)
         await self._check_cancellation("after scan+strip stage")
 
@@ -203,7 +205,9 @@ class UploadPipeline:
                 self._compress_heartbeat(interval=5.0, max_duration=comp_timeout)
             )
             try:
-                comp_res = await run_compress_stage(self.pf, self.mime_type, self.original_filename, self.tracer)
+                comp_res = await run_compress_stage(
+                    self.pf, self.mime_type, self.original_filename, self.tracer, config=self.auth_config
+                )
             finally:
                 compress_heartbeat_task.cancel()
                 try:
@@ -225,9 +229,10 @@ class UploadPipeline:
                 stage_name_or_label="thumbnailing",
                 stage_percent=0.0,
             )
-            assert self.pf is not None
+            if self.pf is None:
+                raise UploadError(UploadStatus.FAILED, "Pipeline state missing at thumbnailing stage")
             self.thumbnail_path = await run_thumbnail_stage(
-                self.pf, self.final_mime, self.original_filename, self.tracer
+                self.pf, self.final_mime, self.original_filename, self.tracer, config=self.auth_config
             )
             await self.repo.checkpoint_pipeline_stage(self.upload_id, 4)
 
@@ -237,7 +242,8 @@ class UploadPipeline:
         await self._check_deadline("finalizing")
         await self.emit_status(UploadStatus.PROCESSING, detail="Finalizing upload", stage_name_or_label="finalizing", stage_percent=0.0)
 
-        assert self.pf is not None
+        if self.pf is None:
+            raise UploadError(UploadStatus.FAILED, "Pipeline state missing at finalizing stage")
         final_input = FinalizeInput(
             pf=self.pf,
             user_id=self.user_id,
@@ -336,6 +342,7 @@ class UploadPipeline:
         await self.repo.maybe_dispatch_webhook(self.upload_id)
 
     async def run(self) -> None:
+        self.auth_config = await self.repo.get_auth_config()
         self.completed_stage = await self.repo.get_pipeline_stage(self.upload_id)
         if self.completed_stage > 0:
             logger.info("Resuming upload %s from stage %d", self.upload_id, self.completed_stage)

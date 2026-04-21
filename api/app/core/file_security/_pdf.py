@@ -321,7 +321,7 @@ def _pikepdf_repack_streams(file_path: Path, out_name: str, quality: int) -> boo
     return Path(out_name).stat().st_size < file_path.stat().st_size
 
 
-async def _compress_pdf_path(file_path: Path) -> Path:
+async def _compress_pdf_path(file_path: Path, config: dict | None = None) -> Path:
     """Two-stage PDF compression: Ghostscript font subsetting, then pikepdf stream packing.
 
     Stage 1 — Ghostscript:
@@ -337,7 +337,8 @@ async def _compress_pdf_path(file_path: Path) -> Path:
 
     Returns the smallest result ≤ the original, or the original if no stage helped.
     """
-    quality = settings.pdf_quality
+    cfg_quality = config.get("pdf_quality") if config else None
+    quality = cfg_quality if cfg_quality is not None else settings.pdf_quality
 
     # Stage 1: Ghostscript
     gs_result = await _compress_pdf_ghostscript(file_path, quality)

@@ -59,6 +59,7 @@ def material_orm_to_dict(
         "created_at": m.created_at,
         "updated_at": m.updated_at,
         "attachment_count": attachment_count,
+        "current_version_info": None,
     }
 
 

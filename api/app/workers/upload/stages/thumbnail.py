@@ -19,7 +19,8 @@ async def run_thumbnail_stage(
     pf: ProcessingFile,
     mime_type: str,
     original_filename: str,
-    tracer: Any = None
+    tracer: Any = None,
+    config: dict[str, Any] | None = None,
 ) -> str | None:
     """
     Generates a WebP thumbnail for the given processing file based on its MIME type.
@@ -35,14 +36,18 @@ async def run_thumbnail_stage(
         thumb_path = pf.path.parent / f"thumb_{pf.path.name}.webp"
 
         try:
+            size_px = config.get("thumbnail_size_px") if config and config.get("thumbnail_size_px") is not None else 640
+            quality = config.get("thumbnail_quality") if config and config.get("thumbnail_quality") is not None else 85
+            size = (size_px, size_px)
+
             if mime_type.startswith("image/"):
-                await _thumbnail_image(pf.path, thumb_path)
+                await _thumbnail_image(pf.path, thumb_path, size, quality)
             elif mime_type.startswith("video/"):
-                await _thumbnail_video(pf.path, thumb_path)
+                await _thumbnail_video(pf.path, thumb_path, size, quality)
             elif mime_type == "application/pdf":
-                await _thumbnail_pdf(pf.path, thumb_path)
+                await _thumbnail_pdf(pf.path, thumb_path, size, quality)
             elif _is_office_mime(mime_type):
-                await _thumbnail_office(pf.path, thumb_path)
+                await _thumbnail_office(pf.path, thumb_path, size, quality)
             else:
                 logger.info("Skipping thumbnail for unsupported MIME type: %s", mime_type)
                 return None
@@ -79,7 +84,7 @@ def _is_office_mime(mime_type: str) -> bool:
 
 # ── Image helpers ─────────────────────────────────────────────────────────────
 
-async def _thumbnail_image(input_path: Path, output_path: Path) -> None:
+async def _thumbnail_image(input_path: Path, output_path: Path, size: tuple[int, int], quality: int) -> None:
     """Resize image to thumbnail using Pillow."""
     def _sync() -> None:
         with Image.open(input_path) as img:
@@ -88,12 +93,13 @@ async def _thumbnail_image(input_path: Path, output_path: Path) -> None:
                 from PIL import ImageOps
                 img = ImageOps.exif_transpose(img)  # type: ignore[assignment]
 
-            img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
-            img.save(output_path, "WEBP", quality=THUMBNAIL_QUALITY)
+            img.thumbnail(size, Image.Resampling.LANCZOS)
+            img.save(output_path, "WEBP", quality=quality)
 
     await asyncio.to_thread(_sync)
 
-async def _thumbnail_video(input_path: Path, output_path: Path) -> None:
+
+async def _thumbnail_video(input_path: Path, output_path: Path, size: tuple[int, int], quality: int) -> None:
     """Extract a frame from video using FFmpeg."""
     # Heuristic: seek to 2 seconds or 10%
     # We use a simple 2s seek first as it's fastest
@@ -102,7 +108,7 @@ async def _thumbnail_video(input_path: Path, output_path: Path) -> None:
         "-ss", "00:00:02",
         "-i", str(input_path),
         "-vframes", "1",
-        "-s", f"{THUMBNAIL_SIZE[0]}x{THUMBNAIL_SIZE[1]}",
+        "-s", f"{size[0]}x{size[1]}",
         "-f", "image2",
         str(output_path.with_suffix(".jpg"))
     ]
@@ -123,10 +129,11 @@ async def _thumbnail_video(input_path: Path, output_path: Path) -> None:
     # Convert JPG to WebP for consistency
     temp_jpg = output_path.with_suffix(".jpg")
     if temp_jpg.exists():
-        await _thumbnail_image(temp_jpg, output_path)
+        await _thumbnail_image(temp_jpg, output_path, size, quality)
         temp_jpg.unlink()
 
-async def _thumbnail_pdf(input_path: Path, output_path: Path) -> None:
+
+async def _thumbnail_pdf(input_path: Path, output_path: Path, size: tuple[int, int], quality: int) -> None:
     """Render first page of PDF using Ghostscript."""
     # We render to a temporary PNG first then convert
     temp_png = output_path.with_suffix(".png")
@@ -149,10 +156,11 @@ async def _thumbnail_pdf(input_path: Path, output_path: Path) -> None:
     await process.communicate()
 
     if temp_png.exists():
-        await _thumbnail_image(temp_png, output_path)
+        await _thumbnail_image(temp_png, output_path, size, quality)
         temp_png.unlink()
 
-async def _thumbnail_office(input_path: Path, output_path: Path) -> None:
+
+async def _thumbnail_office(input_path: Path, output_path: Path, size: tuple[int, int], quality: int) -> None:
     """Render the first page of any Office document (OOXML, ODF, legacy OLE2).
 
     Strategy:
@@ -194,7 +202,7 @@ async def _thumbnail_office(input_path: Path, output_path: Path) -> None:
                 stderr_str,
             )
             # Fall back to grabbing the largest embedded image
-            await _fallback_extract_largest_image(input_path, output_path)
+            await _fallback_extract_largest_image(input_path, output_path, size, quality)
             return
 
         # 2. Find the produced PDF (LibreOffice names it after the source stem)
@@ -207,13 +215,13 @@ async def _thumbnail_office(input_path: Path, output_path: Path) -> None:
                 stderr_str
             )
             # Fall back to grabbing the largest embedded image
-            await _fallback_extract_largest_image(input_path, output_path)
+            await _fallback_extract_largest_image(input_path, output_path, size, quality)
             return
 
         pdf_path = pdf_files[0]
 
         # 3. Reuse the existing Ghostscript → Pillow → WebP pipeline
-        await _thumbnail_pdf(pdf_path, output_path)
+        await _thumbnail_pdf(pdf_path, output_path, size, quality)
 
     except TimeoutError:
         logger.error("soffice timed out converting %s", input_path.name)
@@ -221,7 +229,7 @@ async def _thumbnail_office(input_path: Path, output_path: Path) -> None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-async def _fallback_extract_largest_image(input_path: Path, output_path: Path) -> None:
+async def _fallback_extract_largest_image(input_path: Path, output_path: Path, size: tuple[int, int], quality: int) -> None:
     """As a last resort for heavily complex or unrenderable OOXML/ODF files,
     open the raw zip container and extract the largest image.
     """
@@ -258,8 +266,8 @@ async def _fallback_extract_largest_image(input_path: Path, output_path: Path) -
         import io
         try:
             with Image.open(io.BytesIO(img_data)) as img:
-                img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
-                img.save(output_path, "WEBP", quality=THUMBNAIL_QUALITY)
+                img.thumbnail(size, Image.Resampling.LANCZOS)
+                img.save(output_path, "WEBP", quality=quality)
         except Exception as e:
             logger.error("Fallback image processing failed: %s", e)
 

@@ -79,12 +79,13 @@ The `force_download` parameter controls whether the URL includes `ResponseConten
 
 ### Host Rewriting (`_rewrite_host`)
 
-Presigned URLs generated against MinIO point to the internal Docker hostname. In production, they need to point to the public-facing domain. The `_rewrite_host` function handles this:
+Presigned URLs generated against MinIO point to the internal Docker hostname (`minio:9000`). In development, these must be rewritten to the public-facing proxy (`localhost/s3`) so the browser can reach them.
 
-- In development (public endpoint contains "localhost"): Simple hostname replacement
-- In production (Cloudflare R2 custom domain):
-  - **GET URLs**: Rewrites host and strips the bucket name from the path (R2 custom domains map directly to the bucket root)
-  - **PUT URLs**: Does NOT rewrite to custom domain, because Cloudflare R2 custom domains do not support presigned PUT requests. PUTs always go to the R2 endpoint directly.
+- **Auto-Warming Logic**: The storage module now automatically loads S3 settings from the database (via `get_full_auth_config`) and warms the Redis cache if it's missing. This ensures that the correct public endpoint is always used, even if the cache hasn't been pre-populated.
+- **In Development**: If the public endpoint contains "localhost", the host is rewritten and the scheme is forced to `http`.
+- **In Production (Cloudflare R2)**:
+  - **GET URLs**: Rewrites host and strips the bucket name from the path (R2 custom domains map directly to the bucket root).
+  - **PUT URLs**: Does NOT rewrite to custom domain, as R2 custom domains do not support presigned PUT. They go to the R2 endpoint directly.
 
 ### Object Management
 

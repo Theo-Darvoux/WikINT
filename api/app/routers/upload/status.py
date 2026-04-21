@@ -42,18 +42,34 @@ class UploadConfigOut(BaseModel):
 
 
 @router.get("/config", response_model=UploadConfigOut)
-async def get_upload_config() -> UploadConfigOut:
+async def get_upload_config(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> UploadConfigOut:
     """Return the current upload configuration (allowed types, size limits, recommended path).
 
     Clients should use ``recommended_path`` and ``direct_threshold_mb`` to decide
     which upload path to use without hard-coding the thresholds.
     """
     from app.config import settings
+    from app.services.auth import get_full_auth_config
+
+    config = await get_full_auth_config(db, redis)
+
+    # Use dynamic allowed lists if provided
+    allowed_exts = ALLOWED_EXTENSIONS
+    if config.get("allowed_extensions"):
+        # Convert comma-separated string back to list
+        allowed_exts = [e.strip() for e in config["allowed_extensions"].split(",") if e.strip()]
+
+    allowed_mimes = ALLOWED_MIME_TYPES
+    if config.get("allowed_mime_types"):
+        allowed_mimes = [m.strip() for m in config["allowed_mime_types"].split(",") if m.strip()]
 
     return UploadConfigOut(
-        allowed_extensions=sorted(list(ALLOWED_EXTENSIONS)),
-        allowed_mimetypes=sorted(list(ALLOWED_MIME_TYPES)),
-        max_file_size_mb=settings.max_file_size_mb,
+        allowed_extensions=sorted(list(allowed_exts)),
+        allowed_mimetypes=sorted(list(allowed_mimes)),
+        max_file_size_mb=config.get("max_file_size_mb") or settings.max_file_size_mb,
         recommended_path="direct",
         direct_threshold_mb=settings.direct_upload_threshold_mb,
     )

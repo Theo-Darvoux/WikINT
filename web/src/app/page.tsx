@@ -7,6 +7,7 @@ import { FeaturedSection } from "@/components/home/featured-section";
 import { PopularSection } from "@/components/home/popular-section";
 import { RecentPRsSection } from "@/components/home/recent-prs-section";
 import { FavouritesSection } from "@/components/home/favourites-section";
+import { useConfigStore } from "@/lib/stores";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle } from "lucide-react";
 import type { HomeData } from "@/components/home/types";
@@ -29,6 +30,7 @@ function WelcomeHeaderSkeleton() {
 
 export default function HomePage() {
   const { user } = useAuth();
+  const { config } = useConfigStore();
   const [data, setData] = useState<HomeData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +65,7 @@ export default function HomePage() {
               </span>
             </h1>
             <p className="mt-1 text-muted-foreground">
-              Here&apos;s what&apos;s happening on WikINT
+              Here&apos;s what&apos;s happening on {config?.site_name || "WikINT"}
             </p>
           </>
         )}

@@ -1,133 +1,40 @@
 from __future__ import annotations
 
+import time
 import uuid
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query, Request
+from pydantic import BaseModel, EmailStr
+from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.exceptions import BadRequestError, NotFoundError
-from app.dependencies.auth import require_moderator, require_role
+from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.core.redis import get_redis
+from app.dependencies.auth import require_role
+from app.models.auth_config import AllowedDomain, AuthConfig
 from app.models.dead_letter import DeadLetterJob
-from app.models.directory import Directory
-from app.models.featured import FeaturedItem
-from app.models.flag import Flag
-from app.models.material import Material, MaterialVersion
-from app.models.pull_request import PRStatus, PullRequest
 from app.models.user import User, UserRole
-from app.schemas.featured import FeaturedItemCreate, FeaturedItemUpdate
-from app.schemas.home import FeaturedItemOut
-from app.schemas.material import MaterialDetail
-from app.services.directory import get_directory_paths
-from app.services.material import material_orm_to_dict
+from app.schemas.common import DetailedHealthResponse, ServiceStatus
+from app.services.auth import bust_auth_config_cache, get_full_auth_config
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-# ── Featured item helpers ─────────────────────────────────────────────────────
-
-
-async def _query_featured_rows(
-    db: AsyncSession,
-    *,
-    featured_id: uuid.UUID | None = None,
-    order_by_start: bool = False,
-) -> Sequence[Any]:
-    """Run the standard FeaturedItem → Material → MaterialVersion joined query.
-
-    Pass ``featured_id`` to restrict to a single row.
-    Pass ``order_by_start=True`` for the admin list (ordered by start_at DESC).
-    """
-    stmt = (
-        select(FeaturedItem, Material, MaterialVersion)
-        .join(Material, FeaturedItem.material_id == Material.id)
-        .outerjoin(
-            MaterialVersion,
-            (Material.id == MaterialVersion.material_id)
-            & (Material.current_version == MaterialVersion.version_number),
-        )
-    )
-    if featured_id is not None:
-        stmt = stmt.where(FeaturedItem.id == featured_id)
-    if order_by_start:
-        stmt = stmt.order_by(FeaturedItem.start_at.desc())
-
-    result = await db.execute(stmt)
-    return result.all()
-
-
-async def _rows_to_featured_out(
-    db: AsyncSession,
-    rows: Sequence[Any],
-) -> list[FeaturedItemOut]:
-    """Convert (FeaturedItem, Material, MaterialVersion?) tuples to FeaturedItemOut objects."""
-    if not rows:
-        return []
-
-    staged: list[tuple[FeaturedItem, dict[str, Any]]] = []
-    dir_ids: set[uuid.UUID] = set()
-
-    for featured, material, version in rows:
-        mat_dict: dict[str, Any] = material_orm_to_dict(material)
-        if version:
-            mat_dict["current_version_info"] = version
-        if material.directory_id:
-            dir_ids.add(material.directory_id)
-        staged.append((featured, mat_dict))
-
-    paths = await get_directory_paths(db, dir_ids)
-
-    out: list[FeaturedItemOut] = []
-    for featured, mat_dict in staged:
-        mat_dict["directory_path"] = paths.get(mat_dict["directory_id"])
-        out.append(
-            FeaturedItemOut(
-                id=featured.id,
-                material=MaterialDetail.model_validate(mat_dict),
-                title=featured.title,
-                description=featured.description,
-                start_at=featured.start_at,
-                end_at=featured.end_at,
-                priority=featured.priority,
-            )
-        )
-    return out
-
-
 ADMIN_ROLES = (UserRole.BUREAU, UserRole.VIEUX)
 
+AdminUser = Annotated[User, Depends(require_role(UserRole.BUREAU, UserRole.VIEUX))]
 
-@router.get("/stats")
-async def admin_stats(
-    _user: Annotated[User, Depends(require_moderator())],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict[str, Any]:
-    user_count = await db.scalar(select(func.count()).select_from(User)) or 0
-    material_count = await db.scalar(select(func.count()).select_from(Material)) or 0
-    open_pr_count = (
-        await db.scalar(
-            select(func.count()).select_from(PullRequest).where(PullRequest.status == PRStatus.OPEN)
-        )
-        or 0
-    )
-    open_flag_count = (
-        await db.scalar(select(func.count()).select_from(Flag).where(Flag.status == "open")) or 0
-    )
-    return {
-        "user_count": user_count,
-        "material_count": material_count,
-        "open_pr_count": open_pr_count,
-        "open_flag_count": open_flag_count,
-    }
+
+# ── User management ───────────────────────────────────────────────────────────
 
 
 @router.get("/users")
 async def admin_list_users(
-    _user: Annotated[User, Depends(require_moderator())],
+    _user: AdminUser,
     db: Annotated[AsyncSession, Depends(get_db)],
     role: Annotated[str | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
@@ -169,9 +76,9 @@ async def admin_list_users(
 @router.patch("/users/{user_id}/role")
 async def admin_update_role(
     user_id: uuid.UUID,
+    _user: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
     role: str = Query(...),
-    _user: Annotated[User | None, Depends(require_role(UserRole.BUREAU, UserRole.VIEUX))] = None,
-    db: Annotated[AsyncSession | None, Depends(get_db)] = None,
 ) -> dict:
     target = await db.scalar(select(User).where(User.id == user_id))
     if not target:
@@ -180,6 +87,8 @@ async def admin_update_role(
         new_role = UserRole(role)
     except ValueError:
         raise BadRequestError(f"Invalid role: {role}")
+    if new_role == UserRole.PENDING:
+        raise BadRequestError("Cannot manually assign PENDING role; use the approve/reject endpoints")
     target.role = new_role
     await db.flush()
     return {"status": "ok", "role": new_role.value}
@@ -188,8 +97,8 @@ async def admin_update_role(
 @router.delete("/users/{user_id}")
 async def admin_delete_user(
     user_id: uuid.UUID,
-    _user: Annotated[User | None, Depends(require_role(UserRole.BUREAU, UserRole.VIEUX))] = None,
-    db: Annotated[AsyncSession | None, Depends(get_db)] = None,
+    _user: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     from app.services.user import hard_delete_user
 
@@ -200,140 +109,66 @@ async def admin_delete_user(
     return {"status": "ok"}
 
 
-@router.get("/directories")
-async def admin_list_directories(
-    _user: Annotated[User, Depends(require_moderator())],
+@router.post("/users/{user_id}/approve")
+async def admin_approve_user(
+    user_id: uuid.UUID,
+    _user: AdminUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> list[dict]:
-    result = await db.execute(select(Directory).order_by(Directory.sort_order, Directory.name))
-    dirs = result.scalars().all()
-    return [
-        {
-            "id": str(d.id),
-            "name": d.name,
-            "slug": d.slug,
-            "type": d.type.value if d.type else None,
-            "parent_id": str(d.parent_id) if d.parent_id else None,
-            "is_system": d.is_system,
-        }
-        for d in dirs
-    ]
+) -> dict:
+    """Approve a PENDING user — sets their role to STUDENT and notifies them."""
+    from app.services.notification import notify_user
 
+    target = await db.scalar(select(User).where(User.id == user_id))
+    if not target:
+        raise NotFoundError("User not found")
+    if target.role != UserRole.PENDING:
+        raise BadRequestError("User is not pending approval")
 
-# ── Featured item endpoints ───────────────────────────────────────────────────
+    target.role = UserRole.STUDENT
+    await db.flush()
 
-
-@router.get("/featured", response_model=list[FeaturedItemOut])
-async def admin_list_featured(
-    _user: Annotated[User, Depends(require_moderator())],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> list[FeaturedItemOut]:
-    """List all featured items (no active-window filter), ordered by start_at DESC."""
-    rows = await _query_featured_rows(db, order_by_start=True)
-    return await _rows_to_featured_out(db, rows)
-
-
-@router.post("/featured", response_model=FeaturedItemOut, status_code=201)
-async def admin_create_featured(
-    _user: Annotated[User, Depends(require_moderator())],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    body: Annotated[FeaturedItemCreate, Body()],
-) -> FeaturedItemOut:
-    """Create a new featured item."""
-    if body.end_at <= body.start_at:
-        raise BadRequestError("end_at must be after start_at")
-
-    # Verify material exists
-    material_exists = await db.scalar(
-        select(func.count()).select_from(Material).where(Material.id == body.material_id)
+    await notify_user(
+        db,
+        target.id,
+        notification_type="access_approved",
+        title="Access approved",
+        body="Your account has been approved. Welcome!",
+        link="/",
     )
-    if not material_exists:
-        raise NotFoundError("Material not found")
-
-    featured = FeaturedItem(
-        id=uuid.uuid4(),
-        material_id=body.material_id,
-        title=body.title,
-        description=body.description,
-        start_at=body.start_at,
-        end_at=body.end_at,
-        priority=body.priority,
-        created_by=_user.id,
-    )
-    db.add(featured)
-    await db.flush()
-
-    rows = await _query_featured_rows(db, featured_id=featured.id)
-    if not rows:
-        raise NotFoundError("Featured item not found after creation")
-    result = await _rows_to_featured_out(db, rows)
-    return result[0]
+    return {"status": "ok", "role": target.role.value}
 
 
-@router.patch("/featured/{featured_id}", response_model=FeaturedItemOut)
-async def admin_update_featured(
-    featured_id: uuid.UUID,
-    _user: Annotated[User, Depends(require_moderator())],
+@router.post("/users/{user_id}/reject")
+async def admin_reject_user(
+    user_id: uuid.UUID,
+    _user: AdminUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-    body: Annotated[FeaturedItemUpdate, Body()],
-) -> FeaturedItemOut:
-    """Partially update a featured item. Only provided fields are changed."""
-    featured = await db.scalar(select(FeaturedItem).where(FeaturedItem.id == featured_id))
-    if not featured:
-        raise NotFoundError("Featured item not found")
+    reason: Annotated[str | None, Query(max_length=500)] = None,
+) -> dict:
+    """Reject and hard-delete a PENDING user."""
+    from app.services.user import hard_delete_user
 
-    if body.title is not None:
-        featured.title = body.title
-    if body.description is not None:
-        featured.description = body.description
-    if body.start_at is not None:
-        featured.start_at = body.start_at
-    if body.end_at is not None:
-        featured.end_at = body.end_at
-    if body.priority is not None:
-        featured.priority = body.priority
+    target = await db.scalar(select(User).where(User.id == user_id))
+    if not target:
+        raise NotFoundError("User not found")
+    if target.role != UserRole.PENDING:
+        raise BadRequestError("User is not pending approval")
 
-    # Validate window after applying partial update
-    if featured.end_at <= featured.start_at:
-        raise BadRequestError("end_at must be after start_at")
-
-    await db.flush()
-
-    rows = await _query_featured_rows(db, featured_id=featured_id)
-    if not rows:
-        raise NotFoundError("Featured item not found after update")
-    result = await _rows_to_featured_out(db, rows)
-    return result[0]
-
-
-@router.delete("/featured/{featured_id}")
-async def admin_delete_featured(
-    featured_id: uuid.UUID,
-    _user: Annotated[User, Depends(require_moderator())],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict[str, str]:
-    """Delete a featured item permanently."""
-    featured = await db.scalar(select(FeaturedItem).where(FeaturedItem.id == featured_id))
-    if not featured:
-        raise NotFoundError("Featured item not found")
-
-    await db.delete(featured)
-    await db.flush()
+    await hard_delete_user(db, target)
     return {"status": "ok"}
 
 
-# ── Dead Letter Queue endpoints ─────────────────────────────────────────────
+# ── Dead Letter Queue ─────────────────────────────────────────────────────────
 
 
 @router.get("/dlq")
 async def list_dead_letter_jobs(
-    _user: Annotated[User, Depends(require_role(UserRole.BUREAU, UserRole.VIEUX))],
+    _user: AdminUser,
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     resolved: bool = Query(False),
 ) -> dict:
-    """List dead letter jobs, paginated. By default shows unresolved jobs only."""
     base = select(DeadLetterJob)
     if not resolved:
         base = base.where(DeadLetterJob.resolved_at.is_(None))
@@ -368,10 +203,9 @@ async def list_dead_letter_jobs(
 @router.post("/dlq/{job_id}/retry")
 async def retry_dead_letter_job(
     job_id: uuid.UUID,
-    _user: Annotated[User, Depends(require_role(UserRole.BUREAU, UserRole.VIEUX))],
+    _user: AdminUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Re-enqueue a dead letter job for processing."""
     job = await db.scalar(select(DeadLetterJob).where(DeadLetterJob.id == job_id))
     if not job:
         raise NotFoundError("Dead letter job not found")
@@ -383,27 +217,20 @@ async def retry_dead_letter_job(
     if redis_core.arq_pool is None:
         raise BadRequestError("Background job queue is unavailable")
 
-    # Re-enqueue with the original payload
     payload = job.payload or {}
-    await redis_core.arq_pool.enqueue_job(
-        job.job_name,
-        **payload,
-    )
+    await redis_core.arq_pool.enqueue_job(job.job_name, **payload)
 
-    # Mark as resolved (the new job will create a new DLQ entry if it fails again)
     job.resolved_at = datetime.now(UTC)
     await db.flush()
-
     return {"status": "ok", "message": "Job re-enqueued"}
 
 
 @router.post("/dlq/{job_id}/dismiss")
 async def dismiss_dead_letter_job(
     job_id: uuid.UUID,
-    _user: Annotated[User, Depends(require_role(UserRole.BUREAU, UserRole.VIEUX))],
+    _user: AdminUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Mark a dead letter job as resolved without retrying."""
     job = await db.scalar(select(DeadLetterJob).where(DeadLetterJob.id == job_id))
     if not job:
         raise NotFoundError("Dead letter job not found")
@@ -412,5 +239,394 @@ async def dismiss_dead_letter_job(
 
     job.resolved_at = datetime.now(UTC)
     await db.flush()
-
     return {"status": "ok", "message": "Job dismissed"}
+
+
+@router.get("/health", response_model=DetailedHealthResponse)
+async def get_detailed_health(
+    _user: AdminUser,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> DetailedHealthResponse:
+    from sqlalchemy import text
+
+    from app.config import settings
+    from app.core.meilisearch import meili_admin_client
+    from app.core.scanner import MalwareScanner
+    from app.models.material import Material, MaterialVersion
+
+    # Fetch full dynamic config for all checks
+    config = await get_full_auth_config(db, redis)
+    services: dict[str, ServiceStatus] = {}
+
+    # 1. Database Check
+    start = time.perf_counter()
+    try:
+        await db.execute(text("SELECT 1"))
+        latency = (time.perf_counter() - start) * 1000
+        services["database"] = ServiceStatus(status="healthy", latency_ms=latency)
+    except Exception as e:
+        services["database"] = ServiceStatus(status="unhealthy", message=str(e))
+
+    # 2. Redis Check
+    start = time.perf_counter()
+    try:
+        await redis.ping()
+        latency = (time.perf_counter() - start) * 1000
+        services["redis"] = ServiceStatus(status="healthy", latency_ms=latency)
+    except Exception as e:
+        services["redis"] = ServiceStatus(status="unhealthy", message=str(e))
+
+    # 3. S3 Check (Dynamic)
+    start = time.perf_counter()
+    try:
+        from app.core.storage import get_s3_client
+
+        # Use dynamic config values
+        bucket = config.get("s3_bucket") or settings.s3_bucket
+        endpoint = config.get("s3_endpoint") or settings.s3_endpoint
+
+        async with get_s3_client() as s3:
+            await s3.head_bucket(Bucket=bucket)
+        latency = (time.perf_counter() - start) * 1000
+
+        # Calculate usage from DB
+        usage_bytes = await db.scalar(select(func.sum(MaterialVersion.file_size))) or 0
+
+        services["storage"] = ServiceStatus(
+            status="healthy",
+            latency_ms=latency,
+            metadata={
+                "bucket": bucket,
+                "usage_bytes": usage_bytes,
+                "max_storage_bytes": (config.get("max_storage_gb") if config.get("max_storage_gb") is not None else settings.max_storage_gb) * 1024 * 1024 * 1024,
+                "endpoint": endpoint,
+                "ssl": config.get("s3_use_ssl", settings.s3_use_ssl)
+            }
+        )
+    except Exception as e:
+        services["storage"] = ServiceStatus(status="unhealthy", message=str(e))
+
+    # 4. Email (SMTP) Check (Dynamic)
+    start = time.perf_counter()
+    try:
+        import aiosmtplib
+        host = config.get("smtp_host") or settings.smtp_host
+        port = config.get("smtp_port") or settings.smtp_port
+
+        if host:
+            # Quick ping to SMTP port
+            smtp = aiosmtplib.SMTP(hostname=host, port=port, timeout=2)
+            await smtp.connect()
+            await smtp.quit()
+            latency = (time.perf_counter() - start) * 1000
+            services["email"] = ServiceStatus(
+                status="healthy",
+                latency_ms=latency,
+                metadata={
+                    "host": host,
+                    "port": port,
+                    "user": config.get("smtp_user") or settings.smtp_user
+                }
+            )
+        else:
+            services["email"] = ServiceStatus(status="degraded", message="SMTP not configured")
+    except Exception as e:
+        services["email"] = ServiceStatus(status="unhealthy", message=str(e))
+
+    # 5. MeiliSearch Check
+    start = time.perf_counter()
+    try:
+        health = await meili_admin_client.health()
+        latency = (time.perf_counter() - start) * 1000
+        services["search"] = ServiceStatus(
+            status="healthy" if health.status == "available" else "degraded", latency_ms=latency
+        )
+    except Exception as e:
+        services["search"] = ServiceStatus(status="unhealthy", message=str(e))
+
+    # 6. ARQ Workers
+    start = time.perf_counter()
+    try:
+        # Check heartbeats and pending jobs for the three worker queues
+        queues = ["arq:queue", "upload-fast", "upload-slow"]
+        heartbeats = {}
+        queue_counts = {}
+        for q in queues:
+            hc = await redis.get(f"{q}:health-check")
+            heartbeats[q] = hc is not None
+            # ARQ uses a Redis list for the queue
+            count = await redis.llen(q)
+            queue_counts[q] = count
+
+        active_queues = [q for q, alive in heartbeats.items() if alive]
+        latency = (time.perf_counter() - start) * 1000
+
+        services["workers"] = ServiceStatus(
+            status="healthy" if len(active_queues) == len(queues) else "unhealthy" if not active_queues else "degraded",
+            latency_ms=latency,
+            message=None if active_queues else "No active heartbeats detected from worker pool",
+            metadata={
+                "active_queues": active_queues,
+                "missing_queues": [q for q, alive in heartbeats.items() if not alive],
+                "queue_counts": queue_counts
+            }
+        )
+    except Exception as e:
+        services["workers"] = ServiceStatus(status="unhealthy", message=str(e))
+
+    # 7. Malware Scanner
+    start = time.perf_counter()
+    try:
+        scanner: MalwareScanner = getattr(request.app.state, "scanner", None)
+        latency = (time.perf_counter() - start) * 1000
+
+        is_ready = scanner is not None and scanner.initialized
+        pending_scans = await db.scalar(
+            select(func.count())
+            .select_from(MaterialVersion)
+            .where(MaterialVersion.virus_scan_result == "pending")
+        )
+
+        services["scanner"] = ServiceStatus(
+            status="healthy" if is_ready else "degraded",
+            latency_ms=latency,
+            message=None if is_ready else "Scanner not initialized",
+            metadata={
+                "yara_enabled": is_ready,
+                "malwarebazaar_enabled": bool(config.get("malwarebazaar_api_key") or settings.malwarebazaar_api_key),
+                "pending_scans": pending_scans
+            }
+        )
+    except Exception as e:
+        services["scanner"] = ServiceStatus(status="unhealthy", message=str(e))
+
+    # Global Metrics
+    user_count = await db.scalar(select(func.count()).select_from(User))
+    material_count = await db.scalar(select(func.count()).select_from(Material))
+    pending_dlq = await db.scalar(
+        select(func.count())
+        .select_from(DeadLetterJob)
+        .where(DeadLetterJob.resolved_at.is_(None))
+    )
+
+    overall_status = (
+        "healthy" if all(s.status == "healthy" for s in services.values()) else "degraded"
+    )
+    if any(s.status == "unhealthy" for s in services.values()):
+        overall_status = "unhealthy"
+
+    return DetailedHealthResponse(
+        status=overall_status,
+        timestamp=datetime.now(UTC).isoformat(),
+        services=services,
+        metrics={
+            "total_users": user_count,
+            "total_materials": material_count,
+            "pending_jobs": pending_dlq,
+            "max_upload_size_mb": config.get("max_file_size_mb") or settings.max_file_size_mb,
+            "google_auth_enabled": config.get("google_oauth_enabled", False),
+        },
+    )
+
+
+# ── Auth configuration ────────────────────────────────────────────────────────
+
+
+class AuthConfigPatch(BaseModel):
+    totp_enabled: bool | None = None
+    google_oauth_enabled: bool | None = None
+    google_client_id: str | None = None
+    classic_auth_enabled: bool | None = None
+    allow_all_domains: bool | None = None
+    jwt_access_expire_days: int | None = None
+    jwt_refresh_expire_days: int | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None
+    smtp_use_tls: bool | None = None
+    s3_endpoint: str | None = None
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
+    s3_bucket: str | None = None
+    s3_public_endpoint: str | None = None
+    s3_region: str | None = None
+    s3_use_ssl: bool | None = None
+    max_storage_gb: int | None = None
+
+    max_file_size_mb: int | None = None
+    max_image_size_mb: int | None = None
+    max_audio_size_mb: int | None = None
+    max_video_size_mb: int | None = None
+    max_document_size_mb: int | None = None
+    max_office_size_mb: int | None = None
+    max_text_size_mb: int | None = None
+    pdf_quality: int | None = None
+    video_compression_profile: str | None = None
+    allowed_extensions: str | None = None
+    allowed_mime_types: str | None = None
+
+    site_name: str | None = None
+    site_description: str | None = None
+    site_logo_url: str | None = None
+    site_favicon_url: str | None = None
+    primary_color: str | None = None
+    footer_text: str | None = None
+    organization_url: str | None = None
+
+
+class DomainCreate(BaseModel):
+    domain: str
+    auto_approve: bool = True
+
+
+class DomainPatch(BaseModel):
+    auto_approve: bool | None = None
+
+
+_REDACTED_FIELDS = frozenset({"smtp_password", "s3_access_key", "s3_secret_key"})
+
+
+def _redact_config_for_api(config: dict[str, Any]) -> dict[str, Any]:
+    """Replace secret values with boolean presence flags for API responses.
+
+    Secrets must never be returned to clients — even admin clients — because
+    they appear in browser history, logs, and proxies. The UI only needs to
+    know whether a value is set in order to render the appropriate placeholder.
+    """
+    out = dict(config)
+    for field in _REDACTED_FIELDS:
+        out[f"{field}_set"] = bool(out.pop(field, None))
+    return out
+
+
+@router.get("/auth-config")
+async def get_auth_config(
+    _user: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> dict:
+    return _redact_config_for_api(await get_full_auth_config(db, redis))
+
+
+@router.patch("/auth-config")
+async def patch_auth_config(
+    body: Annotated[AuthConfigPatch, Body()],
+    _user: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> dict:
+    config_row = await db.scalar(select(AuthConfig))
+    if config_row is None:
+        config_row = AuthConfig()
+        db.add(config_row)
+
+    update_data = body.model_dump(exclude_unset=True)
+
+    for field, value in update_data.items():
+        if isinstance(value, str):
+            value = value.strip() if value else None
+        setattr(config_row, field, value)
+
+    config_row.updated_at = datetime.now(UTC)
+    await db.flush()
+    await bust_auth_config_cache(redis)
+    return _redact_config_for_api(await get_full_auth_config(db, redis))
+
+
+@router.get("/auth-config/domains")
+async def list_domains(
+    _user: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[dict]:
+    result = await db.execute(select(AllowedDomain).order_by(AllowedDomain.domain))
+    domains = result.scalars().all()
+    return [
+        {"id": str(d.id), "domain": d.domain, "auto_approve": d.auto_approve}
+        for d in domains
+    ]
+
+
+@router.post("/auth-config/domains", status_code=201)
+async def add_domain(
+    body: Annotated[DomainCreate, Body()],
+    _user: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> dict:
+    domain = body.domain.strip().lstrip("@").lower()
+    if not domain:
+        raise BadRequestError("Domain cannot be empty")
+
+    existing = await db.scalar(select(AllowedDomain).where(AllowedDomain.domain == domain))
+    if existing:
+        raise ConflictError(f"Domain '{domain}' already exists")
+
+    row = AllowedDomain(domain=domain, auto_approve=body.auto_approve)
+    db.add(row)
+    await db.flush()
+    await bust_auth_config_cache(redis)
+    return {"id": str(row.id), "domain": row.domain, "auto_approve": row.auto_approve}
+
+
+@router.patch("/auth-config/domains/{domain_id}")
+async def update_domain(
+    domain_id: uuid.UUID,
+    body: Annotated[DomainPatch, Body()],
+    _user: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> dict:
+    row = await db.scalar(select(AllowedDomain).where(AllowedDomain.id == domain_id))
+    if not row:
+        raise NotFoundError("Domain not found")
+
+    if body.auto_approve is not None:
+        row.auto_approve = body.auto_approve
+
+    await db.flush()
+    await bust_auth_config_cache(redis)
+    return {"id": str(row.id), "domain": row.domain, "auto_approve": row.auto_approve}
+
+
+@router.delete("/auth-config/domains/{domain_id}")
+async def delete_domain(
+    domain_id: uuid.UUID,
+    _user: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> dict:
+    row = await db.scalar(select(AllowedDomain).where(AllowedDomain.id == domain_id))
+    if not row:
+        raise NotFoundError("Domain not found")
+
+    await db.delete(row)
+    await db.flush()
+    await bust_auth_config_cache(redis)
+    return {"status": "ok"}
+
+
+class TestEmailIn(BaseModel):
+    email: EmailStr
+
+
+@router.post("/auth-config/test-email")
+async def admin_test_email(
+    body: Annotated[TestEmailIn, Body()],
+    _user: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    from app.core.email import send_email
+
+    config = await db.scalar(select(AuthConfig))
+    subject = "WikINT - Test Email"
+    body_text = f"This is a test email from WikINT. Current time: {datetime.now(UTC)}"
+    try:
+        await send_email(body.email, subject, body_text, config=config)
+    except Exception as e:
+        raise BadRequestError(f"Failed to send test email: {str(e)}")
+
+    return {"status": "ok", "message": "Test email sent"}

@@ -10,7 +10,9 @@ from app.routers.tus import tus_options, tus_patch
 
 @pytest.mark.asyncio
 async def test_tus_options_advertises_checksum():
-    response = await tus_options()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    response = await tus_options(mock_redis)
     assert response.headers["Tus-Extension"].find("checksum") != -1
     assert response.headers["Tus-Checksum-Algorithm"] == "sha256"
 
@@ -60,20 +62,24 @@ async def test_tus_patch_valid_checksum():
     mock_user.id = "user-123"
 
     mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
     mock_redis.hgetall.return_value = _mock_tus_state(content)
     mock_redis.incr.return_value = 1
+    mock_redis.decr.return_value = 0
 
     with (
         patch("app.routers.tus.upload_part", new_callable=AsyncMock) as m_upload,
         patch("app.routers.tus.complete_multipart_upload", new_callable=AsyncMock),
         patch("app.routers.tus.abort_multipart_upload", new_callable=AsyncMock),
         patch("app.routers.tus._enqueue_processing", new_callable=AsyncMock),
+        patch("app.services.auth.get_full_auth_config", new_callable=AsyncMock) as m_config,
     ):
+        m_config.return_value = {"max_file_size_mb": 1000}
         m_upload.return_value = "etag-123"
 
         import uuid
 
-        response = await tus_patch(uuid.UUID(tus_id), mock_request, mock_user, mock_redis)
+        response = await tus_patch(uuid.UUID(tus_id), mock_request, mock_user, mock_redis, AsyncMock())
         assert response.status_code == 204
         assert response.headers["Upload-Offset"] == str(len(content))
 
@@ -90,8 +96,10 @@ async def test_tus_patch_wrong_checksum():
     mock_user.id = "user-123"
 
     mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
     mock_redis.hgetall.return_value = _mock_tus_state(content)
     mock_redis.incr.return_value = 1
+    mock_redis.decr.return_value = 0
 
     from app.core.exceptions import AppError
 
@@ -99,11 +107,13 @@ async def test_tus_patch_wrong_checksum():
         patch("app.routers.tus.upload_part", new_callable=AsyncMock) as m_upload,
         patch("app.routers.tus.complete_multipart_upload", new_callable=AsyncMock),
         patch("app.routers.tus.abort_multipart_upload", new_callable=AsyncMock),
+        patch("app.services.auth.get_full_auth_config", new_callable=AsyncMock) as m_config,
     ):
+        m_config.return_value = {"max_file_size_mb": 1000}
         m_upload.return_value = "etag-123"
 
         with pytest.raises(AppError) as exc:
             import uuid
 
-            await tus_patch(uuid.UUID(tus_id), mock_request, mock_user, mock_redis)
+            await tus_patch(uuid.UUID(tus_id), mock_request, mock_user, mock_redis, AsyncMock())
         assert exc.value.status_code == 460

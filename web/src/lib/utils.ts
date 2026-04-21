@@ -14,3 +14,11 @@ export function cn(...inputs: ClassValue[]) {
 export function sanitizeNameInput(v: string): string {
   return v.replace(/[^\x20-\x7e\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u017f]/g, "");
 }
+
+export function formatBytes(bytes?: number, decimals: number = 2) {
+  if (!bytes) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + " " + sizes[i];
+}

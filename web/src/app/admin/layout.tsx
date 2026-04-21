@@ -4,12 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import {
-  LayoutDashboard,
+  Activity,
   Users,
-  Flag,
-  FolderTree,
-  GitPullRequest,
-  Star,
+  AlertTriangle,
+  Settings,
 } from "lucide-react";
 
 export default function AdminLayout({
@@ -21,11 +19,7 @@ export default function AdminLayout({
   const pathname = usePathname();
 
   if (!isAuthenticated) return null;
-  if (
-    user?.role !== "moderator" &&
-    user?.role !== "bureau" &&
-    user?.role !== "vieux"
-  ) {
+  if (user?.role !== "bureau" && user?.role !== "vieux") {
     return (
       <div className="flex items-center justify-center p-12 text-muted-foreground">
         You do not have permission to access the admin area.
@@ -34,16 +28,10 @@ export default function AdminLayout({
   }
 
   const navItems = [
-    { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/admin", label: "System Health", icon: Activity },
     { href: "/admin/users", label: "Users", icon: Users },
-    { href: "/admin/flags", label: "Flags", icon: Flag },
-    { href: "/admin/directories", label: "Directories", icon: FolderTree },
-    {
-      href: "/admin/pull-requests",
-      label: "Contributions",
-      icon: GitPullRequest,
-    },
-    { href: "/admin/featured", label: "Featured", icon: Star },
+    { href: "/admin/dlq", label: "Dead Letter Queue", icon: AlertTriangle },
+    { href: "/admin/config", label: "Configuration", icon: Settings },
   ];
 
   return (
@@ -72,7 +60,9 @@ export default function AdminLayout({
           );
         })}
       </div>
-      <main>{children}</main>
+      <main className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+        {children}
+      </main>
     </div>
   );
 }

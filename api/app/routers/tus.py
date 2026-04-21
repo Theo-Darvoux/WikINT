@@ -29,9 +29,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.constants import MAGIC_HEADER_SIZE, PRIVILEGED_ROLES
+from app.core.database import get_db
 from app.core.exceptions import AppError, BadRequestError, ForbiddenError, NotFoundError
 from app.core.mimetypes import MimeRegistry, guess_mime_from_bytes
 from app.core.redis import get_redis, redis_lock
@@ -102,14 +104,34 @@ def _decode_upload_metadata(header: str | None) -> dict[str, str]:
 
 @router.options("", include_in_schema=False)
 @router.options("/", include_in_schema=False)
-async def tus_options() -> Response:
-    """tus discovery endpoint.  Returns server capabilities."""
+async def tus_options(
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> Response:
+    # Read max_file_size_mb from Redis cache only — no DB round-trip for OPTIONS.
+    # This endpoint is hit on every CORS preflight; opening a DB session here
+    # would add unnecessary latency and connection pressure.
+    import json as _json
+
+    from app.services.auth import AUTH_CONFIG_CACHE_KEY
+
+    max_size_mb = settings.max_file_size_mb
+    try:
+        cached = await redis.get(AUTH_CONFIG_CACHE_KEY)
+        if cached:
+            cfg = _json.loads(cached if isinstance(cached, str) else cached.decode())
+            if cfg.get("max_file_size_mb") is not None:
+                max_size_mb = cfg["max_file_size_mb"]
+    except Exception:
+        pass
+
+    max_size = max_size_mb * 1024 * 1024
+
     return Response(
         status_code=204,
         headers=_tus_headers(
             **{
                 "Tus-Version": TUS_VERSION,
-                "Tus-Max-Size": str(settings.tus_max_size_bytes),
+                "Tus-Max-Size": str(max_size),
                 "Tus-Extension": "creation,termination,checksum",
                 "Tus-Checksum-Algorithm": "sha256",
             }
@@ -123,6 +145,7 @@ async def tus_create(
     request: Request,
     user: CurrentUser,
     redis: Annotated[Redis, Depends(get_redis)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     _rl: Annotated[None, Depends(rate_limit_uploads)],
 ) -> Response:
     """Create a new resumable upload.  Returns Location pointing to the upload resource."""
@@ -140,9 +163,14 @@ async def tus_create(
     if upload_length <= 0:
         raise BadRequestError("Upload-Length must be > 0", code=ERR_FILE_TOO_LARGE)
 
-    if upload_length > settings.tus_max_size_bytes:
+    # Fetch dynamic config
+    from app.services.auth import get_full_auth_config
+    config = await get_full_auth_config(db, redis)
+
+    max_bytes = (config.get("max_file_size_mb") if config.get("max_file_size_mb") is not None else settings.max_file_size_mb) * 1024 * 1024
+    if upload_length > max_bytes:
         raise BadRequestError(
-            f"Upload-Length {upload_length} exceeds server maximum of {settings.tus_max_size_bytes} bytes.",
+            f"Upload-Length {upload_length // (1024*1024)} MiB exceeds server maximum of {max_bytes // (1024*1024)} MiB.",
             code=ERR_FILE_TOO_LARGE,
         )
 
@@ -152,15 +180,29 @@ async def tus_create(
         metadata.get("filetype") or metadata.get("content_type") or "application/octet-stream"
     )
 
-    safe_name, _ext = _validate_filename(raw_filename)
+    # Process allowed lists
+    allowed_exts: set[str] | None = None
+    if config.get("allowed_extensions"):
+        allowed_exts = {e.strip().lower() for e in config["allowed_extensions"].split(",") if e.strip()}
+        if not all(e.startswith(".") for e in allowed_exts):
+             allowed_exts = {e if e.startswith(".") else f".{e}" for e in allowed_exts}
 
-    if not MimeRegistry.is_allowed_mime(raw_mime):
+    allowed_mimes: set[str] | None = None
+    if config.get("allowed_mime_types"):
+        allowed_mimes = {m.strip().lower() for m in config["allowed_mime_types"].split(",") if m.strip()}
+
+    safe_name, _ext = _validate_filename(raw_filename, allowed_extensions=allowed_exts)
+
+    if not MimeRegistry.is_allowed_mime(raw_mime, allowed=allowed_mimes):
         raise BadRequestError(
             f"MIME type '{raw_mime}' is not allowed for upload.",
             code=ERR_TYPE_NOT_ALLOWED,
         )
 
-    _check_per_type_size(raw_mime, upload_length)
+    from app.routers.upload.helpers import _check_storage_limit
+    await _check_storage_limit(upload_length, config=config)
+
+    _check_per_type_size(raw_mime, upload_length, config=config)
 
     tus_id = str(uuid.uuid4())
     upload_id = str(uuid.uuid4())
@@ -235,6 +277,7 @@ async def tus_patch(
     request: Request,
     user: CurrentUser,
     redis: Annotated[Redis, Depends(get_redis)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
     """Append a chunk to the upload at Upload-Offset.
 
@@ -242,10 +285,17 @@ async def tus_patch(
     background processing.  Returns X-WikINT-File-Key for the SSE stream.
     """
     tus_id_str = str(tus_id)
-    _inflight_key = f"upload:inflight:{str(user.id)}"
+    _inflight_key = f"tus:inflight:{user.id}"
     inflight = await redis.incr(_inflight_key)
-    await redis.expire(_inflight_key, 30)
-    if inflight > settings.tus_max_concurrent_per_user:
+    # TTL ensures the counter self-heals if the process crashes before decr.
+    await redis.expire(_inflight_key, 300)
+
+    # Fetch dynamic config
+    from app.services.auth import get_full_auth_config
+    config = await get_full_auth_config(db, redis)
+
+    max_concurrent = config.get("tus_max_concurrent_per_user") or settings.tus_max_concurrent_per_user
+    if inflight > max_concurrent:
         await redis.decr(_inflight_key)
         return Response(
             status_code=429,
@@ -272,9 +322,10 @@ async def tus_patch(
         except ValueError:
             raise BadRequestError("Content-Length must be an integer.")
 
-        if chunk_size > settings.tus_chunk_max_bytes:
+        chunk_max = config.get("tus_chunk_max_bytes") or settings.tus_chunk_max_bytes
+        if chunk_size > chunk_max:
             raise BadRequestError(
-                f"Chunk too large: maximum {settings.tus_chunk_max_bytes} bytes, got {chunk_size}"
+                f"Chunk too large: maximum {chunk_max} bytes, got {chunk_size}"
             )
 
         tmp = tempfile.NamedTemporaryFile(delete=False)
@@ -293,7 +344,7 @@ async def tus_patch(
 
                 async for data_chunk in request.stream():
                     total_read += len(data_chunk)
-                    if total_read > chunk_size or total_read > settings.tus_chunk_max_bytes:
+                    if total_read > chunk_size or total_read > chunk_max:
                         raise BadRequestError(
                             "Payload size exceeded Content-Length or maximum limits."
                         )
@@ -374,9 +425,10 @@ async def tus_patch(
 
                 is_final = (current_offset + chunk_size) == total_length
 
-                if not is_final and chunk_size < settings.tus_chunk_min_bytes:
+                chunk_min = config.get("tus_chunk_min_bytes") or settings.tus_chunk_min_bytes
+                if not is_final and chunk_size < chunk_min:
                     raise BadRequestError(
-                        f"Non-final chunk too small: minimum {settings.tus_chunk_min_bytes} bytes, got {chunk_size}"
+                        f"Non-final chunk too small: minimum {chunk_min} bytes, got {chunk_size}"
                     )
                 parts: list[dict[str, int | str]] = json.loads(state["parts"])
                 part_number = len(parts) + 1

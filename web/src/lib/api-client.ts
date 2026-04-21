@@ -114,7 +114,7 @@ export async function apiRequest(
         if (Array.isArray(body.detail)) {
             message = body.detail.map((err: Record<string, unknown>) => err.msg || err.detail || JSON.stringify(err)).join(", ");
         }
-        throw new ApiError(res.status, message);
+        throw new ApiError(res.status, message, body.error_code);
     }
 
     return res;
@@ -169,6 +169,7 @@ export class ApiError extends Error {
     constructor(
         public status: number,
         message: string,
+        public error_code?: string,
     ) {
         super(message);
         this.name = "ApiError";

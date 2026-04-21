@@ -18,7 +18,7 @@ http {
     # the frontend only — API responses get a restrictive policy.
     map $uri $csp_value {
         ~^/api/   "default-src 'none'; frame-ancestors 'none'";
-        default   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self' blob: https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'self'; connect-src 'self' ws://localhost wss://localhost blob: https://unpkg.com https://cdn.jsdelivr.net;";
+        default   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://accounts.google.com/gsi/client https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self' blob: https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style https://cdn.jsdelivr.net; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'self' https://accounts.google.com/gsi/; connect-src 'self' ws://localhost wss://localhost blob: https://accounts.google.com/gsi/ https://unpkg.com https://cdn.jsdelivr.net;";
     }
 
     upstream web {
@@ -161,6 +161,16 @@ http {
             proxy_read_timeout 300s;
             proxy_send_timeout 300s;
             proxy_connect_timeout 300s;
+        }
+
+        # Explicitly handle Next.js HMR (Hot Module Replacement)
+        location ~ ^/_next/(webpack-hmr|hmr) {
+            proxy_pass http://web;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
         }
 
         # S3 Proxy with clean error handling

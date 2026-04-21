@@ -29,7 +29,7 @@ See [Data Model](../../architecture/data-model.md) for full schema.
 - `comments` → One-to-many with Comment
 - `notifications` → One-to-many with Notification (cascade delete)
 
-**UserRole enum:** `student | member | bureau | vieux` — stored as PostgreSQL enum type.
+**UserRole enum:** `pending | student | moderator | bureau | vieux` — stored as PostgreSQL enum type.
 
 ### Directory (`directory.py`)
 **Self-referential tree:**
@@ -41,6 +41,17 @@ See [Data Model](../../architecture/data-model.md) for full schema.
 **DirectoryType enum:** `module | folder`
 
 **Unique constraint:** `(parent_id, slug)` — slugs are unique among siblings.
+
+### AuthConfig & AllowedDomain (`auth_config.py`)
+Dynamic configuration for authentication, storage, and file policies.
+- `AuthConfig`: Singleton row controlling:
+    - **Auth**: `totp_enabled`, `google_oauth_enabled`, `classic_auth_enabled`, `allow_all_domains` (replaced `open_registration`), and JWT expiry durations.
+    - **Branding**: Site name, description, logo URL, favicon URL, primary theme color, footer text, and organization URL.
+    - **SMTP**: Host, port, credentials, and TLS settings for outgoing mail.
+    - **S3 Storage**: Endpoint, credentials, bucket, region, and SSL settings.
+    - **Files**: Category-specific size limits (Images, Video, Audio, Docs, Office, Text), PDF thumbnail quality, video compression profiles, and whitelist for extensions/MIME types.
+- `AllowedDomain`: Email domains permitted to register when `allow_all_domains=False`. Includes an `auto_approve` flag to determine if new users get the `student` role immediately or start as `pending` (requiring admin approval).
+
 
 ### Material (`material.py`)
 **Key design decisions:**

@@ -2,6 +2,7 @@
 
 import os
 import re
+from typing import Any
 
 from app.config import settings
 from app.core.exceptions import BadRequestError
@@ -32,16 +33,39 @@ _PER_TYPE_LIMITS: dict[str, int] = {
 _MAX_FILENAME_LENGTH = 255
 
 
-def _check_per_type_size(mime_type: str, size: int) -> None:
+def _check_per_type_size(
+    mime_type: str,
+    size: int,
+    config: dict[str, Any] | None = None
+) -> None:
     """Raise BadRequestError if ``size`` exceeds the applicable limit for ``mime_type``.
 
     Category-specific limits (e.g. 500MB for video) take precedence over the
-    global 100MB default.
+    global default.
     """
+    if config:
+        limits = {
+            "image/svg+xml": (config.get("max_svg_size_mb") if config.get("max_svg_size_mb") is not None else settings.max_svg_size_mb) * 1024 * 1024,
+            "image/": (config.get("max_image_size_mb") if config.get("max_image_size_mb") is not None else settings.max_image_size_mb) * 1024 * 1024,
+            "audio/": (config.get("max_audio_size_mb") if config.get("max_audio_size_mb") is not None else settings.max_audio_size_mb) * 1024 * 1024,
+            "video/": (config.get("max_video_size_mb") if config.get("max_video_size_mb") is not None else settings.max_video_size_mb) * 1024 * 1024,
+            "application/pdf": (config.get("max_document_size_mb") if config.get("max_document_size_mb") is not None else settings.max_document_size_mb) * 1024 * 1024,
+            "application/epub+zip": (config.get("max_document_size_mb") if config.get("max_document_size_mb") is not None else settings.max_document_size_mb) * 1024 * 1024,
+            "image/vnd.djvu": (config.get("max_document_size_mb") if config.get("max_document_size_mb") is not None else settings.max_document_size_mb) * 1024 * 1024,
+            "text/": (config.get("max_text_size_mb") if config.get("max_text_size_mb") is not None else settings.max_text_size_mb) * 1024 * 1024,
+            "application/vnd.openxmlformats": (config.get("max_office_size_mb") if config.get("max_office_size_mb") is not None else settings.max_office_size_mb) * 1024 * 1024,
+            "application/msword": (config.get("max_office_size_mb") if config.get("max_office_size_mb") is not None else settings.max_office_size_mb) * 1024 * 1024,
+            "application/vnd.ms-": (config.get("max_office_size_mb") if config.get("max_office_size_mb") is not None else settings.max_office_size_mb) * 1024 * 1024,
+        }
+        global_limit = (config.get("max_file_size_mb") if config.get("max_file_size_mb") is not None else settings.max_file_size_mb) * 1024 * 1024
+    else:
+        limits = _PER_TYPE_LIMITS
+        global_limit = settings.max_file_size_mb * 1024 * 1024
+
     # 1. Exact MIME match first, then prefix match
-    limit = _PER_TYPE_LIMITS.get(mime_type)
+    limit = limits.get(mime_type)
     if limit is None:
-        for prefix, cap in _PER_TYPE_LIMITS.items():
+        for prefix, cap in limits.items():
             if prefix.endswith("/") and mime_type.startswith(prefix):
                 limit = cap
                 break
@@ -52,7 +76,7 @@ def _check_per_type_size(mime_type: str, size: int) -> None:
     # 2. Fallback to global limit
     is_global = False
     if limit is None:
-        limit = settings.max_file_size_mb * 1024 * 1024
+        limit = global_limit
         is_global = True
 
     # 3. Validate
@@ -75,7 +99,10 @@ def _sanitize_filename(raw: str) -> str:
     return name
 
 
-def _validate_filename(raw: str) -> tuple[str, str]:
+def _validate_filename(
+    raw: str,
+    allowed_extensions: set[str] | frozenset[str] | None = None
+) -> tuple[str, str]:
     """Return (safe_name, ext) or raise BadRequestError with structured code."""
     safe_name = _sanitize_filename(raw or "unnamed")
     if not safe_name:
@@ -86,7 +113,7 @@ def _validate_filename(raw: str) -> tuple[str, str]:
             code=ERR_FILENAME_TOO_LONG,
         )
     ext = os.path.splitext(safe_name)[1].lower()
-    if not MimeRegistry.is_supported_extension(ext):
+    if not MimeRegistry.is_supported_extension(ext, allowed=allowed_extensions):
         raise BadRequestError(
             f"File extension '{ext}' is not supported.",
             code=ERR_TYPE_NOT_ALLOWED,
@@ -94,9 +121,14 @@ def _validate_filename(raw: str) -> tuple[str, str]:
     return safe_name, ext
 
 
-def _apply_mime_correction(safe_name: str, detected_mime: str, ext: str) -> tuple[str, str]:
+def _apply_mime_correction(
+    safe_name: str,
+    detected_mime: str,
+    ext: str,
+    allowed_mimes: set[str] | frozenset[str] | None = None
+) -> tuple[str, str]:
     """Reject uploads where magic bytes conflict with a known extension's accepted MIME types."""
-    if not MimeRegistry.is_allowed_mime(detected_mime):
+    if not MimeRegistry.is_allowed_mime(detected_mime, allowed=allowed_mimes):
         raise BadRequestError(
             f"Detected file type '{detected_mime}' is not allowed.",
             code=ERR_TYPE_NOT_ALLOWED,

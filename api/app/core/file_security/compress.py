@@ -10,7 +10,7 @@ import logging
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from app.core.file_security._audio_video import (
     VIDEO_COMPRESS_THRESHOLD,
@@ -67,7 +67,7 @@ def _optimize_svg_to_path(file_path: Path, filename: str) -> Path:
 
 
 async def compress_file_path(
-    file_path: Path, mime_type: str, filename: str = ""
+    file_path: Path, mime_type: str, filename: str = "", config: dict[str, Any] | None = None
 ) -> CompressResultPath:
     """Compress *file_path* for storage efficiency. Fail-open on non-security errors.
 
@@ -108,12 +108,12 @@ async def compress_file_path(
 
         if mime_type == "application/pdf":
             async with _get_concurrency_guard("image"):
-                compressed = await _compress_pdf_path(file_path)
+                compressed = await _compress_pdf_path(file_path, config=config)
             return CompressResultPath(compressed, compressed.stat().st_size, None, mime_type)
 
         if mime_type in ("video/mp4", "video/webm"):
             ext = ".mp4" if mime_type == "video/mp4" else ".webm"
-            compressed = await _compress_video_path(file_path, ext)
+            compressed = await _compress_video_path(file_path, ext, config=config)
             return CompressResultPath(compressed, compressed.stat().st_size, None, mime_type)
 
         if mime_type.startswith("audio/"):

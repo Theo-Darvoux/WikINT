@@ -9,6 +9,7 @@ from sqlalchemy import select, update
 from app.core import redis as redis_core
 from app.models.dead_letter import DeadLetterJob
 from app.models.upload import Upload
+from app.services.auth import get_full_auth_config
 from app.workers.upload.context import WorkerContext
 
 logger = logging.getLogger("wikint")
@@ -127,6 +128,21 @@ class UploadWorkerRepository:
             return await _retry_db(_do_get, context=f"get_pipeline_stage for {upload_id}")
         except Exception:
             return 0
+
+    async def get_auth_config(self) -> dict[str, Any]:
+        """Fetch full auth config from DB with fallback defaults."""
+        session_factory = self._session_factory()
+        if session_factory is None:
+            return {}
+
+        async def _do_get() -> dict[str, Any]:
+            async with session_factory() as session:
+                return await get_full_auth_config(session, self._ctx.redis)
+
+        try:
+            return await _retry_db(_do_get, context="get_auth_config in worker")
+        except Exception:
+            return {}
 
     async def insert_dead_letter(
         self,

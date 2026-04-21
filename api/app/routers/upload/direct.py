@@ -7,9 +7,11 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Request, UploadFile
 from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.constants import MAGIC_HEADER_SIZE, PRIVILEGED_ROLES
+from app.core.database import get_db
 from app.core.exceptions import BadRequestError
 from app.core.file_security import SvgSecurityError
 from app.core.mimetypes import guess_mime_from_bytes
@@ -32,6 +34,7 @@ from app.routers.upload.validators import (
     _validate_filename,
 )
 from app.schemas.material import UploadPendingOut, UploadStatus
+from app.services.auth import get_full_auth_config
 
 logger = logging.getLogger("wikint")
 
@@ -43,6 +46,7 @@ async def upload_file(
     file: UploadFile,
     user: CurrentUser,
     redis: Annotated[Redis, Depends(get_redis)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     request: Request,
     _: Annotated[None, Depends(rate_limit_uploads)],
 ) -> UploadPendingOut:
@@ -68,11 +72,26 @@ async def upload_file(
             raise BadRequestError("X-Upload-ID must be a valid UUID")
         upload_id = idem_header
 
+    # Fetch dynamic config
+    config = await get_full_auth_config(db, redis)
+
+    # Process allowed lists
+    allowed_exts: set[str] | None = None
+    if config.get("allowed_extensions"):
+        allowed_exts = {e.strip().lower() for e in config["allowed_extensions"].split(",") if e.strip()}
+        if not all(e.startswith(".") for e in allowed_exts):
+             # Ensure dots
+             allowed_exts = {e if e.startswith(".") else f".{e}" for e in allowed_exts}
+
+    allowed_mimes: set[str] | None = None
+    if config.get("allowed_mime_types"):
+        allowed_mimes = {m.strip().lower() for m in config["allowed_mime_types"].split(",") if m.strip()}
+
     # Validate filename / extension
-    safe_name, ext = _validate_filename(file.filename or "unnamed")
+    safe_name, ext = _validate_filename(file.filename or "unnamed", allowed_extensions=allowed_exts)
 
     # Stream to a temp file (no full-body read into RAM)
-    max_bytes = settings.max_file_size_mb * 1024 * 1024
+    max_bytes = (config.get("max_file_size_mb") if config.get("max_file_size_mb") is not None else settings.max_file_size_mb) * 1024 * 1024
     pf = await ProcessingFile.from_upload(file, max_bytes)
 
     try:
@@ -89,14 +108,17 @@ async def upload_file(
         real_mime = guess_mime_from_bytes(head)
 
         if real_mime != "application/octet-stream":
-            safe_name, ext = _apply_mime_correction(safe_name, real_mime, ext)
+            safe_name, ext = _apply_mime_correction(safe_name, real_mime, ext, allowed_mimes=allowed_mimes)
 
         mime_type: str = real_mime
         if mime_type == "application/octet-stream":
             guessed, _enc = mimetypes.guess_type(safe_name)
             mime_type = guessed or "application/octet-stream"
 
-        _check_per_type_size(mime_type, pf.size)
+        _check_per_type_size(mime_type, pf.size, config=config)
+
+        from app.routers.upload.helpers import _check_storage_limit
+        await _check_storage_limit(pf.size, config=config)
 
         # SVG safety check
         if mime_type == "image/svg+xml":
@@ -130,7 +152,7 @@ async def upload_file(
         async with get_s3_client() as s3:
             await s3.upload_file(
                 Filename=str(pf.path),
-                Bucket=settings.s3_bucket,
+                Bucket=config.get("s3_bucket") or settings.s3_bucket,
                 Key=quarantine_key,
                 ExtraArgs={"ContentType": mime_type},
             )

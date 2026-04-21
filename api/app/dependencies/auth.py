@@ -45,6 +45,9 @@ async def get_current_user(
     if not user:
         raise UnauthorizedError("User not found")
 
+    if user.role == UserRole.PENDING:
+        raise ForbiddenError("Account pending admin approval", code="USER_PENDING")
+
     return user
 
 

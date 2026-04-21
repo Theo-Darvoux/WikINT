@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 
 class UserRole(enum.StrEnum):
+    PENDING = "pending"
     STUDENT = "student"
     MODERATOR = "moderator"
     BUREAU = "bureau"

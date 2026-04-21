@@ -13,6 +13,7 @@ from app.config import settings
 from app.core.exceptions import AppError
 from app.core.limiter import limiter
 from app.routers.admin import router as admin_router
+from app.routers.admin_storage import router as admin_storage_router
 from app.routers.annotations import (
     annotations_router,
     material_annotations_router,
@@ -24,6 +25,7 @@ from app.routers.directories import router as directories_router
 from app.routers.flags import router as flags_router
 from app.routers.home import router as home_router
 from app.routers.materials import router as materials_router
+from app.routers.moderator import router as moderator_router
 from app.routers.notifications import router as notifications_router
 from app.routers.onlyoffice import router as onlyoffice_router
 from app.routers.pr_comments import router as pr_comments_router
@@ -115,11 +117,12 @@ async def add_security_headers(
     # - inline styles/scripts are blocked by default.
     csp = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "script-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/client https://unpkg.com https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style https://cdn.jsdelivr.net; "
         "img-src 'self' data: blob:; "
         "font-src 'self'; "
-        "connect-src 'self' " + settings.frontend_url + " https://unpkg.com https://cdn.jsdelivr.net; "
+        "connect-src 'self' " + settings.frontend_url + " https://accounts.google.com/gsi/ https://unpkg.com https://cdn.jsdelivr.net; "
+        "frame-src https://accounts.google.com/gsi/; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self';"
@@ -234,7 +237,10 @@ async def metrics(request: Request) -> Response:
     return Response(content=data, media_type=CONTENT_TYPE_LATEST)
 
 
+
 app.include_router(admin_router)
+app.include_router(admin_storage_router)
+app.include_router(moderator_router)
 app.include_router(annotations_router)
 app.include_router(auth_router)
 app.include_router(browse_router)

@@ -103,7 +103,8 @@ services:
       # ONLYOFFICE Document Server URL (browser-facing, routed through nginx)
       - NEXT_PUBLIC_ONLYOFFICE_URL=http://localhost/onlyoffice
       # Ensure Node.js has enough heap space for large page compilation
-      - NODE_OPTIONS=--max-old-space-size=3072
+      - NODE_OPTIONS=--max-old-space-size=5120
+      - WATCHPACK_POLLING=true
     volumes:
       - ./web:/app
       - /app/node_modules
@@ -112,9 +113,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 8G
         reservations:
-          memory: 2G
+          memory: 4G
 
   # Nginx handles CORS in Docker dev (strips backend headers, injects its own).
   # FastAPI's CORSMiddleware is authoritative in production and bare-uvicorn local dev.

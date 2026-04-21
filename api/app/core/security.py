@@ -9,9 +9,15 @@ from app.config import settings
 ALGORITHM = "HS256"
 
 
-def create_access_token(user_id: str, role: str, email: str) -> tuple[str, str]:
+def create_access_token(
+    user_id: str,
+    role: str,
+    email: str,
+    expire_days: int | None = None
+) -> tuple[str, str]:
     jti = str(uuid4())
-    expire = datetime.now(UTC) + timedelta(days=settings.jwt_access_token_expire_days)
+    days = expire_days if expire_days is not None else settings.jwt_access_token_expire_days
+    expire = datetime.now(UTC) + timedelta(days=days)
     payload = {
         "sub": user_id,
         "role": role,
@@ -24,9 +30,10 @@ def create_access_token(user_id: str, role: str, email: str) -> tuple[str, str]:
     return token, jti
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(user_id: str, expire_days: int | None = None) -> str:
     jti = str(uuid4())
-    expire = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_token_expire_days)
+    days = expire_days if expire_days is not None else settings.jwt_refresh_token_expire_days
+    expire = datetime.now(UTC) + timedelta(days=days)
     payload = {
         "sub": user_id,
         "jti": jti,

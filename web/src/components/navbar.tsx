@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +16,7 @@ import {
 import { useState, useEffect, useCallback } from "react";
 import { SearchModal } from "@/components/search/search-modal";
 import { SearchInline } from "@/components/search/search-inline";
-import { useNotificationStore } from "@/lib/stores";
+import { useNotificationStore, useConfigStore } from "@/lib/stores";
 import { useSSE } from "@/hooks/use-sse";
 import { usePathname } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -51,6 +52,7 @@ export function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
   const { unreadCount, setUnreadCount } = useNotificationStore();
+  const { config } = useConfigStore();
   const pathname = usePathname();
 
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -118,9 +120,21 @@ export function Navbar() {
         <div className="flex w-1/3 justify-start items-center gap-4">
           <Link
             href="/"
-            className="text-xl font-extrabold tracking-tight bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
+            className="flex items-center gap-2 text-xl font-extrabold tracking-tight hover:opacity-80 transition-opacity"
           >
-            WikINT
+            {config?.site_logo_url && (
+              <Image 
+                src={config.site_logo_url} 
+                alt={config?.site_name || "Logo"} 
+                width={32}
+                height={32}
+                className="h-8 w-auto object-contain"
+                unoptimized
+              />
+            )}
+            <span className="bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
+              {config?.site_name || "WikINT"}
+            </span>
           </Link>
           {isAuthenticated && (
             <Link href="/browse" className="hidden sm:block">

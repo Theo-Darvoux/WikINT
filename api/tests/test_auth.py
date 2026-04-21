@@ -12,11 +12,12 @@ async def test_health(client: AsyncClient) -> None:
 
 
 async def test_request_code_invalid_domain(client: AsyncClient) -> None:
+    # Domain validation is now async (DB-backed); invalid domains return 400 not 422
     response = await client.post(
         "/api/auth/request-code",
         json={"email": "test@gmail.com"},
     )
-    assert response.status_code == 422
+    assert response.status_code == 400
 
 
 async def test_request_code_plus_alias(client: AsyncClient) -> None:

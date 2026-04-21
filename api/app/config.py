@@ -12,6 +12,16 @@ class Settings(BaseSettings):
         "change-this-to-a-secure-random-string-with-at-least-32-bytes"
     )
 
+    # Branding Defaults
+    site_name: str = "WikINT"
+    site_description: str = "Wiki for SudParis Intelligence"
+    site_logo_url: str | None = None
+    site_favicon_url: str | None = None
+    primary_color: str = "#3b82f6"
+    footer_text: str = "© 2024 WikINT"
+    organization_url: str | None = "https://www.telecom-sudparis.eu"
+
+
     database_url: str = "postgresql+asyncpg://wikint:wikint@localhost:5432/wikint"
 
     redis_url: str = "redis://localhost:6379/0"
@@ -24,6 +34,7 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     s3_use_ssl: bool = False
     s3_use_accelerate_endpoint: bool = False
+    max_storage_gb: int = 10
 
     meili_url: str = "http://localhost:7700"
     meili_master_key: str = "change-me"

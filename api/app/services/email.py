@@ -1,7 +1,11 @@
+
 from app.core.email import send_email
+from app.models.auth_config import AuthConfig
 
 
-async def send_verification_email(email: str, code: str, magic_link: str) -> None:
+async def send_verification_email(
+    email: str, code: str, magic_link: str, config: AuthConfig | None = None
+) -> None:
     subject = "WikINT - Sign in to your account"
     body = f"""
     <html>
@@ -40,4 +44,4 @@ async def send_verification_email(email: str, code: str, magic_link: str) -> Non
     </body>
     </html>
     """
-    await send_email(email, subject, body)
+    await send_email(email, subject, body, config=config)

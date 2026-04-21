@@ -42,13 +42,21 @@ def hmac_cas_key(sha256: str) -> str:
     return f"upload:cas:{digest}"
 
 
+_STORAGE_USAGE_KEY = "storage:total_usage_bytes"
+
+
 _LUA_CAS_INCR = """
 local raw = redis.call('GET', KEYS[1])
+local usage_key = KEYS[2]
 local data
 if not raw then
   if ARGV[1] then
     data = cjson.decode(ARGV[1])
     data['ref_count'] = 1
+    -- Physical storage increment: only on first creation
+    if data['size'] then
+        redis.call('INCRBY', usage_key, data['size'])
+    end
   else
     return 0
   end
@@ -81,11 +89,21 @@ return data['ref_count']
 
 _LUA_CAS_DECR = """
 local raw = redis.call('GET', KEYS[1])
+local usage_key = KEYS[2]
 if not raw then return 0 end
 local ok, data = pcall(cjson.decode, raw)
 if not ok then return 0 end
 local count = (data['ref_count'] or 1) - 1
 if count <= 0 then
+  -- Physical storage decrement: only when the blob is actually about to be deleted
+  if data['size'] then
+    redis.call('DECRBY', usage_key, data['size'])
+    -- Clamp to 0 to guard against negative values after a Redis flush or restart.
+    local current = tonumber(redis.call('GET', usage_key)) or 0
+    if current < 0 then
+      redis.call('SET', usage_key, 0)
+    end
+  end
   redis.call('DEL', KEYS[1])
   return 0
 end
@@ -102,9 +120,13 @@ async def increment_cas_ref(
     cas_key = hmac_cas_key(sha256)
     try:
         if initial_data:
-            count = await redis.eval(_LUA_CAS_INCR, 1, cas_key, json.dumps(initial_data))  # type: ignore[no-untyped-call]
+            count = await redis.eval(
+                _LUA_CAS_INCR, 2, cas_key, _STORAGE_USAGE_KEY, json.dumps(initial_data)
+            )  # type: ignore[no-untyped-call]
         else:
-            count = await redis.eval(_LUA_CAS_INCR, 1, cas_key)  # type: ignore[no-untyped-call]
+            count = await redis.eval(
+                _LUA_CAS_INCR, 2, cas_key, _STORAGE_USAGE_KEY
+            )  # type: ignore[no-untyped-call]
         return int(count) if count is not None else 1
     except Exception as exc:
         logger.warning("CAS ref increment failed for %s: %s", sha256, exc)
@@ -114,7 +136,7 @@ async def increment_cas_ref(
 async def decrement_cas_ref(redis: Redis, sha256: str) -> None:
     cas_key = hmac_cas_key(sha256)
     try:
-        await redis.eval(_LUA_CAS_DECR, 1, cas_key)  # type: ignore[no-untyped-call]
+        await redis.eval(_LUA_CAS_DECR, 2, cas_key, _STORAGE_USAGE_KEY)  # type: ignore[no-untyped-call]
     except Exception as exc:
         logger.warning("CAS ref decrement failed for %s: %s", sha256, exc)
 

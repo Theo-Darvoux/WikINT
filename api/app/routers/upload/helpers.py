@@ -2,16 +2,64 @@
 
 import logging
 import time
+from typing import Any
 from uuid import UUID
 
 from redis.asyncio import Redis
 
 import app.core.redis as redis_core
+from app.config import settings
 from app.core.database import async_session_factory
 from app.core.exceptions import BadRequestError
-from app.core.upload_errors import ERR_QUOTA_EXCEEDED
+from app.core.upload_errors import ERR_QUOTA_EXCEEDED, ERR_STORAGE_FULL
 
 logger = logging.getLogger("wikint")
+
+
+async def _check_storage_limit(size_bytes: int, config: dict[str, Any]) -> None:
+    """Raise if the global storage limit (max_storage_gb) would be exceeded."""
+    from sqlalchemy import func, select
+
+    from app.core.cas import _STORAGE_USAGE_KEY
+    from app.models.material import MaterialVersion
+
+    max_gb = config.get("max_storage_gb") if config.get("max_storage_gb") is not None else settings.max_storage_gb
+    if not max_gb:
+        return
+
+    max_bytes = max_gb * 1024 * 1024 * 1024
+    redis = redis_core.redis_client
+
+    # 1. Try to get cached usage from Redis
+    try:
+        usage_raw = await redis.get(_STORAGE_USAGE_KEY)
+        if usage_raw is not None:
+            usage = max(0, int(usage_raw))
+        else:
+            # 2. Fallback to DB: Sum unique CAS blobs only (Physical Storage)
+            async with async_session_factory() as session:
+                # We subquery to get the first version of each unique CAS blob
+                # and sum their sizes.
+                subq = select(func.min(MaterialVersion.id)).group_by(MaterialVersion.cas_sha256)
+                usage = await session.scalar(
+                    select(func.sum(MaterialVersion.file_size))
+                    .where(MaterialVersion.id.in_(subq))
+                ) or 0
+
+            # Cache the result for 1 hour
+            await redis.set(_STORAGE_USAGE_KEY, usage, ex=3600)
+    except Exception as exc:
+        logger.warning("Failed to get/set storage usage from Redis: %s. Falling back to logical sum.", exc)
+        # Deep fallback to logical sum if everything else fails
+        async with async_session_factory() as session:
+            usage = await session.scalar(select(func.sum(MaterialVersion.file_size))) or 0
+
+    if usage + size_bytes > max_bytes:
+        logger.warning("Storage limit reached: %d bytes usage + %d bytes upload > %d bytes limit", usage, size_bytes, max_bytes)
+        raise BadRequestError(
+            f"Global storage limit reached ({max_gb} GB). Please contact an administrator.",
+            code=ERR_STORAGE_FULL
+        )
 
 MAX_PENDING_UPLOADS = 50
 MAX_PENDING_UPLOADS_PRIVILEGED = 200

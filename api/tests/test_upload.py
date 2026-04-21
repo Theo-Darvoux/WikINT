@@ -2,6 +2,7 @@ import io
 import uuid
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -85,20 +86,37 @@ async def test_upload_too_large(
     mock_s3 = AsyncMock()
     mock_s3_client.return_value.__aenter__.return_value = mock_s3
 
+@pytest.mark.asyncio
+@patch("app.routers.upload.direct.get_s3_client")
+async def test_upload_too_large(
+    mock_s3_client,
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_redis: AsyncMock
+) -> None:
+    # Setup S3 mock
+    mock_s3 = AsyncMock()
+    mock_s3_client.return_value.__aenter__.return_value = mock_s3
+
     user = await _create_user(db_session)
+
+    # 1. Seed dynamic config with a 0 MiB limit for documents (PDFs)
+    from app.models.auth_config import AuthConfig
+    config = AuthConfig(max_document_size_mb=0)
+    db_session.add(config)
     await db_session.commit()
 
-    with patch("app.routers.upload.direct.settings") as mock_settings:
-        mock_settings.max_file_size_mb = 0  # 0 MiB limit
-        mock_settings.s3_bucket = "test"
+    # 2. Invalidate cache so it fetches from DB
+    mock_redis.get.return_value = None
 
-        response = await client.post(
-            "/api/upload",
-            files=_make_pdf_file(b"%PDF-1.4 some content here"),
-            headers=_auth_headers(user),
-        )
-        assert response.status_code == 400
-        assert "exceeds maximum" in response.json()["detail"]
+    response = await client.post(
+        "/api/upload",
+        files=_make_pdf_file(b"%PDF-1.4 some content here"),
+        headers=_auth_headers(user),
+    )
+    # If this fails with 202, it means validation was bypassed.
+    assert response.status_code == 400
+    assert "exceeds" in response.json()["detail"].lower()
 
 
 @patch("app.routers.upload.direct.get_s3_client")

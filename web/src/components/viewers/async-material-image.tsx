@@ -141,7 +141,7 @@ function MissingImageUploadDialog({
                 abortRef.current = null;
             }
         },
-        [addOperations, nextTempId, setReviewOpen, material, expectedFileName, expectedExt, onClose],
+        [addOperations, nextTempId, setReviewOpen, material, expectedFileName, onClose],
     );
 
     return (

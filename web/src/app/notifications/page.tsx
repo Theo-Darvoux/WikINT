@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Flag,
   GitPullRequest,
+  UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api-client";
@@ -39,6 +40,7 @@ const TYPE_ICONS: Record<string, React.ElementType> = {
   pr_comment_reply: MessageSquare,
   flag_resolved: Flag,
   new_flag: Flag,
+  pending_user: UserCheck,
 };
 
 export default function NotificationsPage() {

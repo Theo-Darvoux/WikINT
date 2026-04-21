@@ -63,20 +63,28 @@ User profile management:
 - `GET /api/users/{id}/contributions` — List a user's contributions (PRs)
 - `DELETE /api/users/me` — Soft-delete account (sets `deleted_at`)
 
+## Moderator (`/api/moderator`)
+Moderation endpoints. Requires `moderator`, `bureau`, or `vieux` role.
+
+- `GET /api/moderator/stats` — Platform stats (user count, materials, open PRs, open flags).
+- `GET /api/moderator/directories` — Read-only list of all directories.
+- `GET /api/moderator/featured` — List all featured items (no active-window filter), ordered by `start_at` DESC.
+- `POST /api/moderator/featured` — Create a featured item. Body: `FeaturedItemCreate`.
+- `PATCH /api/moderator/featured/{id}` — Partially update a featured item.
+- `DELETE /api/moderator/featured/{id}` — Permanently delete a featured item.
+
 ## Admin (`/api/admin`)
-Administrative endpoints (requires bureau/vieux role):
-- `GET /api/admin/users` — List all users with filtering
-- `PUT /api/admin/users/{id}/role` — Change user role
-- `PUT /api/admin/users/{id}/flag` — Flag/unflag a user
-- `DELETE /api/admin/users/{id}` — Hard delete a user
+Administrative endpoints. Requires `bureau` or `vieux` role only.
 
-### Featured Item Management (`/api/admin/featured`)
-CRUD endpoints for curated home-page featured items. Requires `moderator` role (moderator / bureau / vieux).
+### User Management
+- `GET /api/admin/users` — List all users with optional `role`, `search`, `page`, `limit` filters.
+- `PATCH /api/admin/users/{id}/role` — Change a user's role (`?role=<role>`).
+- `DELETE /api/admin/users/{id}` — Hard-delete a user (triggers GDPR cleanup).
 
-- `GET /api/admin/featured` — List **all** featured items (no active-window filter), ordered by `start_at` DESC. Returns `list[FeaturedItemOut]`.
-- `POST /api/admin/featured` — Create a new featured item. Body: `FeaturedItemCreate` (`material_id`, `title?`, `description?`, `start_at`, `end_at`, `priority=0`). Validates that `end_at > start_at` and that the referenced material exists. Returns `FeaturedItemOut` (201).
-- `PATCH /api/admin/featured/{featured_id}` — Partially update a featured item. Body: `FeaturedItemUpdate` (all fields optional). Re-validates `end_at > start_at` after applying updates. Returns `FeaturedItemOut`.
-- `DELETE /api/admin/featured/{featured_id}` — Permanently delete a featured item. Returns `{"status": "ok"}`.
+### Dead Letter Queue
+- `GET /api/admin/dlq` — List failed background jobs. `?resolved=true` to include resolved.
+- `POST /api/admin/dlq/{id}/retry` — Re-enqueue job with original payload.
+- `POST /api/admin/dlq/{id}/dismiss` — Mark job as resolved without retrying.
 
 ## Tags (`/api/tags`)
 Tag management:

@@ -4,10 +4,31 @@
 
 WikINT uses a **passwordless email-based authentication** system. Users never create passwords. Instead, they authenticate via one of two methods:
 
-1. **Email OTP (One-Time Password):** A 6-digit code sent to the user's email
-2. **Magic Link:** A single-use URL sent to the same email
+1. **Email OTP (One-Time Password):** An 8-character alphanumeric code sent to the user's email.
+2. **Magic Link:** A single-use URL sent to the same email.
 
-Both methods are sent in the same email, giving the user flexibility to either type a code or click a link.
+Both methods are sent in the same email, giving the user flexibility. Auth configuration is stored in the database (`auth_configs` / `allowed_domains` tables) and cached in Redis (TTL 60 s). Admins can change settings live from `/admin/config`.
+
+## Domain Whitelist & Registration Policy
+
+Email domain policy is enforced asynchronously in `app.services.auth.validate_email_for_auth` (NOT at the Pydantic schema level):
+
+- If `open_registration=True`, any email can request a code; new users get `PENDING` status.
+- Otherwise, the email domain must match an `AllowedDomain` row.
+  - `auto_approve=True` → new users become `STUDENT` immediately.
+  - `auto_approve=False` → new users become `PENDING` (require admin approval).
+- If no `AllowedDomain` rows exist, a hardcoded fallback (`telecom-sudparis.eu`, `imt-bs.eu`) is used.
+- Unknown domains get `400 Bad Request` with detail `"Email domain @... is not allowed"`.
+
+## PENDING Role & Approval Flow (Phase 3)
+
+New users who require admin review get `UserRole.PENDING`:
+
+1. Their JWT token is issued normally so the frontend knows the role.
+2. `get_current_user` raises `ForbiddenError(403, error_code="USER_PENDING")` for every authenticated endpoint.
+3. The frontend (`auth-guard.tsx`, `use-auth.ts`) detects `USER_PENDING` and redirects to `/pending-approval`.
+4. Admins see pending users in `/admin/users` and receive in-app notifications (`type="pending_user"`).
+5. Admins can **approve** (→ promotes to STUDENT, notifies user) or **reject** (hard-deletes the account).
 
 ## Authentication Flow
 
@@ -146,12 +167,13 @@ def require_role(*roles: UserRole):
 - `require_moderator()` — Requires role in `{moderator, bureau, vieux}`
 
 **Role hierarchy:**
-| Role | Can upload | Can create PRs | Can approve PRs | Can admin |
-|------|-----------|---------------|----------------|-----------|
-| student | Yes | Yes | No | No |
-| moderator | Yes | Yes | Yes | No |
-| bureau | Yes | Yes | Yes | Yes |
-| vieux | Yes | Yes | Yes | Yes |
+| Role | Can access app | Can upload | Can create PRs | Can approve PRs | Can moderate | Can admin |
+|------|---------------|-----------|---------------|----------------|--------------|------------|
+| pending | ❌ (redirected to /pending-approval) | No | No | No | No | No |
+| student | Yes | Yes | Yes | No | No | No |
+| moderator | Yes | Yes | Yes | Yes | Yes | No |
+| bureau | Yes | Yes | Yes | Yes | Yes | Yes |
+| vieux | Yes | Yes | Yes | Yes | Yes | Yes |
 
 ### SSE Authentication
 

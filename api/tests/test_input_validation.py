@@ -128,9 +128,12 @@ class TestRequestCodeIn:
         m = self._make("  Alice@Telecom-Sudparis.EU  ")
         assert m.email == "alice@telecom-sudparis.eu"
 
-    def test_rejects_gmail(self):
-        with pytest.raises(ValidationError):
-            self._make("user@gmail.com")
+    def test_gmail_passes_schema_domain_policy_enforced_at_service_layer(self):
+        # Domain whitelist is enforced asynchronously in the service layer (Phase 2).
+        # The Pydantic schema only validates email format, not domain policy.
+        # See test_auth_config.py::test_request_code_disallowed_domain for the full flow.
+        m = self._make("user@gmail.com")
+        assert m.email == "user@gmail.com"
 
     def test_rejects_plus_alias(self):
         with pytest.raises(ValidationError):
@@ -155,9 +158,11 @@ class TestVerifyCodeIn:
         m = self._make("alice@telecom-sudparis.eu", "ABCDEF23")
         assert m.code == "ABCDEF23"
 
-    def test_rejects_wrong_domain(self):
-        with pytest.raises(ValidationError):
-            self._make("alice@gmail.com", "ABCDEF23")
+    def test_gmail_passes_schema_domain_policy_enforced_at_service_layer(self):
+        # Domain whitelist is enforced asynchronously in the service layer (Phase 2).
+        # The Pydantic schema only validates email format, not domain policy.
+        m = self._make("alice@gmail.com", "ABCDEF23")
+        assert m.email == "alice@gmail.com"
 
     def test_rejects_short_code(self):
         with pytest.raises(ValidationError):

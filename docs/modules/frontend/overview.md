@@ -34,14 +34,23 @@ web/src/app/
 ├── notifications/page.tsx          # Notification center
 ├── settings/page.tsx               # User settings
 ├── privacy/page.tsx                # Privacy policy
+├── moderator/
+│   ├── layout.tsx                  # Moderator layout (role guard: moderator|bureau|vieux)
+│   ├── page.tsx                    # Moderator dashboard (stats)
+│   ├── flags/page.tsx              # Content moderation flags
+│   ├── directories/page.tsx        # Directory view (read-only)
+│   ├── pull-requests/page.tsx      # PR moderation queue
+│   └── featured/page.tsx           # Featured items management
 └── admin/
-    ├── layout.tsx                  # Admin layout (role guard) — includes Featured tab
-    ├── page.tsx                    # Admin dashboard
-    ├── users/page.tsx              # User management
-    ├── directories/page.tsx        # Directory management
-    ├── pull-requests/page.tsx      # PR moderation
-    ├── flags/page.tsx              # Content moderation flags
-    └── featured/page.tsx           # Featured items management (home page curation)
+    ├── layout.tsx                  # Admin layout (role guard: bureau|vieux only)
+    ├── page.tsx                    # Admin dashboard (links to sub-sections)
+    ├── users/page.tsx              # User management (role changes, deletion)
+    ├── dlq/page.tsx                # Dead letter queue (retry/dismiss failed jobs)
+    ├── config/page.tsx             # Platform configuration (Phase 2 placeholder)
+    ├── flags/page.tsx              # Redirects → /moderator/flags
+    ├── pull-requests/page.tsx      # Redirects → /moderator/pull-requests
+    ├── directories/page.tsx        # Redirects → /moderator/directories
+    └── featured/page.tsx           # Redirects → /moderator/featured
 ```
 
 ### Key Route: Browse (`/browse/[[...path]]`)

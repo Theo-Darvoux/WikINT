@@ -11,6 +11,7 @@ from app.models.user import User, UserRole
 logger = logging.getLogger("wikint")
 
 MODERATOR_ROLES = (UserRole.MODERATOR, UserRole.BUREAU, UserRole.VIEUX)
+ADMIN_ROLES = (UserRole.BUREAU, UserRole.VIEUX)
 
 
 async def create_notification(
@@ -108,6 +109,40 @@ async def notify_user(
     link: str | None = None,
 ) -> None:
     await create_notification(db, user_id, notification_type, title, body, link)
+
+
+async def notify_admins_pending_user(db: AsyncSession, user: "User") -> None:  # type: ignore[name-defined]
+    """Notify all BUREAU/VIEUX admins when a new user is awaiting approval."""
+    from app.models.user import User as UserModel
+
+    result = await db.execute(
+        select(UserModel.id).where(UserModel.role.in_(ADMIN_ROLES))
+    )
+    admin_ids = list(result.scalars().all())
+    notifications = [
+        Notification(
+            user_id=aid,
+            type="pending_user",
+            title="New user pending approval",
+            body=f"{user.email} is requesting access.",
+            link="/admin/users?role=pending",
+        )
+        for aid in admin_ids
+    ]
+    if notifications:
+        db.add_all(notifications)
+        await db.flush()
+        for notif in notifications:
+            broadcast_to_user(
+                notif.user_id,
+                {
+                    "type": "pending_user",
+                    "id": str(notif.id),
+                    "title": notif.title,
+                    "body": notif.body,
+                    "link": notif.link,
+                },
+            )
 
 
 async def notify_moderators(

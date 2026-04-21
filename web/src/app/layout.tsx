@@ -5,6 +5,7 @@ import "./print.css";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { LayoutShell } from "@/components/layout-shell";
+import { ConfigProvider } from "@/components/config-provider";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -24,6 +25,7 @@ export const metadata: Metadata = {
     "Collaborative course materials platform for Telecom SudParis / IMT-BS",
 };
 
+
 export default function RootLayout({
   children,
 }: {
@@ -38,7 +40,9 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          <LayoutShell>{children}</LayoutShell>
+          <ConfigProvider>
+            <LayoutShell>{children}</LayoutShell>
+          </ConfigProvider>
           <Toaster position="bottom-left" expand richColors />
         </ThemeProvider>
       </body>

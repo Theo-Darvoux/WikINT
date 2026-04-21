@@ -29,6 +29,11 @@ export function AuthGuard({ children, requireOnboarded = false }: AuthGuardProps
             return;
         }
 
+        if (user?.role === "pending") {
+            router.replace("/pending-approval");
+            return;
+        }
+
         if (requireOnboarded && user && !user.onboarded) {
             router.replace("/onboarding");
         }
@@ -43,6 +48,7 @@ export function AuthGuard({ children, requireOnboarded = false }: AuthGuardProps
     }
 
     if (!isAuthenticated) return null;
+    if (user?.role === "pending") return null;
     if (requireOnboarded && user && !user.onboarded) return null;
 
     return <>{children}</>;

@@ -1,4 +1,5 @@
 from app.models.annotation import Annotation
+from app.models.auth_config import AllowedDomain, AuthConfig
 from app.models.base import Base
 from app.models.comment import Comment
 from app.models.dead_letter import DeadLetterJob
@@ -14,7 +15,9 @@ from app.models.user import User
 from app.models.view_history import ViewHistory
 
 __all__ = [
+    "AllowedDomain",
     "Annotation",
+    "AuthConfig",
     "Base",
     "Comment",
     "DeadLetterJob",

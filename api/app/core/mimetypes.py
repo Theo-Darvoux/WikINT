@@ -458,7 +458,9 @@ class MimeRegistry:
     """Central registry for file type validation and canonical mapping."""
 
     @staticmethod
-    def is_supported_extension(ext: str) -> bool:
+    def is_supported_extension(ext: str, allowed: set[str] | frozenset[str] | None = None) -> bool:
+        if allowed is not None:
+            return ext.lower() in allowed
         return ext.lower() in ALLOWED_EXTENSIONS
 
     @staticmethod
@@ -470,10 +472,12 @@ class MimeRegistry:
         return EXTENSION_MAPPING.get(ext.lower(), [])
 
     @staticmethod
-    def is_allowed_mime(mime_type: str) -> bool:
+    def is_allowed_mime(mime_type: str, allowed: set[str] | frozenset[str] | None = None) -> bool:
         """Strict check: is this MIME type explicitly allowed for upload?"""
         # Strip parameters like "; charset=utf-8"
         base_mime = mime_type.split(";")[0].strip().lower()
+        if allowed is not None:
+            return base_mime in allowed
         return base_mime in ALLOWED_MIME_TYPES
 
     @staticmethod

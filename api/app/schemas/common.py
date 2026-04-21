@@ -1,4 +1,4 @@
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -19,3 +19,17 @@ class PaginatedResponse[T](BaseModel):
 class HealthResponse(BaseModel):
     status: str
     details: dict[str, str] | None = None
+
+
+class ServiceStatus(BaseModel):
+    status: str  # "healthy", "degraded", "unhealthy"
+    message: str | None = None
+    latency_ms: float | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class DetailedHealthResponse(BaseModel):
+    status: str
+    timestamp: str
+    services: dict[str, ServiceStatus]
+    metrics: dict[str, Any]

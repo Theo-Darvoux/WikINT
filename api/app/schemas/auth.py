@@ -1,21 +1,19 @@
 from pydantic import BaseModel, Field, field_validator
 
-_ALLOWED_DOMAINS = ("@telecom-sudparis.eu", "@imt-bs.eu")
-
 # OTP codes are 8 alphanumeric uppercase chars (alphabet excludes I, O, 1, 0)
 _OTP_PATTERN = r"^[A-Z2-9]{8}$"
-# Magic tokens are base64url – arbitrary length but capped for safety
 _MAGIC_TOKEN_MAX = 128
 
 
-def _validate_school_email(v: str) -> str:
+def _validate_email_format(v: str) -> str:
+    """Format-only checks — domain policy is enforced asynchronously in the service layer."""
     v = v.strip().lower()
     if len(v) > 254:
         raise ValueError("Email too long")
     if "+" in v:
         raise ValueError("Email aliases with '+' are not allowed")
-    if not any(v.endswith(d) for d in _ALLOWED_DOMAINS):
-        raise ValueError("Only @telecom-sudparis.eu and @imt-bs.eu emails are allowed")
+    if "@" not in v:
+        raise ValueError("Invalid email address")
     return v
 
 
@@ -24,8 +22,8 @@ class RequestCodeIn(BaseModel):
 
     @field_validator("email")
     @classmethod
-    def validate_email_domain(cls, v: str) -> str:
-        return _validate_school_email(v)
+    def validate_email(cls, v: str) -> str:
+        return _validate_email_format(v)
 
 
 class VerifyCodeIn(BaseModel):
@@ -34,12 +32,16 @@ class VerifyCodeIn(BaseModel):
 
     @field_validator("email")
     @classmethod
-    def validate_email_domain(cls, v: str) -> str:
-        return _validate_school_email(v)
+    def validate_email(cls, v: str) -> str:
+        return _validate_email_format(v)
 
 
 class VerifyMagicLinkIn(BaseModel):
     token: str = Field(..., min_length=1, max_length=_MAGIC_TOKEN_MAX)
+
+
+class GoogleLoginIn(BaseModel):
+    credential: str = Field(..., min_length=1)
 
 
 class TokenResponse(BaseModel):

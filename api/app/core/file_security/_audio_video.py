@@ -44,11 +44,12 @@ _AUDIO_FILENAME_HINTS: dict[str, str] = {
 }
 
 
-def _build_video_codec_args(suffix: str) -> list[str]:
+def _build_video_codec_args(suffix: str, config: dict | None = None) -> list[str]:
     """Return ffmpeg codec arguments for the given video container suffix based on compression profile."""
     from app.config import settings
 
-    profile = settings.video_compression_profile
+    cfg_profile = config.get("video_compression_profile") if config else None
+    profile = cfg_profile if cfg_profile is not None else settings.video_compression_profile
 
     # Determine arguments based on profile
     if profile == "light":
@@ -289,10 +290,12 @@ def _strip_audio_from_path(file_path: Path, mime_type: str) -> Path:
     return new_path
 
 
-async def _compress_video_path(file_path: Path, suffix: str) -> Path:
+async def _compress_video_path(file_path: Path, suffix: str, config: dict | None = None) -> Path:
     from app.config import settings
 
-    if settings.video_compression_profile == "none":
+    cfg_profile = config.get("video_compression_profile") if config else None
+    profile = cfg_profile if cfg_profile is not None else settings.video_compression_profile
+    if profile == "none":
         return file_path
 
     if file_path.stat().st_size > VIDEO_COMPRESS_THRESHOLD:
@@ -303,7 +306,7 @@ async def _compress_video_path(file_path: Path, suffix: str) -> Path:
         async with _get_concurrency_guard("subprocess"):
             result = await asyncio.to_thread(
                 sandboxed_run,
-                ["ffmpeg", "-y", "-i", str(file_path), *_build_video_codec_args(suffix), out_name],
+                ["ffmpeg", "-y", "-i", str(file_path), *_build_video_codec_args(suffix, config=config), out_name],
                 rw_paths=[Path(out_name).parent, file_path.parent],
                 timeout=1200,
             )

@@ -41,31 +41,19 @@ sha256: "a1b2c3..."
 
 ## Phase 2: File Transfer
 
-### Step 2.1: Direct Upload (files < 50 MiB)
-**Location:** `web/src/lib/upload-client.ts` → `api/app/routers/upload.py:upload_file()`
+### Step 2.1: Presigned PUT Upload (Small files < 5 MiB)
+**Location:** `web/src/lib/upload-client.ts` → `api/app/routers/upload/presigned.py`
 
-1. Client: `POST /api/upload` with file as `multipart/form-data`
-   - Header: `Authorization: Bearer <jwt>`
-   - Header: `X-Upload-ID: <idempotency-key>` (optional)
-2. Server: Extract `UploadFile` from request
-3. Server: Check idempotency key in Redis (if provided)
-4. Server: `_check_pending_cap()` — Verify user hasn't exceeded quota (50/200 pending)
-   - Atomic Redis pipeline: ZADD + ZCARD on `quota:uploads:{user_id}`
-5. Server: `_validate_filename()` — Sanitize filename, check extension
-6. Server: `ProcessingFile.from_upload()` — Stream to temp file on disk
-   - If Starlette spooled to disk: `shutil.copyfile` (fast path)
-   - If in memory: chunked read (1 MiB chunks)
-   - Size enforcement during streaming
-7. Server: Read first 8192 bytes → `guess_mime_from_bytes()` → magic byte detection
-8. Server: `_apply_mime_correction()` — Verify magic bytes match extension
-9. Server: `_check_per_type_size()` — Category-specific size limit
-10. Server: SVG safety check (if SVG)
-11. Server: SHA-256 computation (for idempotency and CAS dedup)
-12. Server: CAS check — if hit, verify staleness (`scanned_at` timestamp) and **re-scan** against current YARA rules before accepting
-13. Server: Upload to S3: `quarantine/{user_id}/{upload_id}/{filename}` (CAS miss only)
-13. Server: Create `Upload` DB row (status=pending)
-14. Server: Enqueue ARQ job (`process_upload`) on MIME-priority queue (fast queue for text/images, heavy queue for video/pdf/archive, size fallback for others)
-15. Server: Return `202 Accepted` with `{ upload_id, file_key }`
+1. Client: `POST /api/upload/init` with `{ filename, size, mime_type }`
+2. Server: `generate_presigned_put()`
+   - Validates file extension and size limits against DB config.
+   - Computes a SigV4 presigned URL for the `quarantine/` prefix.
+   - Rewrites the internal S3 host (`minio:9000`) to the public proxy (`localhost/s3`) using the **Auto-Warming** logic to ensure correct endpoint resolution.
+3. Client: `PUT` the file directly to the presigned URL via the Nginx proxy.
+   - Proxy forwards to MinIO with the original `Host` header preserved.
+4. Client: `POST /api/upload/complete` with `{ upload_id, quarantine_key }`.
+5. Server: Verifies the file exists in S3, creates the `Upload` DB row (status=pending), and enqueues the `process_upload` job.
+6. Server: Returns `200 OK` with metadata.
 
 **Data at this point:**
 ```

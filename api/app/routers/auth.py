@@ -1,7 +1,10 @@
+import asyncio
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
+import google.auth.transport.requests
 from fastapi import APIRouter, Depends, Request, Response
+from google.oauth2 import id_token
 from redis.asyncio import Redis
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -13,7 +16,9 @@ from app.core.exceptions import BadRequestError, RateLimitError, UnauthorizedErr
 from app.core.redis import get_redis
 from app.core.security import decode_token
 from app.dependencies.auth import CurrentUser
+from app.models.user import UserRole
 from app.schemas.auth import (
+    GoogleLoginIn,
     RefreshResponse,
     RequestCodeIn,
     TokenResponse,
@@ -23,6 +28,7 @@ from app.schemas.auth import (
 )
 from app.services import auth as auth_service
 from app.services.email import send_verification_email
+from app.services.notification import notify_admins_pending_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -42,14 +48,47 @@ def get_client_id(request: Request) -> str:
 limiter = Limiter(key_func=get_client_id, enabled=not settings.is_dev)
 
 
+@router.get("/methods")
+async def get_auth_methods(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> dict[str, Any]:
+    auth_config = await auth_service.get_full_auth_config(db, redis)
+    return {
+        "totp_enabled": auth_config.get("totp_enabled", True),
+        "google_enabled": auth_config.get("google_oauth_enabled", False),
+        "google_client_id": auth_config.get("google_client_id"),
+        "classic_enabled": auth_config.get("classic_auth_enabled", False),
+        "allow_all_domains": auth_config.get("allow_all_domains", False),
+        "site_name": auth_config.get("site_name"),
+        "site_description": auth_config.get("site_description"),
+        "site_logo_url": auth_config.get("site_logo_url"),
+        "site_favicon_url": auth_config.get("site_favicon_url"),
+        "primary_color": auth_config.get("primary_color"),
+        "footer_text": auth_config.get("footer_text"),
+        "organization_url": auth_config.get("organization_url"),
+    }
+
+
 @router.post("/request-code")
 @limiter.limit("3/15minutes" if not settings.is_dev else "10000/minute")
 async def request_code(
     request: Request,
     data: RequestCodeIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> dict[str, str]:
     email = data.email
+
+    auth_config = await auth_service.get_full_auth_config(db, redis)
+    if not auth_config.get("classic_auth_enabled"):
+        raise UnauthorizedError("Classic authentication is disabled")
+
+    try:
+        await auth_service.validate_email_for_auth(email, db, redis)
+    except ValueError as exc:
+        raise BadRequestError(str(exc))
+
     if not await auth_service.check_rate_limit(redis, email):
         raise RateLimitError(
             "Too many code requests. You can request up to 3 codes per 15 minutes. Please wait before trying again."
@@ -62,8 +101,9 @@ async def request_code(
     await auth_service.store_magic_token(redis, email, magic_token)
     magic_link = f"{settings.frontend_url}/login/verify?token={magic_token}"
 
+    config = await auth_service.get_auth_config(db)
     try:
-        await send_verification_email(email, code, magic_link)
+        await send_verification_email(email, code, magic_link, config=config)
     except Exception as e:
         import logging
 
@@ -91,8 +131,21 @@ async def verify_code(
         raise BadRequestError("Invalid or expired verification code")
 
     await auth_service.reset_verify_rate_limit(redis, email)
-    user, is_new = await auth_service.get_or_create_user(db, email)
-    access_token, refresh_token, _ = auth_service.issue_tokens(user)
+    # Re-validate to get auto_approve; ValidationError is possible if domain
+    # was removed between request-code and verify-code steps.
+    try:
+        auto_approve = await auth_service.validate_email_for_auth(email, db, redis)
+    except ValueError:
+        auto_approve = False
+    user, is_new = await auth_service.get_or_create_user(db, email, auto_approve=auto_approve)
+    if is_new and user.role == UserRole.PENDING:
+        await notify_admins_pending_user(db, user)
+    auth_config = await auth_service.get_full_auth_config(db, redis)
+    access_token, refresh_token, _ = auth_service.issue_tokens(
+        user,
+        jwt_access_expire_days=auth_config.get("jwt_access_expire_days"),
+        jwt_refresh_expire_days=auth_config.get("jwt_refresh_expire_days")
+    )
 
     response.set_cookie(
         key="refresh_token",
@@ -100,7 +153,7 @@ async def verify_code(
         httponly=True,
         secure=True,
         samesite="strict",
-        max_age=31 * 24 * 3600,
+        max_age=auth_config.get("jwt_refresh_expire_days", 31) * 24 * 3600,
         path="/api/auth/",
     )
 
@@ -132,8 +185,19 @@ async def verify_magic_link(
         raise BadRequestError("Invalid or expired magic link")
 
     await auth_service.reset_verify_rate_limit(redis, email)
-    user, is_new = await auth_service.get_or_create_user(db, email)
-    access_token, refresh_token, _ = auth_service.issue_tokens(user)
+    try:
+        auto_approve = await auth_service.validate_email_for_auth(email, db, redis)
+    except ValueError:
+        auto_approve = False
+    user, is_new = await auth_service.get_or_create_user(db, email, auto_approve=auto_approve)
+    if is_new and user.role == UserRole.PENDING:
+        await notify_admins_pending_user(db, user)
+    auth_config = await auth_service.get_full_auth_config(db, redis)
+    access_token, refresh_token, _ = auth_service.issue_tokens(
+        user,
+        jwt_access_expire_days=auth_config.get("jwt_access_expire_days"),
+        jwt_refresh_expire_days=auth_config.get("jwt_refresh_expire_days")
+    )
 
     response.set_cookie(
         key="refresh_token",
@@ -141,7 +205,105 @@ async def verify_magic_link(
         httponly=True,
         secure=True,
         samesite="strict",
-        max_age=31 * 24 * 3600,
+        max_age=auth_config.get("jwt_refresh_expire_days", 31) * 24 * 3600,
+        path="/api/auth/",
+    )
+
+    return TokenResponse(
+        access_token=access_token,
+        user=UserBrief(
+            id=str(user.id),
+            email=user.email,
+            display_name=user.display_name,
+            avatar_url=user.avatar_url,
+            role=user.role.value,
+            onboarded=user.onboarded,
+        ),
+        is_new_user=is_new,
+    )
+
+
+@router.post("/google", response_model=TokenResponse)
+async def verify_google_oauth(
+    data: GoogleLoginIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+    response: Response,
+) -> TokenResponse:
+    auth_config = await auth_service.get_full_auth_config(db, redis)
+    if not auth_config.get("google_oauth_enabled"):
+        raise UnauthorizedError("Google OAuth is disabled")
+
+    try:
+        # id_token.verify_oauth2_token makes a blocking HTTP call to fetch Google's
+        # JWKS endpoint on cache miss.  Run in a thread to avoid stalling the loop.
+        id_info = await asyncio.to_thread(
+            id_token.verify_oauth2_token,
+            data.credential,
+            google.auth.transport.requests.Request(),
+            auth_config.get("google_client_id"),
+        )
+    except Exception as e:
+        import logging
+
+        logging.getLogger("wikint").error(f"Google OAuth verification failed: {e}", exc_info=True)
+        raise UnauthorizedError("Invalid Google credential")
+
+    if id_info.get("iss") not in ["accounts.google.com", "https://accounts.google.com"]:
+        raise UnauthorizedError("Invalid Google issuer")
+
+    if not id_info.get("email_verified"):
+        raise UnauthorizedError("Google account email address is not verified")
+
+    email = id_info.get("email")
+    if not email:
+        raise BadRequestError("Email not provided by Google")
+
+    email = email.lower().strip()
+
+    # Enforce domain whitelisting / auto-approve rules
+    try:
+        auto_approve = await auth_service.validate_email_for_auth(email, db, redis)
+    except ValueError as exc:
+        raise BadRequestError(str(exc))
+
+    user, is_new = await auth_service.get_or_create_user(db, email, auto_approve=auto_approve)
+
+    # Enrich user profile if it's a new or existing user missing data
+    updated = False
+    given_name = id_info.get("given_name")
+    family_name = id_info.get("family_name")
+    picture = id_info.get("picture")
+
+    if is_new or not user.display_name:
+        names = [n for n in (given_name, family_name) if n]
+        if names:
+            user.display_name = " ".join(names)
+            updated = True
+
+    if (is_new or not user.avatar_url) and picture:
+        user.avatar_url = picture
+        updated = True
+
+    if updated:
+        await db.flush()
+
+    if is_new and user.role == UserRole.PENDING:
+        await notify_admins_pending_user(db, user)
+
+    access_token, refresh_token, _ = auth_service.issue_tokens(
+        user,
+        jwt_access_expire_days=auth_config.get("jwt_access_expire_days"),
+        jwt_refresh_expire_days=auth_config.get("jwt_refresh_expire_days")
+    )
+
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=auth_config.get("jwt_refresh_expire_days", 31) * 24 * 3600,
         path="/api/auth/",
     )
 
@@ -199,7 +361,12 @@ async def refresh_token(
         if remaining > 0:
             await auth_service.blacklist_token(redis, old_jti, remaining)
 
-    new_access_token, new_refresh_token, _ = auth_service.issue_tokens(user)
+    auth_config = await auth_service.get_full_auth_config(db, redis)
+    new_access_token, new_refresh_token, _ = auth_service.issue_tokens(
+        user,
+        jwt_access_expire_days=auth_config.get("jwt_access_expire_days"),
+        jwt_refresh_expire_days=auth_config.get("jwt_refresh_expire_days")
+    )
 
     response.set_cookie(
         key="refresh_token",
@@ -207,7 +374,7 @@ async def refresh_token(
         httponly=True,
         secure=True,
         samesite="strict",
-        max_age=31 * 24 * 3600,
+        max_age=auth_config.get("jwt_refresh_expire_days", 31) * 24 * 3600,
         path="/api/auth/",
     )
 
