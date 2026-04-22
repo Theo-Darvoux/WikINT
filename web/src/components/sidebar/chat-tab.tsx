@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, API_BASE } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/stores";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { toast } from "sonner";
@@ -88,7 +88,7 @@ function CommentItem({
             <AvatarImage
               src={
                 comment.author?.avatar_url && comment.author_id
-                  ? `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api"}/users/${comment.author_id}/avatar?v=${encodeURIComponent(comment.author.avatar_url)}`
+                  ? `${API_BASE}/users/${comment.author_id}/avatar?v=${encodeURIComponent(comment.author.avatar_url)}`
                   : undefined
               }
             />

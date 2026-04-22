@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { toast } from "sonner";
 import type { AnnotationData, ThreadData } from "@/hooks/use-annotations";
+import { API_BASE } from "@/lib/api-client";
 
 function getInitials(name: string | null): string {
     if (!name) return "?";
@@ -60,7 +61,7 @@ function AnnotationItem({
                         <AvatarImage
                             src={
                                 annotation.author?.avatar_url && annotation.author_id
-                                    ? `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api"}/users/${annotation.author_id}/avatar?v=${encodeURIComponent(annotation.author.avatar_url)}`
+                                    ? `${API_BASE}/users/${annotation.author_id}/avatar?v=${encodeURIComponent(annotation.author.avatar_url)}`
                                     : undefined
                             }
                         />

@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/select";
 import { ContributionList } from "@/components/profile/contribution-list";
 import { RecentlyViewed } from "@/components/profile/recently-viewed";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, API_BASE } from "@/lib/api-client";
 import { toast } from "sonner";
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -539,13 +539,11 @@ export function ProfileView({
                 className={`${avatarSize} ${avatarBorder}`}
                 style={getRingAnimStyle(profile.role)}
               >
-                <AvatarImage
                   src={
                     profile.avatar_url
-                      ? `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api"}/users/${profile.id}/avatar?v=${encodeURIComponent(profile.avatar_url)}`
+                      ? `${API_BASE}/users/${profile.id}/avatar?v=${encodeURIComponent(profile.avatar_url)}`
                       : undefined
                   }
-                />
                 {isUploadingAvatar && (
                   <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-[1px]">
                     <Loader2 className="h-6 w-6 animate-spin text-white/70" />

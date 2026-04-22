@@ -32,7 +32,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, API_BASE } from "@/lib/api-client";
 import { formatDistanceToNow } from "date-fns/formatDistanceToNow";
 
 interface NavbarNotification {
@@ -272,7 +272,7 @@ export function Navbar() {
                       <AvatarImage
                         src={
                           user.avatar_url
-                            ? `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api"}/users/${user.id}/avatar?v=${encodeURIComponent(user.avatar_url)}`
+                            ? `${API_BASE}/users/${user.id}/avatar?v=${encodeURIComponent(user.avatar_url)}`
                             : undefined
                         }
                       />

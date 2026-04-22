@@ -10,7 +10,7 @@ import { registerOfficePrint, unregisterOfficePrint } from "@/lib/office-print-r
 import { toast } from "sonner";
 
 const ONLYOFFICE_URL =
-    process.env.NEXT_PUBLIC_ONLYOFFICE_URL ?? "http://localhost/onlyoffice";
+    process.env.NEXT_PUBLIC_ONLYOFFICE_URL ?? "/onlyoffice";
 const ONLYOFFICE_API_JS = `${ONLYOFFICE_URL}/web-apps/apps/api/documents/api.js`;
 
 interface OfficeViewerProps {
