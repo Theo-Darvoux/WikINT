@@ -219,13 +219,12 @@ async def _migrate_cas_v2(dry_run: bool, batch_size: int) -> None:
 
     from app.core.cas import hmac_cas_key, increment_cas_ref
     from app.core.database import async_session_factory
-    from app.core.redis import init_redis, redis_client
+    from app.core.redis import redis_client
     from app.core.storage import copy_object, init_s3_client, object_exists
     from app.models.material import MaterialVersion
     from app.models.upload import Upload
 
     await init_s3_client()
-    await init_redis()
 
     async with async_session_factory() as db:
         total = await db.scalar(
@@ -435,6 +434,92 @@ async def _recalculate_thumbnails(batch_size: int, dry_run: bool, force: bool) -
     typer.echo(f"\nDone. Processed: {processed}, Generated: {generated}, Errors: {errors}")
     if dry_run:
         typer.echo("Run with --no-dry-run to apply changes.")
+
+
+@app.command(name="config-set")
+def config_set(
+    field: str = typer.Argument(..., help="The field name to update (e.g. s3_endpoint, smtp_host)"),
+    value: str = typer.Argument(..., help="The new value"),
+) -> None:
+    """Update a global configuration field."""
+    asyncio.run(_config_set(field, value))
+
+
+async def _config_set(field: str, value: str) -> None:
+    from sqlalchemy import select
+
+    from app.core.database import async_session_factory
+    from app.models.auth_config import AuthConfig
+
+    async with async_session_factory() as session:
+        res = await session.execute(select(AuthConfig))
+        config = res.scalar_one_or_none()
+
+        if config is None:
+            config = AuthConfig()
+            session.add(config)
+
+        # Handle type conversion for bool/int
+        if hasattr(config, field):
+            attr_type = type(getattr(config, field))
+            if attr_type is bool:
+                final_val: bool | int | str = value.lower() in ("true", "1", "yes")
+            elif attr_type is int:
+                final_val = int(value)
+            else:
+                final_val = value
+
+            setattr(config, field, final_val)
+            await session.commit()
+            typer.echo(f"Successfully set {field} to {final_val}")
+        else:
+            typer.echo(f"Error: AuthConfig has no field '{field}'")
+
+
+@app.command(name="config-get")
+def config_get() -> None:
+    """Display the current global configuration."""
+    asyncio.run(_config_get())
+
+
+async def _config_get() -> None:
+    from sqlalchemy import select
+
+    from app.core.database import async_session_factory
+    from app.models.auth_config import AuthConfig
+
+    async with async_session_factory() as session:
+        res = await session.execute(select(AuthConfig))
+        config = res.scalar_one_or_none()
+
+        if config is None:
+            typer.echo("No configuration found in database.")
+            return
+
+        for key, val in config.__dict__.items():
+            if not key.startswith("_"):
+                typer.echo(f"{key}: {val}")
+
+
+@app.command(name="magic-link")
+def magic_link(
+    email: str = typer.Argument(..., help="Email of the user"),
+) -> None:
+    """Generate a magic login link for a user without sending an email."""
+    asyncio.run(_magic_link(email))
+
+
+async def _magic_link(email: str) -> None:
+    from app.config import settings
+    from app.core.redis import redis_client
+    from app.services.auth import generate_magic_token, store_magic_token
+
+    token = generate_magic_token()
+    await store_magic_token(redis_client, email, token)
+
+    link = f"{settings.frontend_url}/login/verify?token={token}"
+    typer.echo(f"Magic link for {email}:")
+    typer.echo(link)
 
 
 if __name__ == "__main__":
