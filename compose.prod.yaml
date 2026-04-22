@@ -99,8 +99,15 @@ services:
   nginx:
     ports:
       - "127.0.0.1:9080:80"
+    environment:
+      - S3_PUBLIC_DOMAIN=${S3_PUBLIC_DOMAIN:-files.wikint.hypnos2026.fr}
+    command: >
+      /bin/sh -c "envsubst '$$S3_PUBLIC_DOMAIN'
+      < /etc/nginx/templates/nginx.conf.template
+      > /tmp/nginx.conf
+      && exec nginx -c /tmp/nginx.conf -g 'daemon off;'"
     volumes:
-      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
       - ./infra/nginx/nginx.onlyoffice.snippet:/etc/nginx/nginx.onlyoffice.snippet:ro
     deploy:
       resources:

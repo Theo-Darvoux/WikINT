@@ -108,30 +108,55 @@ app = FastAPI(
 async def add_security_headers(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
+    from app.core.redis import redis_client
+    from app.services.auth import get_full_auth_config
+
     response = await call_next(request)
-    # Defense-in-depth CSP — primary protection should still come from Nginx.
-    # We allow:
-    # - self: for the API's own assets/responses
-    # - data:: for base64 images
-    # - blob:: for PDF/media object URLs
-    # - inline styles/scripts are blocked by default.
+
+    # Dynamic CSP fetching from DB/Redis
+    try:
+        from app.core.database import async_session_factory
+        async with async_session_factory() as db:
+            config = await get_full_auth_config(db, redis_client)
+            s3_domain = config.get("s3_public_endpoint") or settings.s3_public_endpoint or ""
+            # Strip protocol if present for CSP
+            if "://" in s3_domain:
+                s3_domain = s3_domain.split("://")[1]
+    except Exception:
+        s3_domain = ""
+
+    # Build dynamic CSP
+    connect_src = (
+        f"connect-src 'self' {settings.frontend_url} "
+        f"https://accounts.google.com/gsi/ https://unpkg.com https://cdn.jsdelivr.net "
+    )
+    if s3_domain:
+        connect_src += f"https://{s3_domain} "
+    connect_src += "https://*.r2.cloudflarestorage.com;"
+
+    img_src = "img-src 'self' data: blob: https:;"
+    if s3_domain:
+         img_src = f"img-src 'self' data: blob: https: https://{s3_domain};"
+
     csp = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/client https://unpkg.com https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style https://cdn.jsdelivr.net; "
-        "img-src 'self' data: blob:; "
+        + img_src + " "
         "font-src 'self'; "
-        "connect-src 'self' " + settings.frontend_url + " https://accounts.google.com/gsi/ https://unpkg.com https://cdn.jsdelivr.net; "
+        + connect_src + " "
         "frame-src https://accounts.google.com/gsi/; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self';"
     )
+
     response.headers["Content-Security-Policy"] = csp
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
 
