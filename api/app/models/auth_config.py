@@ -23,6 +23,7 @@ class AuthConfig(UUIDMixin, Base):
 
     # SMTP Settings
     smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_ip: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     smtp_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)

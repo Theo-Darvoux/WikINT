@@ -13,6 +13,7 @@ import { toast } from "sonner";
 
 interface AuthConfig {
     smtp_host: string | null;
+    smtp_ip: string | null;
     smtp_port: number | null;
     smtp_user: string | null;
     smtp_password: string | null;
@@ -35,6 +36,7 @@ export function EmailConfigTab({ config, saving, patchConfig }: EmailConfigTabPr
     useEffect(() => {
         setEmailForm({
             smtp_host: config.smtp_host,
+            smtp_ip: config.smtp_ip,
             smtp_port: config.smtp_port,
             smtp_user: config.smtp_user,
             smtp_password: config.smtp_password,
@@ -53,6 +55,7 @@ export function EmailConfigTab({ config, saving, patchConfig }: EmailConfigTabPr
     const handleDiscard = () => {
         setEmailForm({
             smtp_host: config.smtp_host,
+            smtp_ip: config.smtp_ip,
             smtp_port: config.smtp_port,
             smtp_user: config.smtp_user,
             smtp_password: config.smtp_password,
@@ -105,6 +108,19 @@ export function EmailConfigTab({ config, saving, patchConfig }: EmailConfigTabPr
                                 value={emailForm.smtp_host ?? config.smtp_host ?? ""}
                                 onChange={(e) => {
                                     setEmailForm(prev => ({ ...prev, smtp_host: e.target.value }));
+                                    setIsEmailModified(true);
+                                }}
+                                className="h-9"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="smtp-ip">SMTP IP Address (Optional Override)</Label>
+                            <Input
+                                id="smtp-ip"
+                                placeholder="10.0.0.5"
+                                value={emailForm.smtp_ip ?? config.smtp_ip ?? ""}
+                                onChange={(e) => {
+                                    setEmailForm(prev => ({ ...prev, smtp_ip: e.target.value }));
                                     setIsEmailModified(true);
                                 }}
                                 className="h-9"

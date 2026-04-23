@@ -14,6 +14,7 @@ async def send_email(
 ) -> None:
     # Use config from DB if provided, fallback to settings from .env
     host = (config.smtp_host if config and config.smtp_host else settings.smtp_host)
+    ip = (config.smtp_ip if config and config.smtp_ip else settings.smtp_ip)
     port = (config.smtp_port if config and config.smtp_port else settings.smtp_port)
     user = (config.smtp_user if config and config.smtp_user else settings.smtp_user)
     password = (config.smtp_password if config and config.smtp_password else settings.smtp_password)
@@ -21,7 +22,7 @@ async def send_email(
     use_tls = (config.smtp_use_tls if config and config.smtp_use_tls is not None else settings.smtp_use_tls)
 
     kwargs = {
-        "hostname": host,
+        "hostname": ip or host,
         "port": port,
         "sender": from_email,
         "recipients": [to],

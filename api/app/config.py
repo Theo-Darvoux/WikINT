@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     malwarebazaar_fail_closed: bool = True
 
     smtp_host: str = "smtp.example.com"
+    smtp_ip: str | None = None
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""

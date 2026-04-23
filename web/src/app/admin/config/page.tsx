@@ -31,6 +31,7 @@ interface AuthConfig {
     jwt_refresh_expire_days: number;
     domains: any[];
     smtp_host: string | null;
+    smtp_ip: string | null;
     smtp_port: number | null;
     smtp_user: string | null;
     smtp_password: string | null;

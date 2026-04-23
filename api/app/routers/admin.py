@@ -315,9 +315,11 @@ async def get_detailed_health(
         host = config.get("smtp_host") or settings.smtp_host
         port = config.get("smtp_port") or settings.smtp_port
 
-        if host:
+        if host or config.get("smtp_ip") or settings.smtp_ip:
             # Quick ping to SMTP port
-            smtp = aiosmtplib.SMTP(hostname=host, port=port, timeout=2)
+            # Use IP if provided, otherwise hostname
+            connect_host = config.get("smtp_ip") or settings.smtp_ip or host
+            smtp = aiosmtplib.SMTP(hostname=connect_host, port=port, timeout=2)
             await smtp.connect()
             await smtp.quit()
             latency = (time.perf_counter() - start) * 1000
@@ -326,6 +328,7 @@ async def get_detailed_health(
                 latency_ms=latency,
                 metadata={
                     "host": host,
+                    "ip": config.get("smtp_ip") or settings.smtp_ip,
                     "port": port,
                     "user": config.get("smtp_user") or settings.smtp_user
                 }
@@ -443,6 +446,7 @@ class AuthConfigPatch(BaseModel):
     jwt_access_expire_days: int | None = None
     jwt_refresh_expire_days: int | None = None
     smtp_host: str | None = None
+    smtp_ip: str | None = None
     smtp_port: int | None = None
     smtp_user: str | None = None
     smtp_password: str | None = None
