@@ -24,27 +24,11 @@ _s3: S3Client | None = None  # persistent client, set by init_s3_client()
 
 async def _get_s3_settings() -> dict[str, Any]:
     """Return effective S3 settings from Redis (DB) fallback to app settings."""
-    import json
-
+    from app.core.database import async_session_factory
     from app.core.redis import redis_client
-    from app.services.auth import AUTH_CONFIG_CACHE_KEY, get_full_auth_config
+    from app.services.auth import get_full_auth_config
 
     try:
-        cached = await redis_client.get(AUTH_CONFIG_CACHE_KEY)
-        if cached:
-            config = json.loads(cached if isinstance(cached, str) else cached.decode())
-            return {
-                "endpoint": config.get("s3_endpoint") or settings.s3_endpoint,
-                "access_key": config.get("s3_access_key") or settings.s3_access_key,
-                "secret_key": config.get("s3_secret_key") or settings.s3_secret_key,
-                "bucket": config.get("s3_bucket") or settings.s3_bucket,
-                "region": config.get("s3_region") or settings.s3_region,
-                "use_ssl": config.get("s3_use_ssl") if config.get("s3_use_ssl") is not None else settings.s3_use_ssl,
-                "public_endpoint": config.get("s3_public_endpoint") or settings.s3_public_endpoint,
-            }
-
-        # Cache miss: Load from DB and warm Redis
-        from app.core.database import async_session_factory
         async with async_session_factory() as db:
             config = await get_full_auth_config(db, redis_client)
             return {

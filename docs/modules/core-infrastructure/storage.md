@@ -77,11 +77,18 @@ This hard-coded check prevents any code path from accidentally serving unscanned
 
 The `force_download` parameter controls whether the URL includes `ResponseContentDisposition: attachment`. It defaults to `True` (download) but is set to `False` for OnlyOffice integration where inline viewing is required.
 
+### Settings Re-hydration (`_get_s3_settings`)
+
+The storage module dynamically loads S3 settings using `get_full_auth_config`. This ensures that configuration changes made via the Admin Dashboard (stored in the database) are immediately effective.
+
+- **Security-First Re-hydration**: Secrets like `s3_access_key` and `s3_secret_key` are NEVER stored in the Redis cache. They are always re-hydrated from the database on every call, even if the rest of the configuration is loaded from the Redis cache.
+- **Fallback Logic**: If both Redis and the database are unreachable, the module falls back to the default values defined in environment variables/settings.
+
 ### Host Rewriting (`_rewrite_host`)
 
 Presigned URLs generated against MinIO point to the internal Docker hostname (`minio:9000`). In development, these must be rewritten to the public-facing proxy (`localhost/s3`) so the browser can reach them.
 
-- **Auto-Warming Logic**: The storage module now automatically loads S3 settings from the database (via `get_full_auth_config`) and warms the Redis cache if it's missing. This ensures that the correct public endpoint is always used, even if the cache hasn't been pre-populated.
+- **Auto-Warming Logic**: The module automatically warms the Redis cache if it's missing by loading the full configuration from the database.
 - **In Development**: If the public endpoint contains "localhost", the host is rewritten and the scheme is forced to `http`.
 - **In Production (Cloudflare R2)**:
   - **GET URLs**: Rewrites host and strips the bucket name from the path (R2 custom domains map directly to the bucket root).
