@@ -39,7 +39,7 @@ export default function LoginPage() {
         totp_enabled: config?.totp_enabled ?? true,
         google_enabled: config?.google_enabled ?? false,
         google_client_id: config?.google_client_id ?? null,
-        classic_enabled: config?.classic_auth_enabled ?? false,
+        classic_enabled: config?.classic_enabled ?? false,
     };
 
 
