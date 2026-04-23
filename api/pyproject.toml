@@ -40,6 +40,8 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.48b0",
     "google-auth>=2.49.2",
     "requests>=2.33.1",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt<4.0.0",
 ]
 
 [project.optional-dependencies]

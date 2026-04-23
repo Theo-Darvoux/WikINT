@@ -10,15 +10,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { toast } from "sonner";
 import { GoogleOAuthProvider, GoogleLogin, CredentialResponse } from "@react-oauth/google";
 import { useConfigStore } from "@/lib/stores";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { KeyRound, Mail } from "lucide-react";
 
-type Step = "email" | "code";
+type Step = "email" | "code" | "password";
 
 export default function LoginPage() {
     const [step, setStep] = useState<Step>("email");
     const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
     const [code, setCode] = useState("");
     const [loading, setLoading] = useState(false);
-    const { requestCode, verifyCode, verifyGoogleOAuth, isAuthenticated, user } = useAuth();
+    const { requestCode, verifyCode, verifyGoogleOAuth, loginWithPassword, isAuthenticated, user } = useAuth();
     const { config } = useConfigStore();
     const router = useRouter();
     const inputRef = useRef<HTMLInputElement>(null);
@@ -36,6 +39,7 @@ export default function LoginPage() {
         totp_enabled: config?.totp_enabled ?? true,
         google_enabled: config?.google_enabled ?? false,
         google_client_id: config?.google_client_id ?? null,
+        classic_enabled: config?.classic_auth_enabled ?? false,
     };
 
 
@@ -72,6 +76,23 @@ export default function LoginPage() {
         }
     };
 
+    const handlePasswordLogin = async (e: FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            const data = await loginWithPassword(email, password);
+            if (data.is_new_user || !data.user.onboarded) {
+                router.push("/onboarding");
+            } else {
+                router.push("/");
+            }
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Invalid email or password");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
         if (!credentialResponse.credential) return;
         setLoading(true);
@@ -97,7 +118,7 @@ export default function LoginPage() {
                     <CardDescription>
                         {step === "email"
                             ? (config?.site_description || "Sign in to access course materials")
-                            : "Enter the verification code"}
+                            : step === "code" ? "Enter the verification code" : "Enter your password"}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -122,7 +143,7 @@ export default function LoginPage() {
                                             <div className="h-[44px] w-full bg-muted animate-pulse rounded-md" />
                                         )}
                                     </div>
-                                    {authMethods.totp_enabled && (
+                                    {(authMethods.totp_enabled || authMethods.classic_enabled) && (
                                         <div className="relative w-full">
                                             <div className="absolute inset-0 flex items-center">
                                                 <span className="w-full border-t" />
@@ -135,8 +156,8 @@ export default function LoginPage() {
                                 </div>
                             )}
 
-                            {authMethods.totp_enabled && (
-                                <form onSubmit={handleRequestCode} className="space-y-4">
+                            {(authMethods.totp_enabled || authMethods.classic_enabled) && (
+                                <div className="space-y-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="email">Email</Label>
                                         <Input
@@ -150,18 +171,64 @@ export default function LoginPage() {
                                             disabled={loading}
                                         />
                                     </div>
-                                    <Button type="submit" className="w-full" disabled={loading}>
-                                        {loading ? "Sending..." : "Send verification code"}
-                                    </Button>
-                                </form>
+
+                                    {authMethods.totp_enabled && authMethods.classic_enabled ? (
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <Button variant="outline" onClick={handleRequestCode} disabled={loading || !email}>
+                                                <Mail className="mr-2 h-4 w-4" />
+                                                Send code
+                                            </Button>
+                                            <Button variant="outline" onClick={() => setStep("password")} disabled={loading || !email}>
+                                                <KeyRound className="mr-2 h-4 w-4" />
+                                                Password
+                                            </Button>
+                                        </div>
+                                    ) : authMethods.totp_enabled ? (
+                                        <Button className="w-full" onClick={handleRequestCode} disabled={loading || !email}>
+                                            {loading ? "Sending..." : "Send verification code"}
+                                        </Button>
+                                    ) : (
+                                        <Button className="w-full" onClick={() => setStep("password")} disabled={loading || !email}>
+                                            Continue with password
+                                        </Button>
+                                    )}
+                                </div>
                             )}
 
-                            {!authMethods.totp_enabled && !authMethods.google_enabled && (
+                            {!authMethods.totp_enabled && !authMethods.google_enabled && !authMethods.classic_enabled && (
                                 <p className="text-sm text-center text-muted-foreground py-4">
                                     No authentication methods are currently enabled.
                                 </p>
                             )}
                         </div>
+                    ) : step === "password" ? (
+                        <form onSubmit={handlePasswordLogin} className="space-y-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="password">Password</Label>
+                                <Input
+                                    id="password"
+                                    type="password"
+                                    placeholder="••••••••"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                    autoFocus
+                                    disabled={loading}
+                                />
+                            </div>
+                            <Button type="submit" className="w-full" disabled={loading}>
+                                {loading ? "Signing in..." : "Sign in"}
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                className="w-full"
+                                onClick={() => setStep("email")}
+                                disabled={loading}
+                            >
+                                Back
+                            </Button>
+                        </form>
                     ) : (
                         <form onSubmit={handleVerifyCode} className="space-y-6">
                             <div className="space-y-3">

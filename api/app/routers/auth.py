@@ -19,6 +19,7 @@ from app.dependencies.auth import CurrentUser
 from app.models.user import UserRole
 from app.schemas.auth import (
     GoogleLoginIn,
+    LoginIn,
     RefreshResponse,
     RequestCodeIn,
     TokenResponse,
@@ -81,8 +82,8 @@ async def request_code(
     email = data.email
 
     auth_config = await auth_service.get_full_auth_config(db, redis)
-    if not auth_config.get("classic_auth_enabled"):
-        raise UnauthorizedError("Classic authentication is disabled")
+    if not auth_config.get("totp_enabled"):
+        raise UnauthorizedError("Email verification codes are disabled")
 
     try:
         await auth_service.validate_email_for_auth(email, db, redis)
@@ -318,6 +319,54 @@ async def verify_google_oauth(
             onboarded=user.onboarded,
         ),
         is_new_user=is_new,
+    )
+
+
+@router.post("/login", response_model=TokenResponse)
+async def login(
+    data: LoginIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+    response: Response,
+) -> TokenResponse:
+    auth_config = await auth_service.get_full_auth_config(db, redis)
+    if not auth_config.get("classic_auth_enabled"):
+        raise UnauthorizedError("Classic authentication (email + password) is disabled")
+
+    user = await auth_service.authenticate_user(db, data.email, data.password)
+    if not user:
+        raise UnauthorizedError("Invalid email or password")
+
+    user.last_login_at = datetime.now(UTC)
+    await db.flush()
+
+    access_token, refresh_token, _ = auth_service.issue_tokens(
+        user,
+        jwt_access_expire_days=auth_config.get("jwt_access_expire_days"),
+        jwt_refresh_expire_days=auth_config.get("jwt_refresh_expire_days")
+    )
+
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=auth_config.get("jwt_refresh_expire_days", 31) * 24 * 3600,
+        path="/api/auth/",
+    )
+
+    return TokenResponse(
+        access_token=access_token,
+        user=UserBrief(
+            id=str(user.id),
+            email=user.email,
+            display_name=user.display_name,
+            avatar_url=user.avatar_url,
+            role=user.role.value,
+            onboarded=user.onboarded,
+        ),
+        is_new_user=False,
     )
 
 

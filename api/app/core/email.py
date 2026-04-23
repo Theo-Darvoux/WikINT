@@ -1,9 +1,21 @@
+import re
+import textwrap
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 
 import aiosmtplib
 
 from app.config import settings
 from app.models.auth_config import AuthConfig
+
+
+def _html_to_plain(html: str) -> str:
+    """Best-effort HTML → plain text for the text/plain alternative."""
+    # Collapse whitespace and strip tags
+    text = re.sub(r"<[^>]+>", " ", html)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+    return textwrap.fill(text, width=78)
 
 
 async def send_email(
@@ -21,12 +33,26 @@ async def send_email(
     from_email = (config.smtp_from if config and config.smtp_from else settings.smtp_from)
     use_tls = (config.smtp_use_tls if config and config.smtp_use_tls is not None else settings.smtp_use_tls)
 
-    # Build the message
+    # Ensure HTML body is wrapped in <html> tags (SpamAssassin HTML_MIME_NO_HTML_TAG)
+    html_body = body.strip()
+    if not re.search(r"<html[\s>]", html_body, re.IGNORECASE):
+        html_body = f"<html><body>{html_body}</body></html>"
+
+    # Build a multipart/alternative message so SpamAssassin doesn't penalise
+    # HTML-only messages (MIME_HTML_ONLY). Plain text is the first (fallback) part.
     message = EmailMessage()
     message["From"] = from_email
     message["To"] = to
     message["Subject"] = subject
-    message.set_content(body, subtype="html")
+    # These headers are required — their absence is penalised heavily by SpamAssassin
+    # (MISSING_DATE, MISSING_MID). aiosmtplib does not add them automatically.
+    message["Date"] = formatdate(localtime=False)
+    message["Message-Id"] = make_msgid(domain=host or "localhost")
+
+    # Set plain text as the primary content, then attach HTML alternative.
+    # This creates a proper multipart/alternative structure.
+    message.set_content(_html_to_plain(html_body))
+    message.add_alternative(html_body, subtype="html")
 
     # Determine connection mode.
     # - Port 587 → STARTTLS (plain connect, then upgrade)

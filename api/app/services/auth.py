@@ -5,6 +5,7 @@ import secrets
 from datetime import UTC, datetime
 from typing import Any
 
+from passlib.context import CryptContext
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,8 @@ _FALLBACK_DOMAINS = [
     {"domain": "telecom-sudparis.eu", "auto_approve": True},
     {"domain": "imt-bs.eu", "auto_approve": True},
 ]
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def _extract_secrets(config_row: AuthConfig | None) -> dict[str, Any]:
@@ -349,3 +352,21 @@ async def blacklist_token(redis: Redis, jti: str, ttl_seconds: int) -> None:
 async def is_token_blacklisted(redis: Redis, jti: str) -> bool:
     result = await redis.get(f"auth:blacklist:{jti}")
     return result is not None
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+async def authenticate_user(db: AsyncSession, email: str, password: str) -> User | None:
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if not user or not user.password_hash:
+        return None
+    if not verify_password(password, user.password_hash):
+        return None
+    return user

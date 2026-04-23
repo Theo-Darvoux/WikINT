@@ -319,7 +319,9 @@ async def get_detailed_health(
             # Quick ping to SMTP port
             # Use IP if provided, otherwise hostname
             connect_host = config.get("smtp_ip") or settings.smtp_ip or host
-            smtp = aiosmtplib.SMTP(hostname=connect_host, port=port, timeout=2)
+            # Health check is a reachability probe only — disable cert validation
+            # so connecting via IP address doesn't trigger SSL hostname mismatch.
+            smtp = aiosmtplib.SMTP(hostname=connect_host, port=port, timeout=2, validate_certs=False)
             # connect() does not accept server_hostname — just open the connection
             await smtp.connect()
             await smtp.quit()

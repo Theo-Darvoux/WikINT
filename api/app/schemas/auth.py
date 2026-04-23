@@ -44,6 +44,16 @@ class GoogleLoginIn(BaseModel):
     credential: str = Field(..., min_length=1)
 
 
+class LoginIn(BaseModel):
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., min_length=1)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        return _validate_email_format(v)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     user: "UserBrief"
