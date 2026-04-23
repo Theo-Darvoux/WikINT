@@ -320,7 +320,8 @@ async def get_detailed_health(
             # Use IP if provided, otherwise hostname
             connect_host = config.get("smtp_ip") or settings.smtp_ip or host
             smtp = aiosmtplib.SMTP(hostname=connect_host, port=port, timeout=2)
-            await smtp.connect(server_hostname=host if (config.get("smtp_ip") or settings.smtp_ip) else None)
+            # connect() does not accept server_hostname — just open the connection
+            await smtp.connect()
             await smtp.quit()
             latency = (time.perf_counter() - start) * 1000
             services["email"] = ServiceStatus(

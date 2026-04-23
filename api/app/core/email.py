@@ -1,5 +1,4 @@
 from email.message import EmailMessage
-from typing import Any
 
 import aiosmtplib
 
@@ -29,19 +28,39 @@ async def send_email(
     message["Subject"] = subject
     message.set_content(body, subtype="html")
 
-    # Connect to the SMTP server
-    # Note: we connect to the IP if provided, but verify the certificate against the host.
+    # Determine connection mode.
+    # - Port 587 → STARTTLS (plain connect, then upgrade)
+    # - Port 465 → implicit TLS from the start
+    # When an IP override is active and we need implicit TLS (port 465), we
+    # cannot tell aiosmtplib which hostname to verify the cert against via
+    # connect() (it has no server_hostname param). Instead we downgrade to the
+    # STARTTLS path so we can call starttls(server_hostname=<real_host>), which
+    # IS the only method in aiosmtplib that accepts server_hostname.
+    use_implicit_tls = use_tls and port != 587
+    use_starttls = use_tls and not use_implicit_tls
+
+    if ip and use_implicit_tls:
+        # Force STARTTLS path so we can inject the correct server_hostname for
+        # certificate validation against the real domain, not the IP.
+        use_implicit_tls = False
+        use_starttls = True
+
     smtp = aiosmtplib.SMTP(
         hostname=ip or host,
         port=port,
-        use_tls=use_tls and port != 587,
-        start_tls=False,  # Handle STARTTLS manually to provide server_hostname
+        use_tls=use_implicit_tls,
+        # start_tls defaults to auto-detect; we handle it manually below
+        start_tls=False,
     )
 
     try:
-        await smtp.connect(server_hostname=host if ip else None)
+        # SMTP.connect() does NOT accept server_hostname — do not pass it.
+        await smtp.connect()
 
-        if use_tls and port == 587:
+        if use_starttls:
+            # starttls() is the only aiosmtplib method that accepts
+            # server_hostname. Passing the real domain ensures the TLS cert is
+            # validated against the intended hostname, not the raw IP address.
             await smtp.starttls(server_hostname=host if ip else None)
 
         if user and password:
@@ -50,6 +69,6 @@ async def send_email(
         await smtp.send_message(message)
     finally:
         try:
-            await smtp.close()  # Use close() for safer termination
+            await smtp.quit()
         except Exception:
             pass
