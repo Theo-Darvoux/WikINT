@@ -1,4 +1,5 @@
-from typing import Any, cast
+from email.message import EmailMessage
+from typing import Any
 
 import aiosmtplib
 
@@ -21,40 +22,34 @@ async def send_email(
     from_email = (config.smtp_from if config and config.smtp_from else settings.smtp_from)
     use_tls = (config.smtp_use_tls if config and config.smtp_use_tls is not None else settings.smtp_use_tls)
 
-    kwargs = {
-        "hostname": ip or host,
-        "port": port,
-        "sender": from_email,
-        "recipients": [to],
-    }
-    if ip:
-        kwargs["server_hostname"] = host
+    # Build the message
+    message = EmailMessage()
+    message["From"] = from_email
+    message["To"] = to
+    message["Subject"] = subject
+    message.set_content(body, subtype="html")
 
-    if user:
-        kwargs["username"] = user
-    if password:
-        kwargs["password"] = password
-
-    if use_tls:
-        if port == 587:
-            kwargs["start_tls"] = True
-            kwargs["use_tls"] = False
-        else:
-            kwargs["use_tls"] = True
-            kwargs["start_tls"] = False
-    else:
-        kwargs["use_tls"] = False
-        kwargs["start_tls"] = False
-
-    await aiosmtplib.send(_build_message(to, subject, body, from_email), **cast(Any, kwargs))
-
-
-def _build_message(to: str, subject: str, body: str, from_email: str) -> str:
-    return (
-        f"From: {from_email}\r\n"
-        f"To: {to}\r\n"
-        f"Subject: {subject}\r\n"
-        f"Content-Type: text/html; charset=utf-8\r\n"
-        f"\r\n"
-        f"{body}"
+    # Connect to the SMTP server
+    # Note: we connect to the IP if provided, but verify the certificate against the host.
+    smtp = aiosmtplib.SMTP(
+        hostname=ip or host,
+        port=port,
+        use_tls=use_tls and port != 587,
+        start_tls=False,  # Handle STARTTLS manually to provide server_hostname
     )
+
+    try:
+        await smtp.connect(server_hostname=host if ip else None)
+
+        if use_tls and port == 587:
+            await smtp.starttls(server_hostname=host if ip else None)
+
+        if user and password:
+            await smtp.login(user, password)
+
+        await smtp.send_message(message)
+    finally:
+        try:
+            await smtp.close()  # Use close() for safer termination
+        except Exception:
+            pass
