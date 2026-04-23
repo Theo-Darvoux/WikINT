@@ -97,6 +97,7 @@ The per-category limits override the global limit. A 150 MiB video is allowed (u
 | Setting | Default | Purpose |
 |---------|---------|---------|
 | `smtp_host/port/user/password/from` | | SMTP credentials for OTP emails |
+| `smtp_ip` | None | Optional IP address to connect to, bypassing DNS (verifies certificate against `smtp_host`) |
 | `smtp_use_tls` | true | STARTTLS |
 
 ### Observability

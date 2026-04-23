@@ -27,6 +27,9 @@ async def send_email(
         "sender": from_email,
         "recipients": [to],
     }
+    if ip:
+        kwargs["server_hostname"] = host
+
     if user:
         kwargs["username"] = user
     if password:
