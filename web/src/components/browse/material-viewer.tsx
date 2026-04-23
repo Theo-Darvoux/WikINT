@@ -273,7 +273,7 @@ export function MaterialViewer({
 
   return (
     <AnnotationsContext.Provider value={annotationsData}>
-      <div className="flex h-[calc(100dvh-7rem)] md:h-[calc(100dvh-3.5rem)] overflow-hidden gap-0">
+      <div className="flex h-full w-full overflow-hidden gap-0">
         <div className="flex-1 flex flex-col min-w-0 min-h-0 p-2 sm:p-4 md:p-6 gap-3">
           {/* Breadcrumbs */}
           {breadcrumbs.length > 0 && !isMobile && (

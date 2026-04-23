@@ -16,6 +16,7 @@ import {
   ThumbsUp,
   Star,
   Loader2,
+  Info,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -587,13 +588,12 @@ interface DetailsTabProps {
 }
 
 export function DetailsTab({ target }: DetailsTabProps) {
-  if (!target) {
+  if (!target || !target.data) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <FileText className="mb-3 h-8 w-8 text-muted-foreground/30" />
-        <p className="text-sm text-muted-foreground">
-          Select an item to view details.
-        </p>
+      <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+        <Info className="mb-3 h-8 w-8 opacity-20" />
+        <p className="text-sm font-medium">No item selected</p>
+        <p className="text-xs">Select an item to view its details here.</p>
       </div>
     );
   }

@@ -93,7 +93,7 @@ let previousPath: string | null = null;
 function BrowseContent() {
   const params = useParams();
   const isDesktop = useIsDesktop();
-  const { sidebarOpen, closeSidebar } = useUIStore();
+  const { sidebarOpen, setSidebarTarget } = useUIStore();
   const refreshCount = useBrowseRefreshStore((s) => s.refreshCount);
 
   const path = params.path
@@ -162,9 +162,38 @@ function BrowseContent() {
 
   useEffect(() => {
     // If path changed, it's a fresh load
-    closeSidebar();
     fetchData(false);
-  }, [path, fetchData, closeSidebar]);
+  }, [path, fetchData]);
+
+  useEffect(() => {
+    // Synchronize sidebar target with current directory context
+    if (data && data.type === "directory_listing") {
+      const dir = data.directory;
+      if (dir) {
+        setSidebarTarget("details", {
+          type: "directory",
+          id: String(dir.id),
+          data: {
+            ...dir,
+            child_directory_count: data.directories?.length ?? 0,
+            child_material_count: data.materials?.length ?? 0,
+          },
+        });
+      } else if (path === "") {
+        // Root state
+        setSidebarTarget("details", {
+          type: "directory",
+          id: "root",
+          data: {
+            name: "Home",
+            type: "folder",
+            child_directory_count: data.directories?.length ?? 0,
+            child_material_count: data.materials?.length ?? 0,
+          },
+        });
+      }
+    }
+  }, [data, path, setSidebarTarget]);
 
   useEffect(() => {
     if (data) {
@@ -215,7 +244,7 @@ function BrowseContent() {
 
   return (
     <div
-      className={`flex flex-1 overflow-hidden gap-0 transition-opacity duration-200 ${isFetching ? "opacity-50 pointer-events-none" : "opacity-100"}`}
+      className={`flex h-full w-full overflow-hidden gap-0 transition-opacity duration-200 ${isFetching ? "opacity-50 pointer-events-none" : "opacity-100"}`}
     >
       <div
         className={`flex-1 min-h-0 overflow-y-auto px-4 py-6 pb-20 md:pb-6 ${isDesktop && sidebarOpen ? "min-w-0" : ""}`}

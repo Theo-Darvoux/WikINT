@@ -174,28 +174,28 @@ export function DirectoryLineItem({
                         </span>
                     </div>
                 )}
-                <div className="flex shrink-0 items-center gap-1">
-                    {!staged && (
-                        <>
-                            <button
-                                onClick={handleChat}
-                                className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                                title="Chat"
-                                aria-label={`Chat about ${name}`}
-                            >
-                                <MessageSquare className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
-                            </button>
-                            <button
-                                onClick={handleDetails}
-                                className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                                title="Details"
-                                aria-label={`View details for ${name}`}
-                            >
-                                <Info className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
-                            </button>
-                        </>
-                    )}
-                    <ItemActionsDropdownTrigger />
+                    <div className="flex shrink-0 items-center gap-1">
+                        {!staged ? (
+                            <>
+                                <button
+                                    onClick={handleChat}
+                                    className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
+                                    title="Chat"
+                                    aria-label={`Chat about ${name}`}
+                                >
+                                    <MessageSquare className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
+                                </button>
+                            </>
+                        ) : null}
+                        <button
+                            onClick={handleDetails}
+                            className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
+                            title="Details"
+                            aria-label={`View details for ${name}`}
+                        >
+                            <Info className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
+                        </button>
+                        <ItemActionsDropdownTrigger />
                     <Link
                         href={buildPath()}
                         className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"

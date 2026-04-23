@@ -37,6 +37,7 @@ import {
   ClipboardPaste,
   Loader2,
   Send,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useStagingStore } from "@/lib/staging-store";
@@ -624,6 +625,25 @@ export function DirectoryListing({
               </div>
             </div>
           )}
+          {/* Directory Title and Info */}
+          {!activeGhostDir && !isAttachmentListing && (
+            <div className="flex items-center gap-2 mt-2 group">
+              <h1 className="text-2xl font-bold tracking-tight">
+                {directory ? directory.name as string : "Home"}
+              </h1>
+              {directory && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => openSidebar("details", { type: "directory", id: String(directory.id), data: directory })}
+                  title="Directory details"
+                >
+                  <Info className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
       </div>
@@ -793,9 +813,8 @@ export function DirectoryListing({
             variant="outline"
             className="gap-2 border-violet-300 text-violet-700 hover:bg-violet-100 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/50"
             onClick={() => {
-              if (typeof window !== "undefined") {
-                window.history.back();
-              }
+              const parentPath = pathname.replace(/\/attachments$/, "");
+              router.push(parentPath + window.location.search);
             }}
           >
             <ArrowLeft className="w-4 h-4" />

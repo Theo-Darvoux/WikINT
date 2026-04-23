@@ -93,9 +93,9 @@ export function LayoutShell({ children }: { children: ReactNode }) {
         You appear to be offline. Some features may not work.
       </div>
       {!shouldHideContent && <Navbar />}
-      <main className="flex-1 w-full flex flex-col overflow-x-hidden">
+      <main className="flex-1 w-full grid grid-cols-1 min-h-0 overflow-x-hidden">
         {shouldHideContent ? (
-          <div className="flex-1 flex flex-col items-center justify-center min-h-[50vh] animate-in fade-in duration-500">
+          <div className="flex flex-col items-center justify-center min-h-[50vh] animate-in fade-in duration-500">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4" />
             <p className="text-sm text-muted-foreground font-medium animate-pulse">
               {(user && !user.onboarded) ? "Redirecting to setup..." : "Récupération de la session..."}

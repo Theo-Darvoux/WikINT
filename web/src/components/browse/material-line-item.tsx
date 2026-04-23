@@ -310,27 +310,27 @@ export function MaterialLineItem({
                         </span>
                     </div>
                 )}
-                <div className="flex shrink-0 items-center gap-1">
-                    {!staged && (
-                        <>
-                            <button
-                                onClick={handleChat}
-                                className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                                title="Chat"
-                                aria-label={`Chat about ${title}`}
-                            >
-                                <MessageSquare className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
-                            </button>
-                            <button
-                                onClick={handleDetails}
-                                className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                                title="Details"
-                                aria-label={`View details for ${title}`}
-                            >
-                                <Info className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
-                            </button>
-                        </>
-                    )}
+                    <div className="flex shrink-0 items-center gap-1">
+                        {!staged ? (
+                            <>
+                                <button
+                                    onClick={handleChat}
+                                    className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
+                                    title="Chat"
+                                    aria-label={`Chat about ${title}`}
+                                >
+                                    <MessageSquare className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
+                                </button>
+                            </>
+                        ) : null}
+                        <button
+                            onClick={handleDetails}
+                            className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
+                            title="Details"
+                            aria-label={`View details for ${title}`}
+                        >
+                            <Info className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
+                        </button>
                     {staged === "created" && onAddAttachment && (
                         <button
                             onClick={(e) => {
