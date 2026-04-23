@@ -67,9 +67,9 @@ class Settings(BaseSettings):
     malwarebazaar_timeout: int = 5
     malwarebazaar_url: str = "https://mb-api.abuse.ch/api/v1/"
     malwarebazaar_api_key: str | None = None
-    # When True (default), a MalwareBazaar timeout/error fails the scan (fail-closed).
-    # When False, YARA remains the authoritative gatekeeper on API failure.
-    malwarebazaar_fail_closed: bool = True
+    # When True, a MalwareBazaar timeout/error fails the scan (fail-closed).
+    # When False (default), YARA remains the authoritative gatekeeper on API failure.
+    malwarebazaar_fail_closed: bool = False
 
     smtp_host: str = "smtp.example.com"
     smtp_ip: str | None = None

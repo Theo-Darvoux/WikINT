@@ -410,11 +410,6 @@ export default function AdminDashboard() {
                     icon={ShieldCheck} 
                     data={health?.services.scanner} 
                     description="YARA malware engine"
-                    metadata={[
-                        { label: "YARA", value: health?.services.scanner.metadata?.yara_enabled ? "Ready" : "Offline" },
-                        { label: "Bazaar", value: health?.services.scanner.metadata?.malwarebazaar_enabled ? "Enabled" : "Disabled" },
-                        { label: "Pending", value: health?.services.scanner.metadata?.pending_scans || 0 }
-                    ]}
                 />
             </div>
 
@@ -615,7 +610,7 @@ function ServiceCard({
                             <div key={idx} className="space-y-1">
                                 <span className="block text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{item.label}</span>
                                 <span className="block text-[11px] font-black truncate pr-2" title={String(item.value)}>
-                                    {item.value || "—"}
+                                    {item.value !== undefined && item.value !== null ? String(item.value) : "—"}
                                 </span>
                             </div>
                         ))}

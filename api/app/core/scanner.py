@@ -77,7 +77,12 @@ class MalwareScanner:
             logger.error("YARA scan failed for %s: %s", filename, yara_result)
             errors.append("YARA")
         if isinstance(bazaar_result, Exception):
-            logger.error("MalwareBazaar lookup failed for %s: %s", filename, bazaar_result)
+            logger.error(
+                "MalwareBazaar lookup failed for %s: %s (%s)",
+                filename,
+                type(bazaar_result).__name__,
+                bazaar_result,
+            )
             errors.append("MalwareBazaar")
 
         if errors:
@@ -131,7 +136,12 @@ class MalwareScanner:
             logger.error("YARA scan failed for %s: %s", filename, yara_result)
             errors.append("YARA")
         if isinstance(bazaar_result, Exception):
-            logger.error("MalwareBazaar lookup failed for %s: %s", filename, bazaar_result)
+            logger.error(
+                "MalwareBazaar lookup failed for %s: %s (%s)",
+                filename,
+                type(bazaar_result).__name__,
+                bazaar_result,
+            )
             errors.append("MalwareBazaar")
 
         if errors:
