@@ -184,9 +184,8 @@ export function Navbar() {
                 </Button>
               </Link>
 
-              {/* Notifications — desktop only (bottom bar handles mobile nav) */}
               <div className="hidden md:flex items-center">
-                <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+                <Popover open={popoverOpen} onOpenChange={setPopoverOpen} modal={false}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="ghost"
@@ -260,7 +259,7 @@ export function Navbar() {
                 </Popover>
               </div>
 
-              <DropdownMenu>
+              <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
