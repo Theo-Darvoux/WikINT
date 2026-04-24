@@ -1,7 +1,7 @@
 """bazaar_async_index
 
 Revision ID: f7a1b2c3d4e5
-Revises: 9a8b7c6d5e4f
+Revises: dfc717687b05
 Create Date: 2026-04-24 14:00:00.000000
 
 Adds a partial index on uploads(sha256) WHERE status = 'clean' to support fast
@@ -15,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "f7a1b2c3d4e5"
-down_revision: str | None = "9a8b7c6d5e4f"
+down_revision: str | None = "dfc717687b05"
 branch_labels: str | tuple[str, ...] | None = None
 depends_on: str | tuple[str, ...] | None = None
 
