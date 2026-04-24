@@ -21,7 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { submitDirectOperations } from "@/lib/pr-client";
-import { useBrowseRefreshStore } from "@/lib/stores";
+import { useBrowseRefreshStore, useUIStore } from "@/lib/stores";
 import {
   Plus,
   Upload,
@@ -117,6 +117,7 @@ export function DirectoryListing({
   const triggerBrowseRefresh = useBrowseRefreshStore(
     (s) => s.triggerBrowseRefresh,
   );
+  const { openSidebar } = useUIStore();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadParentMat, setUploadParentMat] = useState<{ id: string; name: string } | null>(null);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
@@ -571,7 +572,7 @@ export function DirectoryListing({
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex-1 space-y-1">
-          {breadcrumbs.length > 0 && !activeGhostDir && (
+          {!activeGhostDir && (
             <Breadcrumbs items={breadcrumbs} previewPrId={previewPrId} />
           )}
 

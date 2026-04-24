@@ -28,7 +28,7 @@ MAX_TAGS = 20
 MAX_TAG_LENGTH = 20
 MAX_METADATA_KEYS = 20
 MAX_FILE_NAME_LENGTH = 255
-MAX_DIFF_SUMMARY_LENGTH = 100000
+
 
 
 def _validate_tags(tags: list[str] | None) -> list[str] | None:
@@ -187,8 +187,9 @@ class EditMaterialOp(BaseModel):
     file_size: int | None = Field(None, ge=0)  # upper bound enforced via MAX_FILE_SIZE_MB setting
     file_mime_type: str | None = Field(None, max_length=200)
     content_sha256: str | None = Field(None, max_length=64)
-    diff_summary: str | None = Field(None, max_length=MAX_DIFF_SUMMARY_LENGTH)
+    diff_summary: str | None = Field(None)
     metadata: dict[str, object] | None = None
+    version_lock: int | None = None
 
     @field_validator("type")
     @classmethod
@@ -297,6 +298,7 @@ class MoveItemOp(BaseModel):
     target_name: str | None = Field(None, max_length=100)
     target_title: str | None = Field(None, max_length=100)
     target_material_type: str | None = None
+    version_lock: int | None = None
 
     @field_validator("target_material_type")
     @classmethod
@@ -381,7 +383,7 @@ class PullRequestOut(BaseModel):
 
     @classmethod
     def model_validate(cls, obj: object, **kwargs: object) -> "PullRequestOut":
-        instance = super().model_validate(obj, **kwargs)
+        instance = super().model_validate(obj)
         if hasattr(obj, "is_revertable"):
             instance.can_revert = obj.is_revertable
         if hasattr(obj, "revert_grace_expires_at"):

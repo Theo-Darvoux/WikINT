@@ -412,6 +412,7 @@ export function FileEditDialog({
     > | null;
     const currentMime = String(versionInfo?.file_mime_type ?? "");
     const currentFileName = String(versionInfo?.file_name ?? "");
+    const currentVersionLock = versionInfo?.version_lock as number | undefined;
     const canEditText = isMaterial && isTextEditable(currentMime, currentFileName);
     const logicalFileName = currentFileName.endsWith(".gz")
         ? currentFileName.slice(0, -3)
@@ -513,6 +514,7 @@ export function FileEditDialog({
                     ? { description: description.trim() || null }
                     : {}),
                 ...(hasTagsChanged() ? { tags } : {}),
+                version_lock: currentVersionLock,
             };
         } else {
             return {
@@ -530,8 +532,7 @@ export function FileEditDialog({
     const buildContentOp = (fileKey: string, fileName: string, fileSize: number, fileMimeType: string, diffText?: string): Operation => {
         let combinedDiff = diffSummary.trim();
         if (diffText) {
-            const formattedDiff = "```diff\n" + diffText + "\n```";
-            combinedDiff = combinedDiff ? `${combinedDiff}\n\n${formattedDiff}` : formattedDiff;
+            combinedDiff = combinedDiff ? `${combinedDiff}\n\n${diffText}` : diffText;
         }
         return {
             op: "edit_material",
@@ -541,6 +542,7 @@ export function FileEditDialog({
             file_size: fileSize,
             file_mime_type: fileMimeType,
             diff_summary: combinedDiff || undefined,
+            version_lock: currentVersionLock,
         };
     };
 

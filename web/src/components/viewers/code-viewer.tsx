@@ -1,21 +1,13 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
-import { Loader2 } from "lucide-react";
-import { fetchMaterialFile } from "@/lib/api-client";
+import { useEffect, useMemo, useRef } from "react";
 import hljs from "highlight.js/lib/common";
-import { useFullscreen } from "@/hooks/use-fullscreen";
 import { usePinchZoom } from "@/hooks/use-pinch-zoom";
-import { FullscreenToggle } from "./fullscreen-toggle";
-import { ViewerToolbar } from "./viewer-toolbar";
+import { useMaterialFile } from "@/hooks/use-material-file";
+import { ViewerShell } from "./viewer-shell";
 import { ZoomControls } from "./zoom-controls";
 
-// Languages from highlight.js/lib/common:
-// bash, c, cpp, csharp, css, diff, go, graphql, ini, java, javascript, json,
-// kotlin, less, lua, markdown, perl, php, plaintext, python, r, ruby, rust,
-// scss, shell, sql, swift, typescript, vbnet, wasm, xml, yaml
-//
-// We import additional languages not bundled in common:
+// Languages from highlight.js/lib/common... (kept same as original)
 import hljsDart from "highlight.js/lib/languages/dart";
 import hljsElm from "highlight.js/lib/languages/elm";
 import hljsElixir from "highlight.js/lib/languages/elixir";
@@ -64,25 +56,14 @@ hljs.registerLanguage("latex", () => ({
     aliases: ["tex"],
     contains: [
         { className: "comment", begin: "%", end: "$", relevance: 0 },
-        {
-            className: "keyword",
-            begin: /\\[a-zA-Z@]+/,
-            relevance: 0,
-        },
+        { className: "keyword", begin: /\\[a-zA-Z@]+/, relevance: 0 },
         {
             className: "params",
             begin: /\{/,
             end: /\}/,
-            contains: [
-                { className: "keyword", begin: /\\[a-zA-Z@]+/ },
-                "self",
-            ],
+            contains: [{ className: "keyword", begin: /\\[a-zA-Z@]+/ }, "self"],
         },
-        {
-            className: "params",
-            begin: /\[/,
-            end: /\]/,
-        },
+        { className: "params", begin: /\[/, end: /\]/ },
         {
             className: "formula",
             begin: /\$\$/,
@@ -99,7 +80,7 @@ hljs.registerLanguage("latex", () => ({
 }));
 
 /* Register additional aliases */
-hljs.registerAliases("toml", { languageName: "ini" }); // toml piggybacks on ini in hljs
+hljs.registerAliases("toml", { languageName: "ini" });
 hljs.registerAliases(["kts", "groovy", "gradle"], { languageName: "groovy" });
 hljs.registerAliases(["lhs"], { languageName: "haskell" });
 hljs.registerAliases(["rmd"], { languageName: "r" });
@@ -128,7 +109,6 @@ import "highlight.js/styles/github.css";
 const MIN_ZOOM = 50;
 const MAX_ZOOM = 200;
 const ZOOM_STEP = 10;
-
 const MAX_DISPLAY_BYTES = 512 * 1024; // 512 KiB
 
 interface CodeViewerProps {
@@ -138,68 +118,26 @@ interface CodeViewerProps {
 }
 
 const EXT_TO_LANG: Record<string, string> = {
-    // TeX / LaTeX
-    tex: "latex", latex: "latex", sty: "latex", cls: "latex", bib: "latex",
-    dtx: "latex", ins: "latex",
-    // C / C++
+    tex: "latex", latex: "latex", sty: "latex", cls: "latex", bib: "latex", dtx: "latex", ins: "latex",
     c: "c", h: "c", cpp: "cpp", cxx: "cpp", cc: "cpp", hpp: "cpp", hxx: "cpp",
-    // Python
     py: "python", pyw: "python", pyi: "python",
-    // Java / JVM
-    java: "java", kt: "kotlin", kts: "kotlin", scala: "scala",
-    groovy: "groovy", gradle: "groovy",
-    // Shell / Bash
+    java: "java", kt: "kotlin", kts: "kotlin", scala: "scala", groovy: "groovy", gradle: "groovy",
     sh: "bash", bash: "bash", zsh: "bash", fish: "shell",
-    // PowerShell
     ps1: "powershell", psm1: "powershell", psd1: "powershell",
-    // Web
-    js: "javascript", mjs: "javascript", cjs: "javascript",
-    jsx: "javascript", ts: "typescript", tsx: "typescript",
-    html: "html", htm: "html",
-    css: "css", scss: "scss", sass: "scss", less: "less",
-    vue: "xml",    // Vue SFC: best-effort XML highlighting
-    svelte: "xml", // Svelte SFC: best-effort XML highlighting
-    // Data / Config
-    json: "json", json5: "json", jsonc: "json",
-    yaml: "yaml", yml: "yaml", toml: "ini",
-    xml: "xml", sql: "sql", ini: "ini", cfg: "ini", conf: "ini",
-    env: "ini",
-    // Config / Build (hcl/tf use ini-like syntax for best-effort highlighting)
-    tf: "ini", hcl: "ini", nix: "nix", cmake: "cmake",
-    // Systems / Low-level
-    rs: "rust", go: "go", zig: "plaintext",
-    v: "plaintext", nim: "nim", d: "d",
-    asm: "x86asm", s: "x86asm",
-    // Scripting
-    rb: "ruby", php: "php",
-    pl: "perl", pm: "perl",
-    lua: "lua", tcl: "tcl",
-    // .NET
+    js: "javascript", mjs: "javascript", cjs: "javascript", jsx: "javascript", ts: "typescript", tsx: "typescript",
+    html: "html", htm: "html", css: "css", scss: "scss", sass: "scss", less: "less",
+    vue: "xml", svelte: "xml",
+    json: "json", json5: "json", jsonc: "json", yaml: "yaml", yml: "yaml", toml: "ini", xml: "xml", sql: "sql",
+    ini: "ini", cfg: "ini", conf: "ini", env: "ini", tf: "ini", hcl: "ini", nix: "nix", cmake: "cmake",
+    rs: "rust", go: "go", zig: "plaintext", v: "plaintext", nim: "nim", d: "d", asm: "x86asm", s: "x86asm",
+    rb: "ruby", php: "php", pl: "perl", pm: "perl", lua: "lua", tcl: "tcl",
     cs: "csharp", vb: "vbnet", fs: "fsharp", fsx: "fsharp", swift: "swift",
-    // Data science / stats
-    r: "r", rmd: "r",
-    jl: "julia",
-    m: "matlab",
-    // ML / AI
-    ml: "ocaml", mli: "ocaml",
-    // Functional
-    hs: "haskell", lhs: "haskell",
-    ex: "elixir", exs: "elixir",
-    erl: "erlang", hrl: "erlang",
-    clj: "clojure", cljs: "clojure", cljc: "clojure", edn: "clojure",
-    elm: "elm",
-    // Dart
-    dart: "dart",
-    // Query / API
-    graphql: "graphql", gql: "graphql",
-    proto: "protobuf",
-    // Diff / patch
-    diff: "diff", patch: "diff",
-    // Markup / docs
-    md: "markdown", markdown: "markdown",
-    rst: "plaintext", adoc: "plaintext",
-    // Text / misc
-    txt: "plaintext", log: "plaintext",
+    r: "r", rmd: "r", jl: "julia", m: "matlab", ml: "ocaml", mli: "ocaml",
+    hs: "haskell", lhs: "haskell", ex: "elixir", exs: "elixir", erl: "erlang", hrl: "erlang",
+    clj: "clojure", cljs: "clojure", cljc: "clojure", edn: "clojure", elm: "elm",
+    dart: "dart", graphql: "graphql", gql: "graphql", proto: "protobuf",
+    diff: "diff", patch: "diff", md: "markdown", markdown: "markdown",
+    rst: "plaintext", adoc: "plaintext", txt: "plaintext", log: "plaintext",
 };
 
 function getLang(fileName: string): string {
@@ -207,10 +145,17 @@ function getLang(fileName: string): string {
     return EXT_TO_LANG[ext] ?? "";
 }
 
-export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
-    const containerRef = useRef<HTMLDivElement>(null);
+export function CodeViewer({ materialId, fileKey, fileName }: CodeViewerProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
-    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
+    const codeRef = useRef<HTMLElement>(null);
+
+    const { content, loading, error, truncated } = useMaterialFile({
+        materialId,
+        fileKey,
+        mode: "text",
+        maxBytes: MAX_DISPLAY_BYTES,
+    });
+
     const { zoom, zoomIn, zoomOut, resetZoom } = usePinchZoom({
         initial: 100,
         min: MIN_ZOOM,
@@ -219,115 +164,53 @@ export function CodeViewer({ materialId, fileName }: CodeViewerProps) {
         targetRef: scrollRef,
         handleKeyboard: true,
     });
-    const [content, setContent] = useState<string>("");
-    const [truncated, setTruncated] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const codeRef = useRef<HTMLElement>(null);
 
     const lang = useMemo(() => getLang(fileName), [fileName]);
-
-    // Fetch source text
-    useEffect(() => {
-        let cancelled = false;
-        queueMicrotask(() => {
-            if (cancelled) return;
-            setLoading(true);
-            setContent("");
-        });
-
-        fetchMaterialFile(materialId)
-            .then((res) => res.text())
-            .then((text) => {
-                if (!cancelled) {
-                    if (text.length > MAX_DISPLAY_BYTES) {
-                        setTruncated(true);
-                        setContent(text.slice(0, MAX_DISPLAY_BYTES));
-                    } else {
-                        setContent(text);
-                    }
-                }
-            })
-            .catch(() => {
-                if (!cancelled) setContent("Failed to load file content.");
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            });
-
-        return () => { cancelled = true; };
-    }, [materialId]);
 
     // Apply highlight.js after content renders
     useEffect(() => {
         if (!content || !codeRef.current) return;
-        // Reset any previous highlighting
         codeRef.current.removeAttribute("data-highlighted");
         hljs.highlightElement(codeRef.current);
     }, [content, lang]);
 
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center p-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-        );
-    }
-
     return (
-        <div 
-            ref={containerRef} 
-            className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
+        <ViewerShell
+            scrollRef={scrollRef}
+            loading={loading}
+            error={error}
+            truncatedMessage={truncated ? "File truncated — showing first 512 KiB. Download to view the full content." : null}
+            toolbarLeft={
+                lang && (
+                    <span className="text-xs font-medium uppercase text-muted-foreground px-1.5 py-0.5 bg-muted rounded truncate">
+                        {lang}
+                    </span>
+                )
+            }
+            toolbarRight={
+                <ZoomControls
+                    zoom={zoom}
+                    onZoomIn={zoomIn}
+                    onZoomOut={zoomOut}
+                    onReset={resetZoom}
+                    min={MIN_ZOOM}
+                    max={MAX_ZOOM}
+                    disabled={loading}
+                />
+            }
         >
-            <ViewerToolbar 
-                left={
-                    lang && (
-                        <span className="text-xs font-medium uppercase text-muted-foreground px-1.5 py-0.5 bg-muted rounded truncate">
-                            {lang}
-                        </span>
-                    )
-                }
-                right={
-                    <>
-                        <ZoomControls
-                            zoom={zoom}
-                            onZoomIn={zoomIn}
-                            onZoomOut={zoomOut}
-                            onReset={resetZoom}
-                            min={MIN_ZOOM}
-                            max={MAX_ZOOM}
-                            disabled={loading}
-                        />
-                        <FullscreenToggle 
-                            isFullscreen={isFullscreen} 
-                            onToggle={toggleFullscreen} 
-                            disabled={loading}
-                        />
-                    </>
-                }
-            />
-            <div
-                ref={scrollRef}
-                className="flex-1 overflow-auto bg-zinc-200 dark:bg-zinc-800/50"
-                style={{ touchAction: "pan-x pan-y" }}
+            <pre
+                className="!m-0 !rounded-none !bg-transparent p-0"
+                style={{ fontSize: `${zoom}%` }}
             >
-                {truncated && (
-                    <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                        <span>⚠ File truncated — showing first 512 KiB of a larger file. Download to view the full content.</span>
-                    </div>
-                )}
-                <pre
-                    className="!m-0 !rounded-none !bg-transparent p-0"
-                    style={{ fontSize: `${zoom}%` }}
+                <code
+                    ref={codeRef}
+                    className={lang ? `language-${lang}` : ""}
+                    style={{ background: "transparent" }}
                 >
-                    <code
-                        ref={codeRef}
-                        className={lang ? `language-${lang}` : ""}
-                        style={{ background: "transparent" }}
-                    >
-                        {content}
-                    </code>
-                </pre>
-            </div>
-        </div>
+                    {content}
+                </code>
+            </pre>
+        </ViewerShell>
     );
 }

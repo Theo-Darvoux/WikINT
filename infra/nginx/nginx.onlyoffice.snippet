@@ -9,58 +9,87 @@
 # 4. Add 'unsafe-eval' to the default script-src in the CSP map
 #    in nginx.conf — the OnlyOffice api.js script requires it.
 
-# ONLYOFFICE Document Server — serves JS API and editor assets
+
+# 1. Specific fix for themes.json (must be before prefix matches)
+location ~* ^/(onlyoffice/)?(\d+\.\d+\.\d+[\.-][a-zA-Z0-9]+)/themes.json$ {
+    set $onlyoffice_upstream http://onlyoffice;
+    rewrite ^ /web-apps/apps/themes/themes.json break;
+    proxy_pass $onlyoffice_upstream;
+    proxy_set_header Host $host;
+}
+
+# 2. WebSocket and Coauthoring endpoints (handles /onlyoffice/ prefix and versioned paths)
+location ~* ^/(onlyoffice/)?(\d+\.\d+\.\d+[\.-][a-zA-Z0-9]+/)?(doc|coauthoring)/ {
+    set $onlyoffice_upstream http://onlyoffice;
+    rewrite ^/onlyoffice/(.*)$ /$1 break;
+    proxy_pass $onlyoffice_upstream;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_buffering off;
+    proxy_cache off;
+    gzip off;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+}
+
+# 3. General OnlyOffice Document Server — serves JS API and editor assets
 location /onlyoffice/ {
     set $onlyoffice_upstream http://onlyoffice;
     rewrite ^/onlyoffice/(.*)$ /$1 break;
     proxy_pass $onlyoffice_upstream;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-Host $host;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
+    proxy_buffering off;
+    proxy_cache off;
+    gzip off;
     proxy_read_timeout 300s;
     proxy_send_timeout 300s;
+    
+    # Rewrite Location header for redirects (e.g. login pages)
     proxy_redirect http://$host/ $scheme://$host/onlyoffice/;
 }
 
 # Deny access to ONLYOFFICE internal and admin paths from the public network
-location ~* ^/(coauthoring|converter|info|healthcheck)/ {
+location ~* ^/(converter|healthcheck)/ {
     return 403;
 }
 
-# ONLYOFFICE coauthoring WebSocket / document download endpoint.
-# The editor JS connects to /doc/<key>/c via WebSocket for real-time
-# communication with the document server backend.
-location ~* ^/doc/ {
+# 4. Versioned build paths (for absolute requests like /9.2.1-hash/web-apps/...)
+location ~* ^/(\d+\.\d+\.\d+[\.-][a-zA-Z0-9]+)/ {
     set $onlyoffice_upstream http://onlyoffice;
     proxy_pass $onlyoffice_upstream;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_set_header X-Forwarded-Host $host;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_read_timeout 300s;
-    proxy_send_timeout 300s;
+    proxy_set_header X-Forwarded-Proto $scheme;
 }
 
-# ONLYOFFICE absolute asset paths (requested by the editor JS).
-# These prefixes overlap the root namespace, but 404 responses from
-# ONLYOFFICE fall through to Next.js via @nextjs_oo_fallback, so future
-# WikINT routes on /meta/, /fonts/, /cache/ etc. will still work.
+# 5. Absolute asset paths (requested by the editor JS)
 location ~* ^/(cache|web-apps|sdkjs|sdkjs-plugins|fonts|dictionaries|meta|printfile)/ {
     set $onlyoffice_upstream http://onlyoffice;
     proxy_pass $onlyoffice_upstream;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout 300s;
     proxy_send_timeout 300s;
 
@@ -71,15 +100,13 @@ location ~* ^/(cache|web-apps|sdkjs|sdkjs-plugins|fonts|dictionaries|meta|printf
 }
 
 # Fallback for paths that matched the ONLYOFFICE regex but returned 404.
-# Uses a distinct name (@nextjs_oo_fallback) to avoid collisions with any
-# named locations already defined in nginx.conf.
 location @nextjs_oo_fallback {
     proxy_pass http://web;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
+    proxy_set_header Connection $connection_upgrade;
 }

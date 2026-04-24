@@ -79,6 +79,7 @@ def version_orm_to_dict(v: MaterialVersion) -> dict[str, typing.Any]:
         "virus_scan_result": v.virus_scan_result.value
         if hasattr(v.virus_scan_result, "value")
         else v.virus_scan_result,
+        "version_lock": v.version_lock,
         "created_at": v.created_at,
     }
 

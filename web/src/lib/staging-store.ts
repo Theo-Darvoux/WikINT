@@ -55,6 +55,7 @@ export interface EditMaterialOp {
     file_mime_type?: string | null;
     diff_summary?: string | null;
     metadata?: Record<string, unknown> | null;
+    version_lock?: number;
 }
 
 export interface DeleteMaterialOp {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ChevronRight, Home } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface BreadcrumbItem {
     id: string;
@@ -13,13 +14,15 @@ interface BreadcrumbsProps {
     items: BreadcrumbItem[];
     /** When set, appended as ?preview_pr= to preserve preview mode on breadcrumb navigation */
     previewPrId?: string;
+    /** If true, the last item in the breadcrumbs will be rendered as a link */
+    linkLast?: boolean;
 }
 
 // Max items to show before collapsing to Home > … > last N
 const COLLAPSE_THRESHOLD = 3;
 const TAIL_COUNT = 2;
 
-export function Breadcrumbs({ items, previewPrId }: BreadcrumbsProps) {
+export function Breadcrumbs({ items, previewPrId, linkLast = false }: BreadcrumbsProps) {
     const buildPath = (index: number) => {
         const segments = items.slice(0, index + 1).map((item) => item.slug);
         const base = `/browse/${segments.join("/")}`;
@@ -58,19 +61,20 @@ export function Breadcrumbs({ items, previewPrId }: BreadcrumbsProps) {
             {visibleItems.map((item, localIndex) => {
                 const globalIndex = visibleOffset + localIndex;
                 const isLast = globalIndex === items.length - 1;
+                const shouldLink = !isLast || linkLast;
 
                 return (
                     <span key={item.id} className="flex items-center gap-1 min-w-0">
                         <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        {isLast ? (
-                            <span className="truncate font-medium">{item.name}</span>
-                        ) : (
+                        {shouldLink ? (
                             <Link
                                 href={buildPath(globalIndex)}
                                 className="truncate text-muted-foreground hover:text-foreground"
                             >
                                 {item.name}
                             </Link>
+                        ) : (
+                            <span className="truncate font-medium">{item.name}</span>
                         )}
                     </span>
                 );

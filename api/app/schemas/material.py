@@ -19,6 +19,7 @@ class MaterialVersionOut(BaseModel):
     author_id: uuid.UUID | None
     pr_id: uuid.UUID | None
     virus_scan_result: VirusScanResult
+    version_lock: int
     created_at: datetime
 
     model_config = {"from_attributes": True}

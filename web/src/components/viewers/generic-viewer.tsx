@@ -1,59 +1,46 @@
 "use client";
 
-import { useRef } from "react";
-import { FileText, Download, Loader2 } from "lucide-react";
-import { formatFileSize } from "@/lib/file-utils";
+import { FileText } from "lucide-react";
 import { useDownload } from "@/hooks/use-download";
-import { useFullscreen } from "@/hooks/use-fullscreen";
-import { FullscreenToggle } from "./fullscreen-toggle";
-import { ViewerToolbar } from "./viewer-toolbar";
+import { ViewerShell } from "./viewer-shell";
 
 interface GenericViewerProps {
-    fileName: string;
-    fileSize: number;
-    mimeType: string;
+    fileKey: string;
     materialId: string;
+    fileName: string;
 }
 
-export function GenericViewer({ fileName, fileSize, mimeType, materialId }: GenericViewerProps) {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
+/**
+ * Fallback viewer for file types that don't have a specialized renderer.
+ * Offers a download button and displays the file name.
+ */
+export function GenericViewer({ materialId, fileName, fileKey }: GenericViewerProps) {
     const { downloadMaterial, isDownloading } = useDownload();
 
     return (
-        <div 
-            ref={containerRef} 
-            className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
-        >
-            <ViewerToolbar 
-                right={
-                    <FullscreenToggle 
-                        isFullscreen={isFullscreen} 
-                        onToggle={toggleFullscreen} 
-                        disabled={isDownloading}
-                    />
-                }
-            />
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16 bg-zinc-200 dark:bg-zinc-800/50">
-            <FileText className="h-16 w-16 text-muted-foreground/50" />
-            <div className="text-center">
-                <p className="font-medium">{fileName}</p>
-                <p className="text-sm text-muted-foreground">{mimeType}</p>
-                {fileSize > 0 && <p className="text-sm text-muted-foreground">{formatFileSize(fileSize)}</p>}
+        <ViewerShell loading={false} error={null}>
+            <div className="flex h-full flex-col items-center justify-center p-12 text-center">
+                <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-muted shadow-sm">
+                    <FileText className="h-10 w-10 text-muted-foreground" />
+                </div>
+                
+                <h3 className="mb-2 text-xl font-semibold text-foreground">{fileName}</h3>
+                <p className="mb-8 max-w-md text-sm text-muted-foreground">
+                    WikINT doesn&apos;t support direct previewing for this file type yet. 
+                    You can download it to view it with your local applications.
+                </p>
+
+                <button
+                    onClick={() => downloadMaterial(materialId)}
+                    disabled={isDownloading}
+                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-8 py-2 disabled:opacity-70 transition-all active:scale-95 shadow-lg shadow-primary/20"
+                >
+                    {isDownloading ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
+                    ) : null}
+                    Download File
+                </button>
             </div>
-            <button
-                onClick={() => downloadMaterial(materialId)}
-                disabled={isDownloading}
-                className="flex items-center gap-2 rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-70"
-            >
-                {isDownloading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                    <Download className="h-4 w-4" />
-                )}
-                Download
-            </button>
-            </div>
-        </div>
+        </ViewerShell>
     );
 }

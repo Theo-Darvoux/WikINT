@@ -4,18 +4,27 @@ import uuid
 from collections import defaultdict
 from datetime import UTC
 
-from sqlalchemy import select
+from redis.asyncio import Redis
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.config import settings
+from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.core.storage import object_exists
 from app.models.directory import Directory
 from app.models.material import Material, MaterialVersion
-from app.models.pull_request import PRStatus, PullRequest
+from app.models.pull_request import PRFileClaim, PRStatus, PullRequest
 from app.models.security import VirusScanResult
 from app.models.tag import Tag
+from app.models.upload import Upload
+from app.models.user import User
+from app.schemas.pull_request import PullRequestCreate
+from app.services.auth import get_full_auth_config
 from app.services.directory import slugify
+from app.services.notification import notify_user
 from app.services.tag import get_or_create_tags
 
 # ---------------------------------------------------------------------------
@@ -61,6 +70,32 @@ def _collect_temp_refs(op: dict[str, typing.Any]) -> set[str]:
                         if isinstance(v2, str) and _is_temp_id(v2):
                             refs.add(v2)
     return refs
+
+
+def get_pr_staging_files(pr: PullRequest) -> list[str]:
+    """Collect all 'uploads/' prefixed file keys from a PR payload."""
+    staging_files: list[str] = []
+    for op in pr.payload:
+        fk = op.get("file_key")
+        if fk and str(fk).startswith("uploads/"):
+            staging_files.append(str(fk))
+        attachments = op.get("attachments")
+        if isinstance(attachments, list):
+            for att in attachments:
+                att_fk = att.get("file_key") if isinstance(att, dict) else None
+                if att_fk and str(att_fk).startswith("uploads/"):
+                    staging_files.append(str(att_fk))
+    return staging_files
+
+
+async def _cleanup_pr_resources(db: AsyncSession, pr: PullRequest, delete_staging: bool = False) -> None:
+    """Release file claims and optionally schedule deletion of staging files."""
+    await db.execute(delete(PRFileClaim).where(PRFileClaim.pr_id == pr.id))
+
+    if delete_staging:
+        uploads_to_delete = get_pr_staging_files(pr)
+        if uploads_to_delete:
+            db.info.setdefault("post_commit_jobs", []).append(("delete_storage_objects", uploads_to_delete))
 
 
 def _slug_pattern(base: str) -> re.Pattern[str]:
@@ -835,10 +870,10 @@ async def _exec_move_item(
         # Re-slug to ensure uniqueness in new location
         mat.slug = await _unique_material_slug(db, new_parent, mat.title, exclude_id=mat.id)
         await db.flush()
-        seen: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
+        seen_jobs: set[tuple[str, str]] = db.info.setdefault("post_commit_job_keys", set())
         key = ("index_material", str(mat.id))
-        if key not in seen:
-            seen.add(key)
+        if key not in seen_jobs:
+            seen_jobs.add(key)
             db.info.setdefault("post_commit_jobs", []).append(("index_material", mat.id))
         return mat.id
 
@@ -891,7 +926,7 @@ async def _build_browse_path(db: AsyncSession, op_type: str, result_id: uuid.UUI
         mat = await db.scalar(select(Material).where(Material.id == result_id))
         if mat:
             if mat.directory_id is None:
-                return mat.slug
+                return typing.cast(str, mat.slug)
             dir_parts = await get_directory_path(db, mat.directory_id)
             slugs = [p["slug"] for p in dir_parts]
             slugs.append(mat.slug)
@@ -981,6 +1016,184 @@ async def _capture_pre_state(
                 }
 
     return None
+
+
+async def create_pull_request_service(
+    db: AsyncSession,
+    data: PullRequestCreate,
+    current_user: User,
+    redis: Redis | None = None,
+) -> PullRequest:
+    """Validate and create a new batch pull request."""
+    is_privileged = current_user.is_moderator
+
+    if not is_privileged:
+        if len(data.operations) > settings.pr_max_ops_student:
+            raise BadRequestError(
+                f"You can include at most {settings.pr_max_ops_student} changes per contribution"
+            )
+        for op in data.operations:
+            if (
+                getattr(op, "op", None) == "create_material"
+                and len(getattr(op, "attachments", [])) > settings.pr_max_attachments_per_material
+            ):
+                raise BadRequestError(
+                    f"You can add at most {settings.pr_max_attachments_per_material} attachments per document"
+                )
+    else:
+        if len(data.operations) > settings.pr_max_ops_staff:
+            raise BadRequestError(
+                f"You can include at most {settings.pr_max_ops_staff} changes per contribution"
+            )
+
+    # Open PR limit for non-staff users
+    if not current_user.is_staff:
+        open_count = await db.scalar(
+            select(func.count())
+            .select_from(PullRequest)
+            .where(
+                PullRequest.author_id == current_user.id,
+                PullRequest.status == PRStatus.OPEN,
+            )
+        )
+        if open_count and open_count >= settings.pr_max_open_per_user:
+            raise BadRequestError(
+                f"You already have {settings.pr_max_open_per_user} contributions pending review. "
+                "Wait for one to be reviewed before submitting another."
+            )
+
+    # Dynamic limit: diff_summary length vs max_file_size_mb
+    max_bytes = settings.max_file_size_mb * 1024 * 1024
+    if redis:
+        config = await get_full_auth_config(db, redis)
+        if config.get("max_file_size_mb") is not None:
+            max_bytes = config["max_file_size_mb"] * 1024 * 1024
+
+    for op in data.operations:
+        ds = getattr(op, "diff_summary", None)
+        if ds and len(ds.encode("utf-8")) > max_bytes:
+            raise BadRequestError(
+                f"The changes in one of your files are too large ({len(ds.encode('utf-8'))} bytes). "
+                f"The current limit is {max_bytes // (1024 * 1024)} MB."
+            )
+
+    # Validate file_key ownership.
+    user_upload_prefix = f"uploads/{current_user.id}/"
+    cas_prefix = "cas/"
+    keys_to_check: set[str] = set()
+    for op in data.operations:
+        file_key = getattr(op, "file_key", None)
+        if file_key:
+            if not (file_key.startswith(user_upload_prefix) or file_key.startswith(cas_prefix)):
+                raise BadRequestError("One of the attached files does not belong to your account")
+            keys_to_check.add(file_key)
+
+        if getattr(op, "op", None) == "create_material":
+            for att in getattr(op, "attachments", []):
+                att_fk = (
+                    att.file_key
+                    if hasattr(att, "file_key")
+                    else (att.get("file_key") if isinstance(att, dict) else None)
+                )
+                if att_fk:
+                    if not (att_fk.startswith(user_upload_prefix) or att_fk.startswith(cas_prefix)):
+                        raise BadRequestError(
+                            "One of the attachment files does not belong to your account"
+                        )
+                    keys_to_check.add(att_fk)
+
+            pmid = getattr(op, "parent_material_id", None)
+            if pmid:
+                import uuid as uuid_pkg
+                actual_pmid: uuid_pkg.UUID | None = None
+                if isinstance(pmid, uuid_pkg.UUID):
+                    actual_pmid = pmid
+                elif isinstance(pmid, str) and not pmid.startswith("$"):
+                    try:
+                        actual_pmid = uuid_pkg.UUID(pmid)
+                    except ValueError:
+                        pass
+
+                if actual_pmid:
+                    parent_mat = await db.scalar(select(Material).where(Material.id == actual_pmid))
+                    if parent_mat and parent_mat.parent_material_id is not None:
+                        raise BadRequestError("Cannot attach a material to another attachment")
+
+    if keys_to_check:
+        import asyncio
+
+        existence_results = await asyncio.gather(*(object_exists(k) for k in keys_to_check))
+        for key, exists in zip(keys_to_check, existence_results):
+            if not exists:
+                raise BadRequestError(
+                    "One or more uploaded files could not be found. "
+                    "They may have expired — try uploading again."
+                )
+
+        # Verify scan results via DB
+        stmt = select(Upload.final_key).where(
+            Upload.final_key.in_(list(keys_to_check)),
+            Upload.status == "clean",
+            Upload.user_id == current_user.id,
+        )
+        clean_keys = set(await db.scalars(stmt))
+        for key in keys_to_check:
+            if key not in clean_keys:
+                raise BadRequestError(
+                    "One or more files are still being processed or could not be verified. "
+                    "Please wait a moment and try again."
+                )
+
+    # Serialize operations to list[dict]
+    ops_payload = [op.model_dump(mode="json") for op in data.operations]
+    summary_types = sorted({op.op for op in data.operations})
+
+    has_file = any(
+        op_dict.get("file_key")
+        or any(
+            isinstance(att, dict) and att.get("file_key")
+            for att in (op_dict.get("attachments") or [])
+        )
+        for op_dict in ops_payload
+    )
+
+    pr = PullRequest(
+        id=uuid.uuid4(),
+        type="batch",
+        status=PRStatus.OPEN,
+        title=data.title,
+        description=data.description,
+        payload=ops_payload,
+        summary_types=summary_types,
+        author_id=current_user.id,
+        virus_scan_result=VirusScanResult.CLEAN if has_file else VirusScanResult.SKIPPED,
+    )
+    db.add(pr)
+    await db.flush()
+
+    # Claim file keys atomically via DB unique constraint.
+    if keys_to_check:
+        for fk in keys_to_check:
+            db.add(PRFileClaim(file_key=fk, pr_id=pr.id))
+        try:
+            await db.flush()
+        except IntegrityError:
+            raise BadRequestError(
+                "One or more files are already included in another pending contribution. "
+                "Please wait for that contribution to be reviewed first."
+            )
+
+    # Auto-approve for privileged users if their setting is enabled
+    if current_user.is_admin and current_user.auto_approve:
+        pr.status = PRStatus.APPROVED
+        pr.reviewed_by = current_user.id
+        await apply_pr(db, pr, current_user.id)
+        # Release claims immediately — PR is already approved
+        await db.execute(delete(PRFileClaim).where(PRFileClaim.pr_id == pr.id))
+        await db.flush()
+
+    await db.refresh(pr, ["author", "created_at", "updated_at"])
+    return pr
 
 
 async def apply_pr(db: AsyncSession, pr: PullRequest, apply_user_id: uuid.UUID) -> None:
@@ -1170,6 +1383,8 @@ async def _exec_undelete_directory(
         for v in vs:
             v.deleted_at = None
 
+    if dir_id is None:
+        raise BadRequestError("Directory ID is required")
     await _enqueue_reindex_directory_recursive(db, dir_id)
     return dir_id
 
@@ -1449,3 +1664,340 @@ async def revert_pr(
     original_pr.reverted_by_pr_id = revert.id
 
     return revert
+
+
+# ---------------------------------------------------------------------------
+# High-level Service Functions
+# ---------------------------------------------------------------------------
+
+
+async def list_prs_service(
+    db: AsyncSession,
+    status: str | None = None,
+    type: str | None = None,
+    author_id: uuid.UUID | None = None,
+    page: int = 1,
+    limit: int = 50,
+) -> tuple[list[PullRequest], int]:
+    """List pull requests with filtering and pagination. Returns (prs, total_count)."""
+    base_stmt = select(PullRequest)
+    if status:
+        base_stmt = base_stmt.where(PullRequest.status == status)
+    if type:
+        base_stmt = base_stmt.where(PullRequest.type == type)
+    if author_id:
+        base_stmt = base_stmt.where(PullRequest.author_id == author_id)
+
+    count_stmt = select(func.count()).select_from(base_stmt.subquery())
+    total_count = await db.scalar(count_stmt) or 0
+
+    stmt = (
+        base_stmt.options(selectinload(PullRequest.author))
+        .order_by(PullRequest.created_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    prs = list(result.scalars().all())
+
+    return prs, total_count
+
+
+async def list_prs_for_item_service(
+    db: AsyncSession,
+    target_type: str,
+    target_id: str,
+    page: int = 1,
+    limit: int = 10,
+) -> tuple[list[PullRequest], int]:
+    """Search for open PRs referencing a specific material or directory."""
+    from sqlalchemy import text
+
+    base_stmt = select(PullRequest).options(selectinload(PullRequest.author)).where(
+        PullRequest.status == PRStatus.OPEN
+    )
+
+    if db.bind.dialect.name == "sqlite":
+        # SQLite fallback: fetch all open PRs and filter in Python
+        result = await db.execute(base_stmt.order_by(PullRequest.created_at.desc()))
+        prs = list(result.scalars().all())
+        filtered = []
+        for pr in prs:
+            match = False
+            for op in pr.payload:
+                if target_type == "material":
+                    if (
+                        op.get("material_id") == target_id
+                        or op.get("parent_material_id") == target_id
+                    ):
+                        match = True
+                        break
+                elif target_type == "directory":
+                    if target_id == "root":
+                        if (
+                            (op.get("op") == "create_material" and op.get("directory_id") is None)
+                            or (op.get("op") == "create_directory" and op.get("parent_id") is None)
+                            or (op.get("op") == "move_item" and op.get("new_parent_id") is None)
+                        ):
+                            match = True
+                            break
+                    else:
+                        if (
+                            op.get("directory_id") == target_id
+                            or op.get("parent_id") == target_id
+                            or op.get("new_parent_id") == target_id
+                        ):
+                            match = True
+                            break
+            if match:
+                filtered.append(pr)
+        total_count = len(filtered)
+        prs = filtered[(page - 1) * limit : page * limit]
+    else:
+        if target_type == "material":
+            stmt = base_stmt.where(
+                text(
+                    "EXISTS (SELECT 1 FROM jsonb_array_elements(payload) elem "
+                    "WHERE elem->>'material_id' = :tid "
+                    "OR elem->>'parent_material_id' = :tid)"
+                ).bindparams(tid=target_id)
+            )
+        elif target_type == "directory":
+            if target_id == "root":
+                stmt = base_stmt.where(
+                    text(
+                        "EXISTS (SELECT 1 FROM jsonb_array_elements(payload) elem "
+                        "WHERE (elem->>'op' = 'create_material' AND elem->>'directory_id' IS NULL) "
+                        "OR (elem->>'op' = 'create_directory' AND elem->>'parent_id' IS NULL) "
+                        "OR (elem->>'op' = 'move_item' AND elem->>'new_parent_id' IS NULL))"
+                    )
+                )
+            else:
+                stmt = base_stmt.where(
+                    text(
+                        "EXISTS (SELECT 1 FROM jsonb_array_elements(payload) elem "
+                        "WHERE elem->>'directory_id' = :tid "
+                        "OR elem->>'parent_id' = :tid "
+                        "OR elem->>'new_parent_id' = :tid)"
+                    ).bindparams(tid=target_id)
+                )
+        else:
+            raise BadRequestError("Invalid targetType")
+
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_count = await db.scalar(count_stmt) or 0
+
+        paginated_stmt = (
+            stmt.order_by(PullRequest.created_at.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+        result = await db.execute(paginated_stmt)
+        prs = list(result.scalars().all())
+
+    return prs, total_count
+
+
+async def approve_pr_service(db: AsyncSession, pr_id: uuid.UUID, reviewer: User) -> PullRequest:
+    """Approve and apply a contribution."""
+    pr = await db.scalar(select(PullRequest).where(PullRequest.id == pr_id))
+    if not pr:
+        raise NotFoundError("Pull request not found")
+
+    if pr.status != PRStatus.OPEN:
+        raise BadRequestError("This contribution is no longer open")
+
+    pr.status = PRStatus.APPROVED
+    pr.reviewed_by = reviewer.id
+
+    await apply_pr(db, pr, reviewer.id)
+    await _cleanup_pr_resources(db, pr)
+
+    await db.commit()
+
+    if pr.author_id:
+        await notify_user(
+            db,
+            pr.author_id,
+            "pr_approved",
+            f'Your contribution "{pr.title}" was published',
+            link=f"/pull-requests/{pr.id}",
+        )
+    return pr
+
+
+async def reject_pr_service(
+    db: AsyncSession, pr_id: uuid.UUID, reason: str, reviewer: User
+) -> PullRequest:
+    """Reject a contribution and clean up its staging files."""
+    pr = await db.scalar(select(PullRequest).where(PullRequest.id == pr_id))
+    if not pr:
+        raise NotFoundError("Pull request not found")
+
+    if pr.status != PRStatus.OPEN:
+        raise BadRequestError("This contribution is no longer open")
+
+    pr.status = PRStatus.REJECTED
+    pr.reviewed_by = reviewer.id
+    pr.rejection_reason = reason
+
+    await _cleanup_pr_resources(db, pr, delete_staging=True)
+
+    await db.commit()
+
+    if pr.author_id:
+        await notify_user(
+            db,
+            pr.author_id,
+            "pr_rejected",
+            f'Your contribution "{pr.title}" was not accepted',
+            link=f"/pull-requests/{pr.id}",
+        )
+    return pr
+
+
+async def cancel_pr_service(db: AsyncSession, pr_id: uuid.UUID, current_user: User) -> PullRequest:
+    """Author cancels their own open pull request."""
+    pr = await db.scalar(select(PullRequest).where(PullRequest.id == pr_id))
+    if not pr:
+        raise NotFoundError("Pull request not found")
+
+    if pr.author_id != current_user.id:
+        raise ForbiddenError("Only the author can cancel this contribution")
+
+    if pr.status != PRStatus.OPEN:
+        raise BadRequestError("This contribution is no longer open")
+
+    pr.status = PRStatus.CANCELLED
+    await _cleanup_pr_resources(db, pr, delete_staging=True)
+
+    await db.commit()
+    return pr
+
+
+async def revert_pr_service(db: AsyncSession, pr_id: uuid.UUID, admin: User) -> PullRequest:
+    """Validate and execute a revert for an approved PR."""
+    pr = await db.scalar(
+        select(PullRequest).where(PullRequest.id == pr_id).options(selectinload(PullRequest.author))
+    )
+    if not pr:
+        raise NotFoundError("Pull request not found")
+
+    if pr.status != PRStatus.APPROVED:
+        raise BadRequestError("Only approved contributions can be reverted")
+
+    if pr.type == "revert":
+        raise BadRequestError("Revert contributions cannot themselves be reverted")
+
+    if pr.reverted_by_pr_id is not None:
+        raise BadRequestError("This contribution has already been reverted")
+
+    if not pr.is_revertable:
+        raise BadRequestError("The 7-day revert grace period has expired")
+
+    revert = await revert_pr(db, pr, admin.id)
+    await db.commit()
+    await db.refresh(revert, ["author", "created_at", "updated_at"])
+
+    if pr.author_id and pr.author_id != admin.id:
+        await notify_user(
+            db,
+            pr.author_id,
+            "pr_reverted",
+            f'Your contribution "{pr.title}" has been reverted',
+            link=f"/pull-requests/{revert.id}",
+        )
+
+    return revert
+
+
+async def get_pr_preview_service(
+    db: AsyncSession, pr_id: uuid.UUID, op_index: int, current_user: User
+) -> dict[str, typing.Any]:
+    """Resolve a presigned URL for a file in a PR operation."""
+    from app.core.storage import generate_presigned_get
+
+    pr = await db.scalar(select(PullRequest).where(PullRequest.id == pr_id))
+    if not pr:
+        raise NotFoundError("Pull request not found")
+
+    # SECURITY (S13): Restrict preview access to author and moderators
+    if not pr.can_be_managed_by(current_user):
+        raise ForbiddenError("You are not authorized to preview this pull request")
+
+    if op_index >= len(pr.payload):
+        raise BadRequestError("Operation index out of range")
+
+    op = pr.payload[op_index]
+
+    file_key = op.get("file_key")
+    file_name = op.get("file_name")
+    file_mime_type = op.get("file_mime_type")
+
+    # Handle move_item preview resolution
+    if not file_key and op.get("op") == "move_item" and op.get("target_type") == "material":
+        target_id_raw = op.get("target_id")
+        if target_id_raw:
+            target_id_str = str(target_id_raw)
+            if target_id_str.startswith("$"):
+                # Reference to a temp_id in the same PR
+                source_op = next((o for o in pr.payload if o.get("temp_id") == target_id_str), None)
+                if source_op:
+                    file_key = typing.cast(str | None, source_op.get("file_key"))
+                    file_name = typing.cast(str | None, source_op.get("file_name"))
+                    file_mime_type = typing.cast(str | None, source_op.get("file_mime_type"))
+            else:
+                # Reference to a real material UUID
+                try:
+                    target_uuid = uuid.UUID(target_id_str)
+                    mv = await db.scalar(
+                        select(MaterialVersion)
+                        .where(MaterialVersion.material_id == target_uuid)
+                        .order_by(MaterialVersion.version_number.desc())
+                        .limit(1)
+                    )
+                    if mv:
+                        file_key = mv.file_key
+                        file_name = mv.file_name
+                        file_mime_type = mv.file_mime_type
+                except (ValueError, TypeError):
+                    pass
+
+    if not file_key:
+        raise NotFoundError("No file to preview for this operation")
+
+    file_key_str = str(file_key)
+    file_name_str = str(file_name) if file_name else None
+    file_mime_type_str = str(file_mime_type) if file_mime_type else None
+
+    # Legacy V1: after approval, files were moved from uploads/ to materials/
+    if pr.status == "approved" and file_key_str.startswith("uploads/"):
+        file_key_str = file_key_str.replace("uploads/", "materials/", 1)
+
+    # Refuse to serve unscanned quarantine files
+    if file_key_str.startswith("quarantine/"):
+        raise BadRequestError("File is still being processed and cannot be previewed yet.")
+
+    url = await generate_presigned_get(
+        file_key_str,
+        filename=file_name_str,
+        content_type=file_mime_type_str,
+    )
+    return {
+        "url": url,
+        "file_name": file_name_str,
+        "file_mime_type": file_mime_type_str,
+    }
+
+
+async def get_pr_diff_service(db: AsyncSession, pr_id: uuid.UUID) -> dict[str, typing.Any]:
+    """Calculate a summary of file changes in a PR."""
+    pr = await db.scalar(select(PullRequest).where(PullRequest.id == pr_id))
+    if not pr:
+        raise NotFoundError("Pull request not found")
+
+    file_ops = [op for op in pr.payload if op.get("file_key")]
+    if not file_ops:
+        return {"diff": None}
+
+    return {"diff": f"{len(file_ops)} file(s) changed."}

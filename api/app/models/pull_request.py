@@ -15,6 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.config import settings
 from app.models.base import Base, TimestampMixin, UUIDMixin
 from app.models.security import VirusScanResult
 
@@ -94,20 +95,18 @@ class PullRequest(UUIDMixin, TimestampMixin, Base):
         if self.status != PRStatus.OPEN:
             return None
         from datetime import timedelta
-
-        return self.updated_at + timedelta(days=7)
+        return self.updated_at + timedelta(days=settings.pr_expiry_days)
 
     @property
     def revert_grace_expires_at(self) -> datetime | None:
         if self.status != PRStatus.APPROVED or self.approved_at is None:
             return None
         from datetime import timedelta
-
         approved_at = self.approved_at
         if approved_at.tzinfo is None:
             approved_at = approved_at.replace(tzinfo=UTC)
 
-        return approved_at + timedelta(days=7)
+        return approved_at + timedelta(days=settings.pr_revert_grace_days)
 
     @property
     def is_revertable(self) -> bool:
@@ -121,6 +120,10 @@ class PullRequest(UUIDMixin, TimestampMixin, Base):
             and datetime.now(UTC) < expires
             and self.applied_result is not None
         )
+
+    def can_be_managed_by(self, user: User) -> bool:
+        """Standard RBAC helper: author or moderator."""
+        return user.is_moderator or self.author_id == user.id
 
 
 class PRFileClaim(Base):

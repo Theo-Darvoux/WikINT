@@ -7,16 +7,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import type { ThreadData } from "@/hooks/use-annotations";
-import { fetchMaterialBlob } from "@/lib/api-client";
-import { useFullscreen } from "@/hooks/use-fullscreen";
 import { usePinchZoom } from "@/hooks/use-pinch-zoom";
-import { FullscreenToggle } from "./fullscreen-toggle";
-import { ViewerToolbar } from "./viewer-toolbar";
+import { useMaterialFile } from "@/hooks/use-material-file";
+import { ViewerShell } from "./viewer-shell";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
-// Suppress known "AbortException: TextLayer task cancelled" logs from pdfjs/react-pdf
-// which spam the Next.js Turbopack dev overlay during fast zoom or scroll operations
+// Suppress known "AbortException: TextLayer task cancelled" logs
 if (typeof window !== "undefined") {
     const originalError = console.error;
     const originalWarn = console.warn;
@@ -69,7 +66,7 @@ function buildHighlights(pageEl: HTMLElement, annotations: PageAnnotation[]): Hi
     if (spans.length === 0) return [];
 
     const pageRect = pageEl.getBoundingClientRect();
-    if (pageRect.width === 0) return []; // not laid out yet
+    if (pageRect.width === 0) return [];
 
     let fullText = "";
     const spanRanges: { start: number; end: number; el: Element }[] = [];
@@ -89,7 +86,7 @@ function buildHighlights(pageEl: HTMLElement, annotations: PageAnnotation[]): Hi
             for (const { start, end, el } of spanRanges) {
                 if (end <= idx || start >= matchEnd) continue;
                 const r = el.getBoundingClientRect();
-                if (r.width === 0) continue; // span not laid out
+                if (r.width === 0) continue;
                 highlights.push({
                     x: r.left - pageRect.left,
                     y: r.top - pageRect.top,
@@ -130,7 +127,6 @@ function AnnotatedPage({ pageNumber, width, annotations, onAnnotationClick }: An
     const [highlights, setHighlights] = useState<HighlightRect[]>([]);
     const frameRef = useRef<number>(0);
 
-    // Defer measurement to next paint so layout is complete after DOM mutations
     const scheduleRecalc = useCallback(() => {
         cancelAnimationFrame(frameRef.current);
         frameRef.current = requestAnimationFrame(() => {
@@ -141,13 +137,12 @@ function AnnotatedPage({ pageNumber, width, annotations, onAnnotationClick }: An
         });
     }, [annotations]);
 
-    // Watch the text layer for DOM changes (zoom causes PDF.js to recreate text layer spans)
     useEffect(() => {
         const el = pageRef.current;
         if (!el) return;
         const observer = new MutationObserver(scheduleRecalc);
         observer.observe(el, { childList: true, subtree: true });
-        scheduleRecalc(); // handle already-rendered text layer on first mount
+        scheduleRecalc();
         return () => {
             observer.disconnect();
             cancelAnimationFrame(frameRef.current);
@@ -211,16 +206,15 @@ function LazyBlock({ estimatedHeight, scrollRootRef, children }: {
     );
 }
 
-export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: PdfViewerProps) {
-    const containerRef = useRef<HTMLDivElement>(null);
+export function PdfViewer({ materialId, fileKey, annotations = [], onAnnotationClick }: PdfViewerProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
-    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
 
-    // usePinchZoom is the single source of truth for zoom:
-    // - Touch pinch and Ctrl+wheel are handled by the hook.
-    // - Keyboard (Ctrl+= / Ctrl+- / Ctrl+0) is handled separately below
-    //   so it can preventDefault before the print handler in material-viewer.
-    // - The buttons call setZoom / zoomIn / zoomOut directly from the hook.
+    const { blobUrl, loading, error } = useMaterialFile({
+        materialId,
+        fileKey,
+        mode: "blob",
+    });
+
     const { zoom, setZoom } = usePinchZoom({
         initial: 100,
         min: MIN_ZOOM,
@@ -230,47 +224,14 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
         handleKeyboard: false,
     });
 
-    const [fileUrl, setFileUrl] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
     const [numPages, setNumPages] = useState<number>(0);
     const [currentPage, setCurrentPage] = useState(1);
     const [containerWidth, setContainerWidth] = useState<number>(800);
     const [twoPageView, setTwoPageView] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [parseError, setParseError] = useState<string | null>(null);
 
     useEffect(() => {
-        let url: string | null = null;
-        let cancelled = false;
-
-        Promise.resolve().then(() => {
-            if (cancelled) return;
-            setLoading(true);
-            setError(null);
-            setNumPages(0);
-            setFileUrl(null);
-        });
-
-        fetchMaterialBlob(materialId)
-            .then(blob => {
-                if (cancelled) return;
-                url = URL.createObjectURL(blob);
-                setFileUrl(url);
-            })
-            .catch(err => {
-                if (!cancelled) setError(err.message ?? "Failed to load PDF");
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            });
-
-        return () => {
-            cancelled = true;
-            if (url) URL.revokeObjectURL(url);
-        };
-    }, [materialId]);
-
-    useEffect(() => {
-        const el = scrollRef.current ?? containerRef.current;
+        const el = scrollRef.current;
         if (!el) return;
         let rafId: number;
         const ro = new ResizeObserver(entries => {
@@ -289,7 +250,6 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            // Zoom keyboard shortcuts
             if ((e.ctrlKey || e.metaKey) && (e.key === "=" || e.key === "+")) {
                 e.preventDefault();
                 setZoom(z => Math.min(MAX_ZOOM, z + ZOOM_STEP));
@@ -312,17 +272,15 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
     }, []);
 
     const onDocumentLoadError = useCallback((err: Error) => {
-        setError(err.message ?? "Failed to parse PDF");
+        setParseError(err.message ?? "Failed to parse PDF");
     }, []);
 
-    // Scroll-based page tracking
     useEffect(() => {
         const scrollEl = scrollRef.current;
         if (!scrollEl || numPages === 0) return;
 
         const io = new IntersectionObserver(
             (entries) => {
-                // Find the entry with the highest intersection ratio near the top
                 let best: { page: number; ratio: number; top: number } | null = null;
                 for (const entry of entries) {
                     const page = Number((entry.target as HTMLElement).dataset.page);
@@ -343,7 +301,6 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
             }
         );
 
-        // Observe all page sentinel divs
         const sentinels = scrollEl.querySelectorAll("[data-page]");
         sentinels.forEach((el) => io.observe(el));
 
@@ -358,157 +315,115 @@ export function PdfViewer({ materialId, annotations = [], onAnnotationClick }: P
         page: t.root.page,
     }));
 
-    return (
-        <div ref={containerRef} className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}>
-            <ViewerToolbar
-                isFullscreen={isFullscreen}
-                left={
-                    <button
-                        onClick={() => setTwoPageView(!twoPageView)}
-                        disabled={loading}
-                        className={`rounded-md p-2 transition-colors disabled:opacity-40 ${twoPageView ? "bg-zinc-200 dark:bg-zinc-800 text-foreground" : "text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground"}`}
-                        title="Toggle two page view"
-                    >
-                        <BookOpen className="h-4 w-4" />
-                    </button>
-                }
-                center={
-                    numPages > 0 && (
-                        <span className="text-xs tabular-nums text-muted-foreground">
-                            Page {currentPage} of {numPages}
-                        </span>
-                    )
-                }
-                right={
-                    <>
-                        <button
-                            onClick={() => setZoom(z => Math.max(MIN_ZOOM, z - ZOOM_STEP))}
-                            disabled={zoom <= MIN_ZOOM || loading}
-                            className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
-                            title="Zoom out (Ctrl+-)"
-                        >
-                            <ZoomOut className="h-4 w-4" />
-                        </button>
-                        <button
-                            onClick={() => setZoom(100)}
-                            disabled={loading}
-                            className="min-w-12 rounded-md px-2 py-1 text-center text-xs font-medium tabular-nums transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-40"
-                            title="Reset zoom (Ctrl+0)"
-                        >
-                            {zoom}%
-                        </button>
-                        <button
-                            onClick={() => setZoom(z => Math.min(MAX_ZOOM, z + ZOOM_STEP))}
-                            disabled={zoom >= MAX_ZOOM || loading}
-                            className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
-                            title="Zoom in (Ctrl++)"
-                        >
-                            <ZoomIn className="h-4 w-4" />
-                        </button>
-                        <FullscreenToggle
-                            isFullscreen={isFullscreen}
-                            onToggle={toggleFullscreen}
-                            disabled={loading}
-                        />
-                    </>
-                }
-            />
-
-            <div
-                ref={scrollRef}
-                className={`overflow-auto bg-zinc-200 dark:bg-zinc-800/50 flex flex-col ${isFullscreen ? "flex-1" : "flex-1"
-                    }`}
-                style={{ touchAction: "pan-x pan-y" }}
-            >
-                {error && (
-                    <div className="flex w-full flex-col items-center justify-center p-8 text-center">
-                        <p className="text-sm text-destructive">{error}</p>
-                    </div>
-                )}
-                {loading && !error && (
-                    <div className="flex w-full flex-col items-center justify-start p-4 md:py-8">
-                        {/* A4 proportioned paper skeleton */}
-                        <div className="flex w-full max-w-4xl aspect-[1/1.414] flex-col rounded bg-white p-8 shadow-sm dark:bg-zinc-950/50">
-                            <Skeleton className="mb-12 h-10 w-3/4 rounded-md" />
-                            <div className="space-y-4">
-                                <Skeleton className="h-4 w-full" />
-                                <Skeleton className="h-4 w-[90%]" />
-                                <Skeleton className="h-4 w-[95%]" />
-                                <Skeleton className="h-4 w-full" />
-                                <Skeleton className="h-4 w-[85%]" />
-                            </div>
-                            <div className="mt-12 space-y-4">
-                                <Skeleton className="h-4 w-[92%]" />
-                                <Skeleton className="h-4 w-[88%]" />
-                                <Skeleton className="h-4 w-full" />
-                                <Skeleton className="h-4 w-[96%]" />
-                            </div>
-                        </div>
-                    </div>
-                )}
-                {!loading && !error && fileUrl && (
-                    <Document
-                        file={fileUrl}
-                        onLoadSuccess={onDocumentLoadSuccess}
-                        onLoadError={onDocumentLoadError}
-                        loading={
-                            <div className="flex w-full flex-col items-center justify-start p-4 md:py-8">
-                                <div className="flex w-full max-w-4xl aspect-[1/1.414] flex-col rounded bg-white p-8 shadow-sm dark:bg-zinc-950/50">
-                                    <Skeleton className="mb-12 h-10 w-3/4 rounded-md" />
-                                    <div className="space-y-4">
-                                        <Skeleton className="h-4 w-full" />
-                                        <Skeleton className="h-4 w-[90%]" />
-                                        <Skeleton className="h-4 w-[95%]" />
-                                        <Skeleton className="h-4 w-full" />
-                                        <Skeleton className="h-4 w-[85%]" />
-                                    </div>
-                                    <div className="mt-12 space-y-4">
-                                        <Skeleton className="h-4 w-[92%]" />
-                                        <Skeleton className="h-4 w-[88%]" />
-                                        <Skeleton className="h-4 w-full" />
-                                        <Skeleton className="h-4 w-[96%]" />
-                                    </div>
-                                </div>
-                            </div>
-                        }
-                        className="py-4 px-4 w-max mx-auto flex flex-col items-center gap-4"
-                    >
-                        {twoPageView
-                            ? Array.from({ length: Math.ceil(numPages / 2) }, (_, rowIdx) => {
-                                const left = rowIdx * 2 + 1;
-                                const right = rowIdx * 2 + 2;
-                                const leftAnns = allAnnotations.filter(a => a.page === left || a.page == null);
-                                const rightAnns = allAnnotations.filter(a => a.page === right || a.page == null);
-                                return (
-                                    <LazyBlock key={rowIdx} estimatedHeight={pageWidth * 1.414} scrollRootRef={scrollRef}>
-                                        <div className="grid grid-cols-2 gap-4 place-items-center">
-                                            <div data-page={left}>
-                                                <AnnotatedPage pageNumber={left} width={pageWidth} annotations={leftAnns} onAnnotationClick={onAnnotationClick} />
-                                            </div>
-                                            {right <= numPages && (
-                                                <div data-page={right}>
-                                                    <AnnotatedPage pageNumber={right} width={pageWidth} annotations={rightAnns} onAnnotationClick={onAnnotationClick} />
-                                                </div>
-                                            )}
-                                        </div>
-                                    </LazyBlock>
-                                );
-                            })
-                            : Array.from({ length: numPages }, (_, i) => {
-                                const pageNum = i + 1;
-                                const pageAnnotations = allAnnotations.filter(a => a.page === pageNum || a.page == null);
-                                return (
-                                    <div key={pageNum} data-page={pageNum}>
-                                        <LazyBlock estimatedHeight={pageWidth * 1.414} scrollRootRef={scrollRef}>
-                                            <AnnotatedPage pageNumber={pageNum} width={pageWidth} annotations={pageAnnotations} onAnnotationClick={onAnnotationClick} />
-                                        </LazyBlock>
-                                    </div>
-                                );
-                            })
-                        }
-                    </Document>
-                )}
+    const loadingSkeleton = (
+        <div className="flex w-full flex-col items-center justify-start p-4 md:py-8">
+            <div className="flex w-full max-w-4xl aspect-[1/1.414] flex-col rounded bg-white p-8 shadow-sm dark:bg-zinc-950/50">
+                <Skeleton className="mb-12 h-10 w-3/4 rounded-md" />
+                <div className="space-y-4">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-[90%]" />
+                    <Skeleton className="h-4 w-[95%]" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-[85%]" />
+                </div>
             </div>
         </div>
+    );
+
+    return (
+        <ViewerShell
+            scrollRef={scrollRef}
+            loading={loading}
+            error={error || parseError}
+            toolbarLeft={
+                <button
+                    onClick={() => setTwoPageView(!twoPageView)}
+                    disabled={loading}
+                    className={`rounded-md p-2 transition-colors disabled:opacity-40 ${twoPageView ? "bg-zinc-200 dark:bg-zinc-800 text-foreground" : "text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground"}`}
+                    title="Toggle two page view"
+                >
+                    <BookOpen className="h-4 w-4" />
+                </button>
+            }
+            toolbarCenter={
+                numPages > 0 && (
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                        Page {currentPage} of {numPages}
+                    </span>
+                )
+            }
+            toolbarRight={
+                <>
+                    <button
+                        onClick={() => setZoom(z => Math.max(MIN_ZOOM, z - ZOOM_STEP))}
+                        disabled={zoom <= MIN_ZOOM || loading}
+                        className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
+                        title="Zoom out (Ctrl+-)"
+                    >
+                        <ZoomOut className="h-4 w-4" />
+                    </button>
+                    <button
+                        onClick={() => setZoom(100)}
+                        disabled={loading}
+                        className="min-w-12 rounded-md px-2 py-1 text-center text-xs font-medium tabular-nums transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-40"
+                        title="Reset zoom (Ctrl+0)"
+                    >
+                        {zoom}%
+                    </button>
+                    <button
+                        onClick={() => setZoom(z => Math.min(MAX_ZOOM, z + ZOOM_STEP))}
+                        disabled={zoom >= MAX_ZOOM || loading}
+                        className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
+                        title="Zoom in (Ctrl++)"
+                    >
+                        <ZoomIn className="h-4 w-4" />
+                    </button>
+                </>
+            }
+        >
+            {!loading && !error && blobUrl && (
+                <Document
+                    file={blobUrl}
+                    onLoadSuccess={onDocumentLoadSuccess}
+                    onLoadError={onDocumentLoadError}
+                    loading={loadingSkeleton}
+                    className="py-4 px-4 w-max mx-auto flex flex-col items-center gap-4"
+                >
+                    {twoPageView
+                        ? Array.from({ length: Math.ceil(numPages / 2) }, (_, rowIdx) => {
+                            const left = rowIdx * 2 + 1;
+                            const right = rowIdx * 2 + 2;
+                            const leftAnns = allAnnotations.filter(a => a.page === left || a.page == null);
+                            const rightAnns = allAnnotations.filter(a => a.page === right || a.page == null);
+                            return (
+                                <LazyBlock key={rowIdx} estimatedHeight={pageWidth * 1.414} scrollRootRef={scrollRef}>
+                                    <div className="grid grid-cols-2 gap-4 place-items-center">
+                                        <div data-page={left}>
+                                            <AnnotatedPage pageNumber={left} width={pageWidth} annotations={leftAnns} onAnnotationClick={onAnnotationClick} />
+                                        </div>
+                                        {right <= numPages && (
+                                            <div data-page={right}>
+                                                <AnnotatedPage pageNumber={right} width={pageWidth} annotations={rightAnns} onAnnotationClick={onAnnotationClick} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </LazyBlock>
+                            );
+                        })
+                        : Array.from({ length: numPages }, (_, i) => {
+                            const pageNum = i + 1;
+                            const pageAnnotations = allAnnotations.filter(a => a.page === pageNum || a.page == null);
+                            return (
+                                <div key={pageNum} data-page={pageNum}>
+                                    <LazyBlock estimatedHeight={pageWidth * 1.414} scrollRootRef={scrollRef}>
+                                        <AnnotatedPage pageNumber={pageNum} width={pageWidth} annotations={pageAnnotations} onAnnotationClick={onAnnotationClick} />
+                                    </LazyBlock>
+                                </div>
+                            );
+                        })
+                    }
+                </Document>
+            )}
+        </ViewerShell>
     );
 }

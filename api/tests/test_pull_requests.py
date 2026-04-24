@@ -82,7 +82,7 @@ def _auth_headers(user: User) -> dict[str, str]:
 @pytest.fixture(autouse=True)
 def mock_pr_deps(mock_redis):
     """Mock external dependencies for PR creation (MinIO check and Redis scan cache)."""
-    with patch("app.routers.pull_requests.object_exists", new_callable=AsyncMock) as m_exists:
+    with patch("app.services.pr.object_exists", new_callable=AsyncMock) as m_exists:
         m_exists.return_value = True
 
         # Mock redis.get to return something for scan checks (meaning scanned clean)
@@ -389,7 +389,7 @@ class TestApproveReject:
         res = await db_session.execute(select(Material).where(Material.title == "NewMat"))
         assert res.scalar_one().directory_id == d.id
 
-    @patch("app.routers.pull_requests.object_exists", new_callable=AsyncMock)
+    @patch("app.services.pr.object_exists", new_callable=AsyncMock)
     @patch("app.core.storage.delete_object", new_callable=AsyncMock)
     async def test_reject_cleans_up_files(
         self,

@@ -44,6 +44,14 @@ class Settings(BaseSettings):
 
     max_file_size_mb: int = 100
 
+    # Pull Request Limits
+    pr_max_ops_student: int = 50
+    pr_max_ops_staff: int = 500
+    pr_max_attachments_per_material: int = 50
+    pr_max_open_per_user: int = 5
+    pr_expiry_days: int = 7
+    pr_revert_grace_days: int = 7
+
     # Per-category size caps (MiB) — enforced server-side before transfer/processing
     max_svg_size_mb: int = 5
     max_image_size_mb: int = 50
@@ -69,7 +77,7 @@ class Settings(BaseSettings):
     malwarebazaar_api_key: str | None = None
     # When True, a MalwareBazaar timeout/error fails the scan (fail-closed).
     # When False (default), YARA remains the authoritative gatekeeper on API failure.
-    malwarebazaar_fail_closed: bool = False
+    malwarebazaar_fail_closed: bool = True
 
     smtp_host: str = "smtp.example.com"
     smtp_ip: str | None = None

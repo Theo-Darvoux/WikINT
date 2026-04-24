@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { Loader2 } from "lucide-react";
-import { fetchMaterialBlob } from "@/lib/api-client";
-import { useFullscreen } from "@/hooks/use-fullscreen";
+import { useRef } from "react";
 import { usePinchZoom } from "@/hooks/use-pinch-zoom";
-import { FullscreenToggle } from "./fullscreen-toggle";
-import { ViewerToolbar } from "./viewer-toolbar";
+import { useMaterialFile } from "@/hooks/use-material-file";
+import { ViewerShell } from "./viewer-shell";
 import { ZoomControls } from "./zoom-controls";
 
 const MIN_ZOOM = 25;
@@ -19,13 +16,14 @@ interface ImageViewerProps {
     fileName: string;
 }
 
-export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
-    const containerRef = useRef<HTMLDivElement>(null);
+export function ImageViewer({ materialId, fileKey, fileName }: ImageViewerProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
-    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
-    const [blobUrl, setBlobUrl] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+
+    const { blobUrl, loading, error } = useMaterialFile({
+        materialId,
+        fileKey,
+        mode: "blob",
+    });
 
     const { zoom, zoomIn, zoomOut, resetZoom } = usePinchZoom({
         initial: 100,
@@ -36,73 +34,25 @@ export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
         handleKeyboard: true,
     });
 
-    useEffect(() => {
-        let objectUrl: string | null = null;
-        let cancelled = false;
-
-        queueMicrotask(() => {
-            if (cancelled) return;
-            setLoading(true);
-            setError(null);
-            setBlobUrl(null);
-        });
-
-        fetchMaterialBlob(materialId)
-            .then((blob) => {
-                if (cancelled) return;
-                objectUrl = URL.createObjectURL(blob);
-                setBlobUrl(objectUrl);
-            })
-            .catch((err) => {
-                if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load image");
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            });
-
-        return () => {
-            cancelled = true;
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-        };
-    }, [materialId]);
-
     return (
-        <div 
-            ref={containerRef} 
-            className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
+        <ViewerShell
+            scrollRef={scrollRef}
+            loading={loading}
+            error={error}
+            toolbarRight={
+                <ZoomControls
+                    zoom={zoom}
+                    onZoomIn={zoomIn}
+                    onZoomOut={zoomOut}
+                    onReset={resetZoom}
+                    min={MIN_ZOOM}
+                    max={MAX_ZOOM}
+                    disabled={loading || !!error}
+                />
+            }
+            className="flex-1"
         >
-            <ViewerToolbar 
-                isFullscreen={isFullscreen}
-                right={
-                    <>
-                        <ZoomControls
-                            zoom={zoom}
-                            onZoomIn={zoomIn}
-                            onZoomOut={zoomOut}
-                            onReset={resetZoom}
-                            min={MIN_ZOOM}
-                            max={MAX_ZOOM}
-                            disabled={loading || !!error}
-                        />
-                        <FullscreenToggle 
-                            isFullscreen={isFullscreen} 
-                            onToggle={toggleFullscreen} 
-                            disabled={loading || !!error}
-                        />
-                    </>
-                }
-            />
-            <div
-                ref={scrollRef}
-                className={`relative flex flex-1 w-full items-center justify-center bg-zinc-200 dark:bg-zinc-800/50 overflow-auto ${isFullscreen ? "" : "h-[calc(100vh-10rem)]"}`}
-                style={{ touchAction: "pan-x pan-y" }}
-            >
-                {loading && (
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                )}
-                {error && (
-                    <p className="text-sm text-destructive">{error}</p>
-                )}
+            <div className="flex min-h-full w-full items-center justify-center p-4">
                 {blobUrl && (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
@@ -113,11 +63,11 @@ export function ImageViewer({ materialId, fileName }: ImageViewerProps) {
                             transformOrigin: "center center",
                             transition: "transform 0.15s ease",
                         }}
-                        className={`${isFullscreen ? "max-h-[90vh]" : "max-h-[80vh]"} max-w-full object-contain`}
+                        className="max-w-full max-h-[85vh] object-contain shadow-md rounded-sm"
                         draggable={false}
                     />
                 )}
             </div>
-        </div>
+        </ViewerShell>
     );
 }

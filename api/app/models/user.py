@@ -47,6 +47,18 @@ class User(UUIDMixin, Base):
     auto_approve: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    @property
+    def is_moderator(self) -> bool:
+        return self.role in (UserRole.MODERATOR, UserRole.BUREAU, UserRole.VIEUX)
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role in (UserRole.BUREAU, UserRole.VIEUX)
+
+    @property
+    def is_staff(self) -> bool:
+        return self.is_moderator
+
     pull_requests: Mapped[list[PullRequest]] = relationship(
         back_populates="author",
         foreign_keys="PullRequest.author_id",

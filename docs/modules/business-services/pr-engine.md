@@ -18,6 +18,7 @@ Called by the PR approval endpoint. Executes within the caller's transaction (no
 2. **Sequentially execute** each operation via the dispatch table
 3. **Build enriched records** with `result_id` and `result_browse_path` for each operation
 4. **Write `applied_result`** — store the enriched records on `pr.applied_result` (separate from `pr.payload`)
+5. **Recursive Reindexing** —Structural changes (like directory moves) trigger recursive search index updates for all descendants.
 
 ### Payload Immutability
 
@@ -77,7 +78,8 @@ Resolves a value that may be:
 2. Update title/type/description/tags/metadata as provided
 3. If title changed: regenerate slug (unique within directory)
 4. If `file_key` provided: create new `MaterialVersion` with incremented `version_number`, `increment_cas_ref`
-5. Schedule search re-indexing
+5. **Optimistic Locking**: If `version_lock` is provided in the operation, it is verified against the latest `MaterialVersion.version_lock`. A mismatch raises `ConflictError`.
+6. Schedule search re-indexing
 
 ### `_exec_delete_material()`
 
@@ -114,7 +116,8 @@ For **directories:**
 2. **Self-move prevention:** Cannot move a directory into itself
 3. **Circular ancestry check:** Walk up from `new_parent_id` to verify `target_id` is not an ancestor. This prevents creating circular references in the directory tree.
 4. Update `parent_id`
-5. Re-index
+5. **Optimistic Locking**: If the target is a material, its `version_lock` is verified if provided.
+6. **Recursive Reindexing**: All items within the directory tree (sub-directories and materials) are enqueued for re-indexing in the background.
 
 For **materials:**
 1. Resolve target and new parent
@@ -158,3 +161,14 @@ Determines the authoritative MIME type for a file:
 Reads the actual file size and content type from S3 via `HEAD` request. This ensures the database records reflect the true file size after processing (compression may have changed it), not the client's declared size.
 
 Only used for legacy `uploads/` paths. CAS V2 keys trust the payload-provided size and MIME type.
+
+## Constraints and Validation
+
+### Attachment Nesting Limit
+The system enforces a strict 2-level nesting limit for materials. A material can have attachments, but an attachment cannot have its own attachments. This is validated during PR creation (`create_pull_request_service`).
+
+### File Claiming
+To prevent race conditions where two users attempt to include the same file in different contributions, the system uses `PRFileClaim` rows. A `file_key` can only be held by one **open** PR at a time. This is enforced via a unique database constraint.
+
+### Ownership Enforcement
+When submitting a PR, the system verifies that all `file_key`s either start with the user's specific upload prefix (`uploads/{user_id}/`) or already exist in the content-addressable storage (`cas/`).

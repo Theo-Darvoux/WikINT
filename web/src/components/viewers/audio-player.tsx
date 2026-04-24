@@ -22,16 +22,14 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { API_BASE, fetchMaterialBlob } from "@/lib/api-client";
 import { getAccessToken } from "@/lib/auth-tokens";
-import { useFullscreen } from "@/hooks/use-fullscreen";
-import { FullscreenToggle } from "./fullscreen-toggle";
-import { ViewerToolbar } from "./viewer-toolbar";
+import { ViewerShell } from "./viewer-shell";
 
 interface AudioPlayerProps {
     fileKey: string;
     materialId: string;
 }
 
-export function AudioPlayer({ materialId }: AudioPlayerProps) {
+export function AudioPlayer({ materialId, fileKey }: AudioPlayerProps) {
     const { resolvedTheme } = useTheme();
     const [isLoading, setIsLoading] = useState(true);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -41,63 +39,51 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
     const [isMuted, setIsMuted] = useState(false);
     const [playbackRate, setPlaybackRate] = useState(1);
     const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
-
-    const containerRef = useRef<HTMLDivElement>(null);
-    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
-
+ 
     const token = getAccessToken();
     const streamUrl = token 
-        ? `${API_BASE}/materials/${materialId}/file?token=${encodeURIComponent(token)}`
-        : `${API_BASE}/materials/${materialId}/file`;
-
+        ? `${API_BASE}/materials/${materialId}/file?token=${encodeURIComponent(token)}&v=${fileKey}`
+        : `${API_BASE}/materials/${materialId}/file?v=${fileKey}`;
+ 
     const audioRef = useRef<HTMLAudioElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-
+ 
     const isDark = resolvedTheme === "dark";
-
+ 
     useEffect(() => {
         let cancelled = false;
-
+ 
         const loadAudio = async () => {
             try {
                 setIsLoading(true);
-                // We still fetch the blob for waveform analysis, but play from streamUrl
                 const blob = await fetchMaterialBlob(materialId);
                 if (cancelled) return;
-
+ 
                 const arrayBuffer = await blob.arrayBuffer();
                 if (cancelled) return;
-
-                // OfflineAudioContext decodes without requiring a user gesture
-                // (unlike AudioContext which triggers the autoplay-policy warning).
+ 
                 try {
                     const offlineCtx = new OfflineAudioContext(1, 1, 44100);
                     const decodedData = await offlineCtx.decodeAudioData(arrayBuffer);
                     if (cancelled) return;
-
+ 
                     setAudioBuffer(decodedData);
                     setDuration(decodedData.duration);
                 } catch (decodeErr) {
-                    console.error("Waveform decode failed (falling back to standard audio playback):", decodeErr);
-                    // Non-fatal, we can still play it via HTML5 <audio>
+                    console.error("Waveform decode failed:", decodeErr);
                 }
                 
                 setIsLoading(false);
             } catch (error) {
                 console.error("Failed to load audio waveform:", error);
-                if (!cancelled) {
-                    // Not fatal for playback, but we should stop loading
-                    setIsLoading(false);
-                }
+                if (!cancelled) setIsLoading(false);
             }
         };
-
+ 
         loadAudio();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [materialId]);
+ 
+        return () => { cancelled = true; };
+    }, [materialId, fileKey]);
 
     const drawWaveform = useCallback((buffer: AudioBuffer, color: string, canvasEl: HTMLCanvasElement) => {
         const ctx = canvasEl.getContext("2d");
@@ -142,10 +128,8 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
         }
     }, []);
 
-    // Redraw waveform when theme changes
     useEffect(() => {
         if (!audioBuffer || !canvasRef.current) return;
-        // Increased contrast for light mode (0.3 instead of 0.2)
         const bgColor = isDark ? "rgba(148, 163, 184, 0.2)" : "rgba(100, 116, 139, 0.35)";
         drawWaveform(audioBuffer, bgColor, canvasRef.current);
     }, [audioBuffer, drawWaveform, isDark]);
@@ -161,15 +145,11 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
     };
 
     const handleTimeUpdate = () => {
-        if (audioRef.current) {
-            setCurrentTime(audioRef.current.currentTime);
-        }
+        if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
     };
 
     const handleLoadedMetadata = () => {
-        if (audioRef.current) {
-            setDuration(audioRef.current.duration);
-        }
+        if (audioRef.current) setDuration(audioRef.current.duration);
     };
 
     const handleSeek = (time: number) => {
@@ -194,16 +174,12 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
 
     const changePlaybackRate = (rate: number) => {
         setPlaybackRate(rate);
-        if (audioRef.current) {
-            audioRef.current.playbackRate = rate;
-        }
+        if (audioRef.current) audioRef.current.playbackRate = rate;
     };
 
     const toggleMute = () => {
         setIsMuted(!isMuted);
-        if (audioRef.current) {
-            audioRef.current.muted = !isMuted;
-        }
+        if (audioRef.current) audioRef.current.muted = !isMuted;
     };
 
     const handleVolumeChange = (v: number) => {
@@ -215,7 +191,6 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
         }
     };
 
-    // Sync initial state when loading finishes and ref is attached
     useEffect(() => {
         if (!isLoading && audioRef.current) {
             audioRef.current.playbackRate = playbackRate;
@@ -225,20 +200,8 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
     }, [isLoading, playbackRate, volume, isMuted]);
 
     return (
-        <div 
-            ref={containerRef} 
-            className={`flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
-        >
-            <ViewerToolbar 
-                right={
-                    <FullscreenToggle 
-                        isFullscreen={isFullscreen} 
-                        onToggle={toggleFullscreen} 
-                        disabled={isLoading}
-                    />
-                }
-            />
-            <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8 w-full bg-zinc-200 dark:bg-zinc-800/50 overflow-auto">
+        <ViewerShell loading={false} error={null}>
+            <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8 w-full h-full">
                 <div className="w-full max-w-4xl mx-auto flex flex-col items-center justify-center">
             {isLoading ? (
                 <div className="flex flex-col items-center gap-6">
@@ -255,11 +218,9 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                 </div>
             ) : (
                 <div className="w-full relative overflow-hidden bg-card text-card-foreground rounded-[2.5rem] border shadow-2xl transition-colors duration-300 border-border/50 dark:border-white/5">
-                    {/* Background Glow */}
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-1/2 bg-primary/5 blur-[120px] pointer-events-none" />
 
                     <div className="relative p-6 md:p-10 space-y-10">
-                        {/* Waveform Visualizer & Seeker */}
                         <div className="relative group cursor-pointer select-none">
                             <div className="flex items-center justify-between mb-4 px-1">
                                 <div className="flex items-center gap-3">
@@ -276,10 +237,7 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                             <div className="relative h-24 md:h-32 transition-transform duration-300 group-hover:scale-[1.01] rounded-xl overflow-hidden">
                                 {audioBuffer ? (
                                     <>
-                                        {/* Background Waveform */}
                                         <canvas ref={canvasRef} className="w-full h-full block" />
-                                        
-                                        {/* Progress Waveform (Primary Color) */}
                                         <div 
                                             className="absolute inset-0 pointer-events-none overflow-hidden transition-[clip-path] duration-150 ease-out"
                                             style={{ clipPath: `inset(0 ${100 - (currentTime / duration) * 100}% 0 0)` }}
@@ -301,11 +259,7 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                                         <Music className="h-8 w-8 text-muted-foreground/30 z-10" />
                                     </div>
                                 )}
-
-                                {/* Hover Seeker Line */}
                                 <div className="absolute inset-y-0 w-px bg-foreground/20 dark:bg-white/20 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity" id="hover-line" />
-
-                                {/* Interactive Overlay */}
                                 <div 
                                     className="absolute inset-0 z-10"
                                     onClick={(e) => {
@@ -325,9 +279,7 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                             </div>
                         </div>
 
-                        {/* Controls Section */}
                         <div className="flex flex-col sm:flex-row items-center justify-between gap-8 pt-4 border-t border-border/50 dark:border-white/5">
-                            {/* Speed Selector */}
                             <div className="flex items-center gap-4">
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
@@ -353,60 +305,26 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                                 </DropdownMenu>
                             </div>
 
-                            {/* Main Playback Controls */}
                             <div className="flex items-center gap-8">
-                                <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-12 w-12 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full transition-all active:scale-90" 
-                                    onClick={() => skip(-10)}
-                                >
+                                <Button variant="ghost" size="icon" className="h-12 w-12 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full transition-all active:scale-90" onClick={() => skip(-10)}>
                                     <RotateCcw className="h-6 w-6" />
                                 </Button>
-                                
-                                <Button 
-                                    size="icon" 
-                                    className="h-20 w-20 rounded-full shadow-lg bg-foreground hover:bg-foreground text-background hover:scale-105 active:scale-95 transition-all duration-300 group relative border-4 border-background dark:border-transparent" 
-                                    onClick={togglePlay}
-                                >
+                                <Button size="icon" className="h-20 w-20 rounded-full shadow-lg bg-foreground hover:bg-foreground text-background hover:scale-105 active:scale-95 transition-all duration-300 group relative border-4 border-background dark:border-transparent" onClick={togglePlay}>
                                     <div className="absolute inset-0 rounded-full bg-primary opacity-0 group-hover:opacity-10 transition-opacity" />
-                                    {isPlaying ? (
-                                        <Pause className="h-8 w-8 fill-current" />
-                                    ) : (
-                                        <Play className="h-8 w-8 fill-current ml-1" />
-                                    )}
+                                    {isPlaying ? <Pause className="h-8 w-8 fill-current" /> : <Play className="h-8 w-8 fill-current ml-1" />}
                                 </Button>
-
-                                <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-12 w-12 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full transition-all active:scale-90" 
-                                    onClick={() => skip(10)}
-                                >
+                                <Button variant="ghost" size="icon" className="h-12 w-12 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full transition-all active:scale-90" onClick={() => skip(10)}>
                                     <RotateCw className="h-6 w-6" />
                                 </Button>
                             </div>
 
-                            {/* Volume Stack */}
                             <div className="flex items-center gap-4 min-w-[140px] justify-end group/volume">
-                                <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-10 w-10 text-muted-foreground hover:text-foreground rounded-full transition-colors" 
-                                    onClick={toggleMute}
-                                >
-                                    {isMuted || volume === 0 ? (
-                                        <VolumeX className="h-5 w-5" />
-                                    ) : (
-                                        <Volume2 className="h-5 w-5" />
-                                    )}
+                                <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-foreground rounded-full transition-colors" onClick={toggleMute}>
+                                    {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
                                 </Button>
                                 <div className="relative w-24 h-1.5 flex items-center">
                                     <input
-                                        type="range"
-                                        min={0}
-                                        max={1}
-                                        step={0.01}
+                                        type="range" min={0} max={1} step={0.01}
                                         value={isMuted ? 0 : volume}
                                         onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
                                         className="w-full h-full bg-muted-foreground/20 dark:bg-muted rounded-full appearance-none cursor-pointer accent-foreground transition-all group-hover/volume:h-2"
@@ -415,20 +333,15 @@ export function AudioPlayer({ materialId }: AudioPlayerProps) {
                             </div>
                         </div>
                     </div>
-                    
-                    {/* Hidden Audio Element */}
                     <audio
-                        ref={audioRef}
-                        src={streamUrl}
-                        onTimeUpdate={handleTimeUpdate}
-                        onLoadedMetadata={handleLoadedMetadata}
-                        onEnded={() => setIsPlaying(false)}
-                        className="hidden"
+                        ref={audioRef} src={streamUrl}
+                        onTimeUpdate={handleTimeUpdate} onLoadedMetadata={handleLoadedMetadata}
+                        onEnded={() => setIsPlaying(false)} className="hidden"
                     />
                 </div>
             )}
                 </div>
             </div>
-        </div>
+        </ViewerShell>
     );
 }

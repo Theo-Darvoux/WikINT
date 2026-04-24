@@ -134,7 +134,7 @@ async def _create_and_approve_pr(
 @pytest.fixture(autouse=True)
 def mock_pr_deps(mock_redis):
     """Mock external dependencies for PR creation."""
-    with patch("app.routers.pull_requests.object_exists", new_callable=AsyncMock) as m_exists:
+    with patch("app.services.pr.object_exists", new_callable=AsyncMock) as m_exists:
         m_exists.return_value = True
 
         async def mock_get(key: str) -> str | None:
@@ -357,10 +357,10 @@ class TestSoftDelete:
         # All should be visible with include_deleted
         for model, item_id in [(Directory, parent_id), (Directory, child_id), (Material, mat_id)]:
             result = await db_session.execute(
-                select(model).where(model.id == item_id).execution_options(include_deleted=True)
+                select(model).where(model.id == item_id).execution_options(include_deleted=True)  # type: ignore
             )
             row = result.scalar_one()
-            assert row.deleted_at is not None, f"{model.__name__} {item_id} should have deleted_at set"
+            assert row.deleted_at is not None, f"{model.__name__} {item_id} should have deleted_at set"  # type: ignore
 
     async def test_soft_deleted_material_versions_hidden(
         self, client: AsyncClient, db_session: AsyncSession
@@ -779,7 +779,7 @@ class TestRevertEndpoint:
         for model, item_id in [(Directory, parent_id), (Directory, child_id), (Material, mat_id)]:
             result = await db_session.execute(select(model).where(model.id == item_id))
             row = result.scalar_one()
-            assert row.deleted_at is None, f"{model.__name__} should be restored"
+            assert row.deleted_at is None, f"{model.__name__} should be restored"  # type: ignore
 
     async def test_revert_edit_material_restores_fields(
         self, client: AsyncClient, db_session: AsyncSession
@@ -1445,7 +1445,7 @@ class TestRevertEdgeCases:
             [{"op": "create_directory", "name": "Notified"}],
         )
 
-        with patch("app.routers.pull_requests.notify_user", new_callable=AsyncMock) as mock_notify:
+        with patch("app.services.pr.notify_user", new_callable=AsyncMock) as mock_notify:
             resp = await client.post(
                 f"/api/pull-requests/{pr_data['id']}/revert",
                 headers=_auth_headers(admin),

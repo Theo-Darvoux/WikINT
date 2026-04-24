@@ -17,19 +17,11 @@ from app.services.user import get_user_by_id
 security = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    redis: Annotated[Redis, Depends(get_redis)],
+async def _validate_access_payload(
+    payload: dict,
+    db: AsyncSession,
+    redis: Redis,
 ) -> User:
-    if not credentials:
-        raise UnauthorizedError()
-
-    try:
-        payload = decode_token(credentials.credentials)
-    except InvalidTokenError:
-        raise UnauthorizedError("Invalid token")
-
     if payload.get("type") != "access":
         raise UnauthorizedError("Invalid token type")
 
@@ -44,6 +36,24 @@ async def get_current_user(
     user = await get_user_by_id(db, user_id)
     if not user:
         raise UnauthorizedError("User not found")
+
+    return user
+
+
+async def get_current_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> User:
+    if not credentials:
+        raise UnauthorizedError()
+
+    try:
+        payload = decode_token(credentials.credentials)
+    except InvalidTokenError:
+        raise UnauthorizedError("Invalid token")
+
+    user = await _validate_access_payload(payload, db, redis)
 
     if user.role == UserRole.PENDING:
         raise ForbiddenError("Account pending admin approval", code="USER_PENDING")
@@ -68,10 +78,10 @@ async def get_optional_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-def require_role(*roles: UserRole):
+def require_role(*roles: UserRole, message: str = "Insufficient permissions"):
     async def check_role(user: CurrentUser) -> User:
         if user.role not in roles:
-            raise ForbiddenError("Insufficient permissions")
+            raise ForbiddenError(message)
         return user
 
     return check_role
@@ -107,22 +117,7 @@ async def get_user_from_token(
     except InvalidTokenError:
         raise UnauthorizedError("Invalid token")
 
-    if payload.get("type") != "access":
-        raise UnauthorizedError("Invalid token type")
-
-    jti = payload.get("jti")
-    if jti and await is_token_blacklisted(redis, jti):
-        raise UnauthorizedError("Token has been revoked")
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise UnauthorizedError("Invalid token payload")
-
-    user = await get_user_by_id(db, user_id)
-    if not user:
-        raise UnauthorizedError("User not found")
-
-    return user
+    return await _validate_access_payload(payload, db, redis)
 
 
 async def get_sse_user(

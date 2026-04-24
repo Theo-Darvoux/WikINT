@@ -1,4 +1,9 @@
-from fastapi import Query
+from fastapi import Query, Response
+
+
+def set_pagination_headers(response: Response, total_count: int) -> None:
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["Access-Control-Expose-Headers"] = "X-Total-Count"
 
 
 class PaginationParams:

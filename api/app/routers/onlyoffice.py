@@ -25,6 +25,7 @@ _EXT_TO_DOCTYPE: dict[str, str] = {
     "ods": "cell",
     "pptx": "slide",
     "ppt": "slide",
+    "pdf": "pdf",
 }
 
 _ALGORITHM = "HS256"
@@ -88,11 +89,6 @@ async def get_onlyoffice_config(
 
     # Cache key: version_number invalidates on new uploads.
     doc_key = f"{material_id_str}-v{version['version_number']}"
-    if settings.is_dev:
-        # Dev-only: bust OO's cache without uploading a new version.
-        # Remove this when iterating on config changes is no longer needed.
-        doc_key += f"-{secrets.token_hex(4)}"
-
     config: dict = {
         "documentType": doc_type,
         "document": {
@@ -102,32 +98,46 @@ async def get_onlyoffice_config(
             "url": file_url,
             "permissions": {
                 "edit": False,
-                "download": False,
-                # print: True — students can print or export to PDF via OO's menu.
-                # Intentional trade-off: "download: false" blocks direct file download but
-                # cannot prevent print-to-PDF. To enforce full exfiltration prevention,
-                # set print: False and remove the print affordance from the frontend.
+                "download": True, # Needed internally for some editor features
                 "print": True,
                 "comment": False,
                 "review": False,
-                "fillForms": False,
-                "modifyContentControl": False,
-                "modifyFilter": False,
+                "fillForms": True,
+                "modifyContentControl": True,
+                "modifyFilter": True,
+                "chat": False,
+                "copy": True,
             },
         },
         "editorConfig": {
             "mode": "view",
             "lang": "en",
+            "user": {
+                "id": str(user.id),
+                "name": user.display_name or user.email,
+                # Remove relative image URL to avoid cross-origin permission warnings
+            },
             "customization": {
                 "compactHeader": True,
+                "compactToolbar": True,
                 "hideRightMenu": True,
-                "toolbarNoTabs": True,
-                "chat": False,
-                "comments": False,
                 "help": False,
                 "plugins": False,
                 "toolbarHideFileName": True,
                 "anonymous": {"request": False},
+                "logo": {
+                    "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+                    "imageEmbedded": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+                },
+                "features": {
+                    "tabStyle": "compact",
+                },
+                "layout": {
+                    "toolbar": {
+                        "file": False,
+                        "collaboration": False,
+                    }
+                }
             },
         },
     }

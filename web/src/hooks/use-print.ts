@@ -3,8 +3,7 @@
 import { useState, useCallback } from "react";
 import { fetchMaterialBlob, fetchMaterialFile } from "@/lib/api-client";
 import { isPrintable, printInIframe } from "@/lib/print-utils";
-import { getOfficePrint } from "@/lib/office-print-registry";
-import { getMarkdownContent } from "@/lib/markdown-print-registry";
+import { getViewerPrint } from "@/lib/viewer-print-registry";
 import { toast } from "sonner";
 
 /** Print CSS for the rendered markdown iframe — prose typography + hljs github theme. */
@@ -104,7 +103,8 @@ export function usePrint({ viewerType, materialId, fileName }: UsePrintOptions) 
         }
 
         case "markdown": {
-          const renderedHtml = getMarkdownContent(materialId);
+          const entry = getViewerPrint(materialId);
+          const renderedHtml = entry?.getContent?.();
           if (renderedHtml) {
             printInIframe(renderedHtml, { title: fileName, css: MARKDOWN_PRINT_CSS });
           } else {
@@ -121,9 +121,9 @@ export function usePrint({ viewerType, materialId, fileName }: UsePrintOptions) 
         }
 
         case "office": {
-          const officePrint = getOfficePrint(materialId);
-          if (officePrint) {
-            officePrint();
+          const entry = getViewerPrint(materialId);
+          if (entry?.print) {
+            entry.print();
           } else {
             toast.info("Document is still loading. Please try again in a moment.");
             return;

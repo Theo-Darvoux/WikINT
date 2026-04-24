@@ -43,17 +43,19 @@ async def browse_path(
 ) -> dict[str, typing.Any]:
     result = await resolve_browse_path(db, path, current_user_id=user.id if user else None)
 
+    # Determine which directory to use for breadcrumbs
+    directory_id = None
     if result["type"] == "material":
-        return result
+        directory_id = result["material"].get("directory_id")
+    elif result["type"] == "directory_listing":
+        directory_id = result.get("directory", {}).get("id") if result.get("directory") else None
+    elif result["type"] == "attachment_listing":
+        # For attachments, breadcrumbs should be relative to the parent material's directory
+        directory_id = result.get("parent_material", {}).get("directory_id")
 
-    if result["type"] == "attachment_listing":
-        return result
-
-    directory = result.get("directory")
     breadcrumbs = []
-    if directory:
-        # directory is already a dict from resolve_browse_path
-        path_data = await get_directory_path(db, directory["id"])
+    if directory_id:
+        path_data = await get_directory_path(db, directory_id)
         breadcrumbs = [DirectoryBreadcrumb(**p).model_dump() for p in path_data]
 
     return {

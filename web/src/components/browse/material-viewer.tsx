@@ -276,11 +276,9 @@ export function MaterialViewer({
       <div className="flex h-full w-full overflow-hidden gap-0">
         <div className="flex-1 flex flex-col min-w-0 min-h-0 p-2 sm:p-4 md:p-6 gap-3">
           {/* Breadcrumbs */}
-          {breadcrumbs.length > 0 && !isMobile && (
-            <div>
-              <Breadcrumbs items={breadcrumbs} />
-            </div>
-          )}
+          <div>
+            <Breadcrumbs items={breadcrumbs} linkLast={true} />
+          </div>
 
           {/* Compact header */}
           <div className="flex items-center justify-between gap-3">
@@ -447,7 +445,6 @@ export function MaterialViewer({
                 fileKey={fileKey}
                 materialId={materialId}
                 fileName={fileName}
-                mimeType={mimeType}
               />
             )}
             {viewerType === "epub" && (
@@ -459,9 +456,8 @@ export function MaterialViewer({
             {viewerType === "generic" && (
               <GenericViewer
                 fileName={fileName}
-                fileSize={fileSize}
-                mimeType={mimeType}
                 materialId={materialId}
+                fileKey={fileKey}
               />
             )}
             <AnnotationSelectionTooltip

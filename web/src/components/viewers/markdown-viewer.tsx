@@ -1,16 +1,13 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
-import { Loader2 } from "lucide-react";
-import { fetchMaterialFile } from "@/lib/api-client";
-import { useFullscreen } from "@/hooks/use-fullscreen";
 import { usePinchZoom } from "@/hooks/use-pinch-zoom";
-import { FullscreenToggle } from "./fullscreen-toggle";
-import { ViewerToolbar } from "./viewer-toolbar";
-import { ZoomControls } from "./zoom-controls";
+import { useMaterialFile } from "@/hooks/use-material-file";
 import type { ThreadData } from "@/hooks/use-annotations";
 import { MarkdownRenderer } from "./markdown-renderer";
-import { registerMarkdownPrint, unregisterMarkdownPrint } from "@/lib/markdown-print-registry";
+import { registerViewerPrint, unregisterViewerPrint } from "@/lib/viewer-print-registry";
+import { ViewerShell } from "./viewer-shell";
+import { ZoomControls } from "./zoom-controls";
 
 const MIN_ZOOM = 50;
 const MAX_ZOOM = 200;
@@ -45,7 +42,6 @@ function buildHighlights(container: HTMLElement, annotations: ThreadData[]): Hig
             });
             fullText += text;
         } else if (node.nodeType === Node.ELEMENT_NODE) {
-            // Skip elements that shouldn't be searched or would break text flow
             const el = node as HTMLElement;
             if (el.tagName === "SCRIPT" || el.tagName === "STYLE") return;
             for (let i = 0; i < node.childNodes.length; i++) {
@@ -114,14 +110,26 @@ function buildHighlights(container: HTMLElement, annotations: ThreadData[]): Hig
 
 export function MarkdownViewer({ 
     materialId, 
+    fileKey,
     material, 
     annotations = [], 
     onAnnotationClick 
 }: MarkdownViewerProps) {
-    const containerRef = useRef<HTMLDivElement>(null);
     const proseRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
-    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
+    const [highlights, setHighlights] = useState<HighlightRect[]>([]);
+
+    const { content, loading, error } = useMaterialFile({
+        materialId,
+        fileKey,
+        mode: "text",
+    });
+
+    const parsedContent = useMemo(() => {
+        if (!content) return "";
+        return content.replace(/!\[\[(.*?)\]\]/g, (_, p1) => `![${p1}](${encodeURIComponent(p1)})`);
+    }, [content]);
+
     const { zoom, zoomIn, zoomOut, resetZoom } = usePinchZoom({
         initial: 100,
         min: MIN_ZOOM,
@@ -130,54 +138,24 @@ export function MarkdownViewer({
         targetRef: scrollRef,
         handleKeyboard: true,
     });
-    const [content, setContent] = useState<string>("");
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
-    const [highlights, setHighlights] = useState<HighlightRect[]>([]);
 
     useEffect(() => {
-        registerMarkdownPrint(materialId, () => proseRef.current?.innerHTML ?? null);
-        return () => unregisterMarkdownPrint(materialId);
-    }, [materialId]);
-
-    useEffect(() => {
-        let cancelled = false;
-
-        const loadContent = () => {
-            setLoading(true);
-            setError(false);
-
-            fetchMaterialFile(materialId)
-                .then((res) => res.text())
-                .then((text) => {
-                    const parsed = text.replace(/!\[\[(.*?)\]\]/g, (_, p1) => `![${p1}](${encodeURIComponent(p1)})`);
-                    if (!cancelled) setContent(parsed);
-                })
-                .catch(() => {
-                    if (!cancelled) setError(true);
-                })
-                .finally(() => {
-                    if (!cancelled) setLoading(false);
-                });
-        };
-
-        loadContent();
-
-        return () => {
-            cancelled = true;
-        };
+        registerViewerPrint(materialId, {
+            getContent: () => proseRef.current?.innerHTML ?? null
+        });
+        return () => unregisterViewerPrint(materialId);
     }, [materialId]);
 
     const rendered = useMemo(
         () =>
-            content ? (
+            parsedContent ? (
                 <MarkdownRenderer
-                    content={content}
+                    content={parsedContent}
                     materialId={materialId}
                     material={material}
                 />
             ) : null,
-        [content, materialId, material],
+        [parsedContent, materialId, material],
     );
 
     const updateHighlights = useCallback(() => {
@@ -190,12 +168,11 @@ export function MarkdownViewer({
     }, [annotations]);
 
     useEffect(() => {
-        if (!loading && !error && content) {
-            // Small delay to ensure ReactMarkdown has finished its DOM update
+        if (!loading && !error && parsedContent) {
             const timer = setTimeout(updateHighlights, 50);
             return () => clearTimeout(timer);
         }
-    }, [loading, error, content, updateHighlights]);
+    }, [loading, error, parsedContent, updateHighlights]);
 
     useEffect(() => {
         if (!proseRef.current) return;
@@ -204,54 +181,23 @@ export function MarkdownViewer({
         return () => ro.disconnect();
     }, [updateHighlights]);
 
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center p-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="flex items-center justify-center p-8 text-muted-foreground">
-                Failed to load markdown content.
-            </div>
-        );
-    }
-
     return (
-        <div 
-            ref={containerRef} 
-            className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
+        <ViewerShell
+            scrollRef={scrollRef}
+            loading={loading}
+            error={error ? "Failed to load markdown content." : null}
+            toolbarRight={
+                <ZoomControls
+                    zoom={zoom}
+                    onZoomIn={zoomIn}
+                    onZoomOut={zoomOut}
+                    onReset={resetZoom}
+                    min={MIN_ZOOM}
+                    max={MAX_ZOOM}
+                    disabled={loading || !!error}
+                />
+            }
         >
-            <ViewerToolbar 
-                isFullscreen={isFullscreen}
-                right={
-                    <>
-                        <ZoomControls
-                            zoom={zoom}
-                            onZoomIn={zoomIn}
-                            onZoomOut={zoomOut}
-                            onReset={resetZoom}
-                            min={MIN_ZOOM}
-                            max={MAX_ZOOM}
-                            disabled={loading || error}
-                        />
-                        <FullscreenToggle 
-                            isFullscreen={isFullscreen} 
-                            onToggle={toggleFullscreen} 
-                            disabled={loading || error}
-                        />
-                    </>
-                }
-            />
-            <div
-                ref={scrollRef}
-                className="flex-1 overflow-auto bg-zinc-200 dark:bg-zinc-800/50"
-                style={{ touchAction: "pan-x pan-y" }}
-            >
             <div
                 ref={proseRef}
                 className={`prose prose-sm max-w-none p-6 dark:prose-invert
@@ -290,8 +236,6 @@ export function MarkdownViewer({
                     />
                 ))}
             </div>
-            </div>
-        </div>
+        </ViewerShell>
     );
 }
-

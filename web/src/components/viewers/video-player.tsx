@@ -1,13 +1,11 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { API_BASE } from "@/lib/api-client";
 import { getAccessToken } from "@/lib/auth-tokens";
-import { useFullscreen } from "@/hooks/use-fullscreen";
-import { FullscreenToggle } from "./fullscreen-toggle";
-import { ViewerToolbar } from "./viewer-toolbar";
+import { ViewerShell } from "./viewer-shell";
 
 interface VideoPlayerProps {
     fileKey: string;
@@ -15,47 +13,33 @@ interface VideoPlayerProps {
     material: Record<string, unknown>;
 }
 
-export function VideoPlayer({ materialId, material }: VideoPlayerProps) {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
+export function VideoPlayer({ materialId, material, fileKey }: VideoPlayerProps) {
     const isMobile = useIsMobile();
     const [loading, setLoading] = useState(true);
-
+ 
     const metadata = material.metadata as Record<string, unknown> | null;
     const embedUrl = metadata?.video_url as string | undefined;
-
+ 
     const token = getAccessToken();
     const streamUrl = token 
-        ? `${API_BASE}/materials/${materialId}/file?token=${encodeURIComponent(token)}`
-        : `${API_BASE}/materials/${materialId}/file`;
+        ? `${API_BASE}/materials/${materialId}/file?token=${encodeURIComponent(token)}&v=${fileKey}`
+        : `${API_BASE}/materials/${materialId}/file?v=${fileKey}`;
 
     return (
-        <div 
-            ref={containerRef} 
-            className={`relative flex flex-col bg-background min-w-0 w-full ${isFullscreen ? "h-screen" : "h-full"}`}
-        >
-            <ViewerToolbar 
-                right={
-                    <FullscreenToggle 
-                        isFullscreen={isFullscreen} 
-                        onToggle={toggleFullscreen} 
-                        disabled={loading && !embedUrl}
-                    />
-                }
-            />
-            <div className={`flex flex-1 w-full flex-col items-center justify-center bg-zinc-200 dark:bg-zinc-800/50 p-4 ${isFullscreen ? "min-h-0" : ""}`}>
+        <ViewerShell loading={false} error={null}>
+            <div className="flex h-full w-full items-center justify-center">
                 {embedUrl ? (
-                    <div className="aspect-video w-full max-w-5xl">
+                    <div className="h-full w-full">
                         <iframe
                             src={embedUrl}
-                            className="h-full w-full border-0 rounded-lg shadow-2xl"
+                            className="h-full w-full border-0"
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                             allowFullScreen
                             title="Video Player"
                         />
                     </div>
                 ) : (
-                    <div className="relative aspect-video w-full max-w-4xl overflow-hidden rounded-xl bg-black shadow-2xl">
+                    <div className="relative h-full w-full bg-black">
                         {loading && (
                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-sm">
                                 <Loader2 className="h-8 w-8 animate-spin text-white" />
@@ -74,6 +58,6 @@ export function VideoPlayer({ materialId, material }: VideoPlayerProps) {
                     </div>
                 )}
             </div>
-        </div>
+        </ViewerShell>
     );
 }

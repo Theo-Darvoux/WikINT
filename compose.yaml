@@ -131,7 +131,8 @@ services:
       - frontend
 
   onlyoffice:
-    image: onlyoffice/documentserver:8.3.0
+    image: ghcr.io/euro-office/documentserver:latest
+    container_name: wikint-onlyoffice-1
     restart: unless-stopped
     stop_grace_period: 1m
     environment:
@@ -141,21 +142,21 @@ services:
       - ALLOW_PRIVATE_IP_ADDRESS=true
     networks:
       - frontend
+    extra_hosts:
+      - "localhost:host-gateway"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/healthcheck"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost/')"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
     volumes:
       - onlyoffice_data:/var/www/onlyoffice/Data
-      - onlyoffice_log:/var/log/onlyoffice
+      - eurooffice_log:/var/log/onlyoffice
     deploy:
       resources:
         limits:
-          memory: 2G
-        reservations:
-          memory: 1G
+          memory: 4G
 
   nginx:
     restart: unless-stopped
@@ -184,3 +185,4 @@ volumes:
   meilisearch_data:
   onlyoffice_data:
   onlyoffice_log:
+  eurooffice_log:

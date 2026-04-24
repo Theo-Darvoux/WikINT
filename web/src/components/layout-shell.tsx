@@ -25,6 +25,10 @@ export function LayoutShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
+  const isPublicPage = pathname === "/login" || pathname === "/login/verify" || pathname === "/privacy";
+  const isOnboardingPage = pathname === "/onboarding";
+  const isPendingPage = pathname === "/pending-approval";
+
   useEffect(() => {
     const cleanup = initAuthSync();
     return cleanup;
@@ -42,44 +46,36 @@ export function LayoutShell({ children }: { children: ReactNode }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const isPublicRoute = pathname === "/login" || pathname === "/login/verify" || pathname === "/privacy";
-    const isOnboardingRoute = pathname === "/onboarding";
-
     if (isLoading) return;
 
     if (!isAuthenticated) {
-      if (!isPublicRoute) router.push("/login");
+      if (!isPublicPage) router.push("/login");
       return;
     }
 
     // Authenticated user checks
     if (!user) return; // Wait for user data
 
-    if (user.role === "pending" && pathname !== "/pending-approval") {
+    if (user.role === "pending" && !isPendingPage) {
       router.push("/pending-approval");
       return;
     }
 
-    if (!user.onboarded && !isOnboardingRoute && !isPublicRoute) {
+    if (!user.onboarded && !isOnboardingPage && !isPublicPage) {
       router.push("/onboarding");
     }
   }, [isLoading, isAuthenticated, user, pathname, router]);
 
-  const isPublicPage = pathname === "/login" || pathname === "/login/verify" || pathname === "/privacy";
-  const isOnboardingPage = pathname === "/onboarding";
-  const isPendingPage = pathname === "/pending-approval";
-
-  // Content visibility logic
   const shouldHideContent = !isPublicPage && (
-    isLoading || 
-    !isAuthenticated || 
+    isLoading ||
+    !isAuthenticated ||
     (user && !user.onboarded && !isOnboardingPage) ||
     (user && user.role === "pending" && !isPendingPage)
   );
   const isOffline = useOffline();
 
   return (
-    <div className="flex flex-col min-h-dvh">
+    <div className="flex flex-col h-dvh overflow-hidden">
       {/* Offline banner (U4) */}
       <div
         className={cn(
@@ -93,7 +89,7 @@ export function LayoutShell({ children }: { children: ReactNode }) {
         You appear to be offline. Some features may not work.
       </div>
       {!shouldHideContent && <Navbar />}
-      <main className="flex-1 w-full grid grid-cols-1 min-h-0 overflow-x-hidden">
+      <main className="flex-1 w-full grid grid-cols-1 min-h-0 overflow-y-auto overflow-x-hidden">
         {shouldHideContent ? (
           <div className="flex flex-col items-center justify-center min-h-[50vh] animate-in fade-in duration-500">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4" />
