@@ -675,3 +675,32 @@ class TestEditOperations:
 
         await db_session.refresh(d)
         assert d.name == "NewDirName"
+
+
+class TestModeratorAutoApprove:
+    @pytest.mark.asyncio
+    async def test_moderator_auto_approve(self, client: AsyncClient, db_session: AsyncSession) -> None:
+        """Test that moderators get auto-approved if auto_approve is True."""
+        # Create a moderator user with auto_approve enabled (default is True)
+        user = await _create_user(db_session, UserRole.MODERATOR)
+        user.auto_approve = True
+        await db_session.commit()
+
+        resp = await client.post(
+            "/api/pull-requests",
+            json={
+                "title": "Moderator Auto-Approve Test",
+                "description": "This should be auto-approved",
+                "operations": [
+                    {
+                        "op": "create_directory",
+                        "name": "ModDir",
+                    }
+                ],
+            },
+            headers=_auth_headers(user),
+        )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["status"] == "approved"
+        assert data["author_id"] == str(user.id)

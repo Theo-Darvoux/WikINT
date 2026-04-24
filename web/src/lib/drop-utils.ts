@@ -38,6 +38,9 @@ async function traverseEntry(
 ): Promise<void> {
     if (depth > MAX_TRAVERSE_DEPTH) return; // guard against very deep trees
 
+    // Skip hidden files and folders (starting with .)
+    if (entry.name.startsWith(".")) return;
+
     if (entry.isFile) {
         const file = await new Promise<File>((res, rej) =>
             (entry as FileSystemFileEntry).file(res, rej),
@@ -82,9 +85,15 @@ export async function collectDroppedItems(items: DataTransferItemList): Promise<
         const entry = (item as DataTransferItem & { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry?.();
         if (!entry) {
             const f = item.getAsFile();
-            if (f) files.push({ file: f, relativePath: f.name });
+            if (f) {
+                if (f.name.startsWith(".")) continue;
+                files.push({ file: f, relativePath: f.name });
+            }
             continue;
         }
+
+        // Skip hidden files/folders
+        if (entry.name.startsWith(".")) continue;
 
         if (entry.isFile) {
             const f = await new Promise<File>((res, rej) =>
@@ -114,11 +123,16 @@ export async function collectDroppedFiles(items: DataTransferItemList): Promise<
         // Use webkitGetAsEntry to get FileSystemEntry (supported by most modern browsers)
         const entry = (item as DataTransferItem & { webkitGetAsEntry?: () => FileSystemEntry }).webkitGetAsEntry?.();
         if (entry) {
+            // Skip hidden files/folders
+            if (entry.name.startsWith(".")) continue;
             promises.push(traverseEntry(entry, "", out, visited, 0));
         } else {
             // Fallback: no FileSystem API support
             const f = item.getAsFile();
-            if (f) out.push({ file: f, relativePath: f.name });
+            if (f) {
+                if (f.name.startsWith(".")) continue;
+                out.push({ file: f, relativePath: f.name });
+            }
         }
     }
     await Promise.all(promises);

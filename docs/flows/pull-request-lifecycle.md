@@ -76,7 +76,7 @@ The UI disables PR submission if any referenced uploads have expired.
 
 ### Step 2.4: Auto-Approval (Privileged Users)
 
-If the author has `BUREAU` or `VIEUX` roles:
+If the author has a staff role (`MODERATOR`, `BUREAU`, or `VIEUX`) and has enabled auto-approval:
 1. The PR status is set directly to `APPROVED`.
 2. `apply_pr()` is executed immediately in the same transaction.
 3. `pr_file_claims` are released.
@@ -244,7 +244,7 @@ MeiliSearch:
 
 ### Step 4.0: Direct Submission (Auto-approval)
 
-Privileged users (`BUREAU`, `VIEUX`) can skip the review period by selecting "Direct Submit" in the UI. This triggers a `POST /api/pull-requests/submit-direct` call, which:
+Privileged users (`MODERATOR`, `BUREAU`, `VIEUX`) can skip the review period by selecting "Direct Submit" in the UI. This triggers a `POST /api/pull-requests/submit-direct` call, which:
 1. Atomically creates the PR with status `APPROVED`.
 2. Immediately triggers `apply_pr()`.
 3. Returns the enriched `applied_result` in the response, allowing the UI to navigate to the new content instantly.

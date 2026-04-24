@@ -1184,7 +1184,7 @@ async def create_pull_request_service(
             )
 
     # Auto-approve for privileged users if their setting is enabled
-    if current_user.is_admin and current_user.auto_approve:
+    if current_user.is_moderator and current_user.auto_approve:
         pr.status = PRStatus.APPROVED
         pr.reviewed_by = current_user.id
         await apply_pr(db, pr, current_user.id)

@@ -71,9 +71,9 @@
 
 **Roles hierarchy:**
 - `student` - Base role. Can upload, create PRs, comment
-- `moderator` - Can approve/reject PRs (moderator)
-- `bureau` - Association leadership (all member perms + admin)
-- `vieux` - Alumni with elevated permissions
+- `moderator` - Staff role. Can approve/reject PRs and auto-approve their own contributions
+- `bureau` - Administrator role. Full access + revert permissions
+- `vieux` - Administrator role. Full access + revert permissions
 
 ### Directory
 **Table:** `directories`

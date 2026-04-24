@@ -34,7 +34,7 @@ export default function SettingsPage() {
   const { user, setUser } = useAuthStore();
   const [updating, setUpdating] = useState(false);
 
-  const isAdmin = user?.role === "bureau" || user?.role === "vieux";
+  const isStaff = user?.role === "bureau" || user?.role === "vieux" || user?.role === "moderator";
 
   const handleToggleAutoApprove = async () => {
     if (!user) return;
@@ -47,10 +47,10 @@ export default function SettingsPage() {
       });
       setUser({ ...user, auto_approve: updated.auto_approve });
       toast.success(
-        newValue ? "Auto-approbation activée" : "Auto-approbation désactivée",
+        newValue ? "Auto-approval enabled" : "Auto-approval disabled",
       );
     } catch {
-      toast.error("Échec de la mise à jour");
+      toast.error("Update failed");
     } finally {
       setUpdating(false);
     }
@@ -151,7 +151,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {isAdmin && (
+      {isStaff && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -159,16 +159,16 @@ export default function SettingsPage() {
               Contributions
             </CardTitle>
             <CardDescription>
-              Gérez comment vos modifications sont publiées sur la plateforme.
+              Manage how your modifications are published on the platform.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
               <div className="space-y-0.5">
-                <p className="text-sm font-medium">Auto-approbation</p>
+                <p className="text-sm font-medium">Auto-approval</p>
                 <p className="text-xs text-muted-foreground mr-8">
-                  Vos modifications sont publiées immédiatement sans passer par
-                  une contribution (PR) en attente.
+                  Your modifications are published immediately without going
+                  through a pending contribution (PR).
                 </p>
               </div>
               <Switch

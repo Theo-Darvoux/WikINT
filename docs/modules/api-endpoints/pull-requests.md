@@ -46,7 +46,7 @@ Creates a new pull request with a batch of operations.
 3. **Summary types extraction:** Collects the unique `op` values into `summary_types` for filtering.
 4. **Open PR limit:** Regular users are limited to a configurable number of open PRs (default: 5). Staff members (moderators, `bureau`, `vieux`) are exempt.
 5. **Operation limits:** The maximum number of operations per PR and attachments per material are also configurable, with higher limits for staff members.
-5. **Auto-approval:** For users with `BUREAU` or `VIEUX` roles, the PR is automatically approved and executed in the same transaction. The response status is `APPROVED` and `applied_result` is populated immediately.
+6. **Auto-approval:** For users with staff roles (moderator, `bureau`, or `vieux`), the PR is automatically approved and executed in the same transaction if their `auto_approve` setting is enabled. The response status is `APPROVED` and `applied_result` is populated immediately.
 
 ### `GET /api/pull-requests`
 
