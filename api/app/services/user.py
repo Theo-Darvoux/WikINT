@@ -170,87 +170,95 @@ async def get_user_contributions(
         raise BadRequestError("type must be one of: prs, materials, annotations")
 
 
+UNSET: typing.Any = object()
+
+
 async def update_user_profile(
     db: AsyncSession,
     user: User,
-    display_name: str | None = None,
-    bio: str | None = None,
-    academic_year: str | None = None,
-    avatar_url: str | None = None,
-    auto_approve: bool | None = None,
+    display_name: str | None = UNSET,
+    bio: str | None = UNSET,
+    academic_year: str | None = UNSET,
+    avatar_url: str | None = UNSET,
+    auto_approve: bool | None = UNSET,
 ) -> User:
-    if display_name is not None:
+    if display_name is not UNSET and display_name is not None:
         user.display_name = display_name
-    if bio is not None:
+    if bio is not UNSET:
         user.bio = bio
-    if academic_year is not None:
+    if academic_year is not UNSET:
         user.academic_year = academic_year
-    if auto_approve is not None:
+    if auto_approve is not UNSET and auto_approve is not None:
         user.auto_approve = auto_approve
 
-    if avatar_url is not None and avatar_url != user.avatar_url:
-        final_url = avatar_url
+    if avatar_url is not UNSET and avatar_url != user.avatar_url:
+        if avatar_url is None:
+            # Clear avatar
+            if user.avatar_url and user.avatar_url.startswith("avatars/"):
+                await delete_object(user.avatar_url)
+            user.avatar_url = None
+        else:
+            final_url = avatar_url
 
-        # Handle new avatar from quarantine
-        if avatar_url.startswith("quarantine/"):
-            # 1. Security check: Verify ownership and existence
-            stmt = select(Upload).where(
-                Upload.quarantine_key == avatar_url,
-                Upload.user_id == user.id
-            )
-            res = await db.execute(stmt)
-            upload_rec = res.scalar_one_or_none()
+            # Handle new avatar from quarantine
+            if avatar_url.startswith("quarantine/"):
+                # 1. Security check: Verify ownership and existence
+                stmt = select(Upload).where(
+                    Upload.quarantine_key == avatar_url, Upload.user_id == user.id
+                )
+                res = await db.execute(stmt)
+                upload_rec = res.scalar_one_or_none()
 
-            if not upload_rec:
-                raise BadRequestError("Invalid avatar upload key or unauthorized")
+                if not upload_rec:
+                    raise BadRequestError("Invalid avatar upload key or unauthorized")
 
-            # 2. Process and Compress (Synchronous-ish)
-            import tempfile
-            import uuid as uuid_pkg
-            from pathlib import Path
+                # 2. Process and Compress (Synchronous-ish)
+                import tempfile
+                import uuid as uuid_pkg
+                from pathlib import Path
 
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                local_input = Path(tmp_dir) / "input_avatar"
-                await download_file(avatar_url, local_input)
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    local_input = Path(tmp_dir) / "input_avatar"
+                    await download_file(avatar_url, local_input)
 
-                try:
-                    processed_path = process_avatar(local_input)
                     try:
-                        # 3. Upload to permanent avatars/ prefix
-                        avatar_uuid = uuid_pkg.uuid4()
-                        new_key = f"avatars/{user.id}/{avatar_uuid}.webp"
+                        processed_path = process_avatar(local_input)
+                        try:
+                            # 3. Upload to permanent avatars/ prefix
+                            avatar_uuid = uuid_pkg.uuid4()
+                            new_key = f"avatars/{user.id}/{avatar_uuid}.webp"
 
-                        with open(processed_path, "rb") as f:
-                            await upload_file(
-                                f.read(),
-                                new_key,
-                                content_type="image/webp",
-                                content_disposition="inline" # Avatars should be viewable inline
-                            )
-                        final_url = new_key
-                    finally:
-                        if processed_path.exists():
-                            processed_path.unlink()
-                except Exception as exc:
-                    logger.error("Avatar processing failed: %s", exc)
-                    raise BadRequestError(f"Failed to process avatar: {exc}")
+                            with open(processed_path, "rb") as f:
+                                await upload_file(
+                                    f.read(),
+                                    new_key,
+                                    content_type="image/webp",
+                                    content_disposition="inline",  # Avatars should be viewable inline
+                                )
+                            final_url = new_key
+                        finally:
+                            if processed_path.exists():
+                                processed_path.unlink()
+                    except Exception as exc:
+                        logger.error("Avatar processing failed: %s", exc)
+                        raise BadRequestError(f"Failed to process avatar: {exc}")
 
-            # 4. Cleanup quarantine
-            await delete_object(avatar_url)
+                # 4. Cleanup quarantine
+                await delete_object(avatar_url)
 
-        # Delete old avatar from permanent storage if it's being replaced
-        if (
-            user.avatar_url
-            and user.avatar_url.startswith("avatars/")
-            and user.avatar_url != final_url
-        ):
-            await delete_object(user.avatar_url)
+            # Delete old avatar from permanent storage if it's being replaced
+            if (
+                user.avatar_url
+                and user.avatar_url.startswith("avatars/")
+                and user.avatar_url != final_url
+            ):
+                await delete_object(user.avatar_url)
 
-        if final_url.startswith("quarantine/"):
-            # Safety: never let a quarantine URL into the User model
-            raise BadRequestError("Cannot set avatar to unscanned quarantine key")
+            if final_url.startswith("quarantine/"):
+                # Safety: never let a quarantine URL into the User model
+                raise BadRequestError("Cannot set avatar to unscanned quarantine key")
 
-        user.avatar_url = final_url
+            user.avatar_url = final_url
 
     await db.flush()
     return user

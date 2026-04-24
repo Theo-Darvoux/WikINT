@@ -312,7 +312,7 @@ function EditProfileForm({
         method: "PATCH",
         body: JSON.stringify({
           display_name: name || undefined,
-          bio: bio || undefined,
+          bio: bio,
           academic_year: year || undefined,
         }),
       });

@@ -60,11 +60,7 @@ async def patch_me(
     updated = await update_user_profile(
         db,
         user,
-        display_name=data.display_name,
-        bio=data.bio,
-        academic_year=data.academic_year,
-        avatar_url=data.avatar_url,
-        auto_approve=data.auto_approve,
+        **data.model_dump(exclude_unset=True),
     )
     return UserOut.model_validate(updated)
 
@@ -179,7 +175,7 @@ async def get_contributions(
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User | None, Depends(get_optional_user)] = None,
     type: Annotated[str, Query()] = "prs",
-) -> PaginatedResponse:
+) -> PaginatedResponse[typing.Any]:
     target = await get_user_by_id(db, user_id)
     if not target:
         raise NotFoundError("User not found")
