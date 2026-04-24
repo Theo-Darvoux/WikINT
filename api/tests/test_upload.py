@@ -79,12 +79,6 @@ async def test_upload_extension_not_allowed(client: AsyncClient, db_session: Asy
     assert "not supported" in response.json()["detail"]
 
 
-@patch("app.routers.upload.direct.get_s3_client")
-async def test_upload_too_large(
-    mock_s3_client, client: AsyncClient, db_session: AsyncSession
-) -> None:
-    mock_s3 = AsyncMock()
-    mock_s3_client.return_value.__aenter__.return_value = mock_s3
 
 @pytest.mark.asyncio
 @patch("app.routers.upload.direct.get_s3_client")

@@ -91,9 +91,9 @@ async def test_patch_storage_settings(
     assert r.status_code == 200
     data = r.json()
 
-    _SECRET_FIELDS = {"s3_access_key", "s3_secret_key"}
+    secret_fields = {"s3_access_key", "s3_secret_key"}
     for key, val in patch_data.items():
-        if key in _SECRET_FIELDS:
+        if key in secret_fields:
             assert data.get(f"{key}_set") is True, f"{key}_set must be True after setting"
             assert key not in data, f"Secret {key} must not appear in API response"
         else:

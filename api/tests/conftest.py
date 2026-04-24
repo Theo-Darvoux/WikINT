@@ -155,6 +155,9 @@ class FakeRedis:
         self.data[name] = str(value).encode() if isinstance(value, (str, int)) else value
         return True
 
+    async def setex(self, name, time, value):
+        return await self.set(name, value, ex=time)
+
     async def expire(self, name, time):
         pass
 
@@ -334,6 +337,7 @@ def fake_redis_setup(mock_redis):
     mock_redis.hget.side_effect = fr.hget
     mock_redis.get.side_effect = fr.get
     mock_redis.set.side_effect = fr.set
+    mock_redis.setex.side_effect = fr.setex
     mock_redis.expire.side_effect = fr.expire
     mock_redis.delete.side_effect = fr.delete
     mock_redis.mget.side_effect = fr.mget

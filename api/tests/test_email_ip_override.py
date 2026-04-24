@@ -1,5 +1,7 @@
 from unittest.mock import AsyncMock, patch
+
 import pytest
+
 from app.core.email import send_email
 from app.models.auth_config import AuthConfig
 

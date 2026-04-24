@@ -100,7 +100,9 @@ async def request_code(
 
     magic_token = auth_service.generate_magic_token()
     await auth_service.store_magic_token(redis, email, magic_token)
-    magic_link = f"{settings.frontend_url}/login/verify?token={magic_token}"
+
+    base_url = settings.frontend_url.rstrip("/")
+    magic_link = f"{base_url}/login/verify?token={magic_token}"
 
     config = await auth_service.get_auth_config(db)
     try:

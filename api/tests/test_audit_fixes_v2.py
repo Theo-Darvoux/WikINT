@@ -18,7 +18,6 @@ Covers (in issue order):
   #17 validate_email_for_auth comment/logic corrected
 """
 
-import asyncio
 import json
 from unittest.mock import AsyncMock, patch
 
@@ -198,7 +197,6 @@ async def test_google_oauth_verify_runs_in_thread(
 
     call_thread_ids: list = []
 
-    original_to_thread = asyncio.to_thread
 
     async def spy_to_thread(fn, *args, **kwargs):
         call_thread_ids.append(fn)
@@ -210,7 +208,7 @@ async def test_google_oauth_verify_runs_in_thread(
         }
 
     with patch("app.routers.auth.asyncio.to_thread", side_effect=spy_to_thread):
-        response = await client.post(
+        await client.post(
             "/api/auth/google",
             json={"credential": "fake_token"},
         )
