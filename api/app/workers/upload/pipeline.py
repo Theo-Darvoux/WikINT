@@ -332,6 +332,35 @@ class UploadPipeline:
         except Exception as exc:
             logger.warning("Failed to delete quarantine object on finalize: %s", exc)
 
+        # Fire-and-forget MalwareBazaar check. YARA already gated promotion; Bazaar
+        # runs asynchronously so users don't wait ~6 s. If Bazaar flags the file later,
+        # retroactive_quarantine() deletes it from storage and marks the DB row malicious.
+        if settings.bazaar_async_enabled:
+            from app.core import redis as redis_core
+
+            if redis_core.arq_pool is not None:
+                try:
+                    await redis_core.arq_pool.enqueue_job(
+                        "check_bazaar",
+                        upload_id=self.upload_id,
+                        sha256=self.original_sha256,
+                        cas_s3_key=final_res.final_key,
+                        user_id=self.user_id,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to enqueue check_bazaar for upload %s: %s — "
+                        "file remains promoted; Bazaar check skipped.",
+                        self.upload_id,
+                        exc,
+                    )
+            else:
+                logger.warning(
+                    "arq_pool unavailable — check_bazaar skipped for upload %s "
+                    "(degraded mode: file promoted without async Bazaar verification).",
+                    self.upload_id,
+                )
+
         self._record_pipeline_metrics("clean")
         upload_file_size.labels(mime_category=self.mime_category).observe(self.initial_size)
         if self.initial_size > 0 and final_res.final_size > 0:

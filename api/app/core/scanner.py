@@ -58,16 +58,31 @@ class MalwareScanner:
         *,
         bazaar_hash: str | None = None,
     ) -> None:
-        """Run YARA + MalwareBazaar scans concurrently. Raises on threat or scanner failure."""
+        """Run YARA scan. When bazaar_async_enabled=True, Bazaar is skipped here and
+        run asynchronously by the check_bazaar background worker after promotion.
+        """
         if bazaar_hash is not None:
             sha256 = bazaar_hash
         else:
-            # Non-blocking hash calculation
             sha256 = await asyncio.to_thread(lambda: hashlib.sha256(file_bytes).hexdigest())
 
-        yara_result, bazaar_result = await asyncio.gather(
+        if settings.bazaar_async_enabled:
+            # Async mode: YARA-only gate — Bazaar runs in background after promotion.
+            yara_result = await self._scan_yara(file_bytes, filename)
+            if isinstance(yara_result, Exception):
+                logger.error("YARA scan failed for %s: %s", filename, yara_result)
+                raise ServiceUnavailableError(
+                    "Malware scan is temporarily unavailable (fail-closed). Please retry in a few moments."
+                )
+            if yara_result is not None:
+                logger.warning("YARA match in %s: %s", filename, yara_result)
+                raise BadRequestError(f"ERR_MALWARE_DETECTED: {yara_result}")
+            return
+
+        # Legacy synchronous mode: YARA + Bazaar run concurrently.
+        yara_result, bazaar_result = await asyncio.gather(  # type: ignore[assignment]
             self._scan_yara(file_bytes, filename),
-            self._check_malwarebazaar(sha256, filename),
+            self.check_malwarebazaar(sha256, filename),
             return_exceptions=True,
         )
 
@@ -90,12 +105,12 @@ class MalwareScanner:
                 "Malware scan is temporarily unavailable (fail-closed). Please retry in a few moments."
             )
 
-        # Check for detections — log all before raising
-        threats = []
-        if yara_result is not None:
-            threats.append(("YARA", yara_result))
-        if bazaar_result is not None:
-            threats.append(("MalwareBazaar", bazaar_result))
+        # At this point neither result is an Exception (errors would have raised).
+        threats: list[tuple[str, str]] = []
+        if yara_result is not None and not isinstance(yara_result, Exception):
+            threats.append(("YARA", str(yara_result)))
+        if bazaar_result is not None and not isinstance(bazaar_result, Exception):
+            threats.append(("MalwareBazaar", str(bazaar_result)))
 
         if threats:
             for source, threat in threats:
@@ -110,7 +125,9 @@ class MalwareScanner:
         *,
         bazaar_hash: str | None = None,
     ) -> None:
-        """Run YARA + MalwareBazaar scans concurrently on a file path."""
+        """Run YARA scan on a file path. When bazaar_async_enabled=True, Bazaar is skipped
+        here and run asynchronously by the check_bazaar background worker after promotion.
+        """
         if bazaar_hash is None:
 
             def _hash_file() -> str:
@@ -124,9 +141,24 @@ class MalwareScanner:
 
         if bazaar_hash is None:
             raise RuntimeError("Malware hash calculation failed")
-        yara_result, bazaar_result = await asyncio.gather(
+
+        if settings.bazaar_async_enabled:
+            # Async mode: YARA-only gate — Bazaar runs in background after promotion.
+            yara_result = await self._scan_yara_path(file_path, filename)
+            if isinstance(yara_result, Exception):
+                logger.error("YARA scan failed for %s: %s", filename, yara_result)
+                raise ServiceUnavailableError(
+                    "Malware scan is temporarily unavailable (fail-closed). Please retry in a few moments."
+                )
+            if yara_result is not None:
+                logger.warning("YARA match in %s: %s", filename, yara_result)
+                raise BadRequestError(f"ERR_MALWARE_DETECTED: {yara_result}")
+            return
+
+        # Legacy synchronous mode: YARA + Bazaar run concurrently.
+        yara_result, bazaar_result = await asyncio.gather(  # type: ignore[assignment]
             self._scan_yara_path(file_path, filename),
-            self._check_malwarebazaar(bazaar_hash, filename),
+            self.check_malwarebazaar(bazaar_hash, filename),
             return_exceptions=True,
         )
 
@@ -149,12 +181,12 @@ class MalwareScanner:
                 "Malware scan is temporarily unavailable (fail-closed). Please retry in a few moments."
             )
 
-        # Check for detections — log all before raising
-        threats = []
-        if yara_result is not None:
-            threats.append(("YARA", yara_result))
-        if bazaar_result is not None:
-            threats.append(("MalwareBazaar", bazaar_result))
+        # At this point neither result is an Exception (errors would have raised).
+        threats: list[tuple[str, str]] = []
+        if yara_result is not None and not isinstance(yara_result, Exception):
+            threats.append(("YARA", str(yara_result)))
+        if bazaar_result is not None and not isinstance(bazaar_result, Exception):
+            threats.append(("MalwareBazaar", str(bazaar_result)))
 
         if threats:
             for source, threat in threats:
@@ -204,11 +236,14 @@ class MalwareScanner:
             return cast(str, rule_names[0])
         return None
 
-    async def _check_malwarebazaar(self, sha256: str, filename: str) -> str | None:
+    async def check_malwarebazaar(self, sha256: str, filename: str) -> str | None:
         """Query MalwareBazaar for known malware by SHA-256 hash.
 
-        This check is 'fail-soft': if the service is down or times out, we log a warning
-        and return None, allowing local YARA rules to remain the authoritative gatekeeper.
+        Returns the threat signature name if flagged, or None if clean.
+        Network/timeout errors are re-raised so callers can handle fail-closed logic.
+
+        Used both by the legacy synchronous scan path (bazaar_async_enabled=False) and
+        by the check_bazaar background worker.
         """
         if self.client is None:
             logger.error("Scanner HTTP client not initialized")

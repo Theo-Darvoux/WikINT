@@ -29,6 +29,13 @@ Centralizes all application configuration via Pydantic Settings. Environment var
 |---------|---------|---------|
 | `redis_url` | redis://localhost:6379/0 | Shared by rate limiter, cache, ARQ |
 
+### Meilisearch
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `meili_url` | http://localhost:7700 | Meilisearch server endpoint |
+| `meili_master_key` | change-me | Administrative key for index management |
+| `meili_search_key` | None | Search-only key for public search route (falls back to master in dev) |
+
 ### S3 / Object Storage
 | Setting | Default | Purpose |
 |---------|---------|---------|

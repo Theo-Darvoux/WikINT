@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     # When True, a MalwareBazaar timeout/error fails the scan (fail-closed).
     # When False (default), YARA remains the authoritative gatekeeper on API failure.
     malwarebazaar_fail_closed: bool = True
+    # When True, MalwareBazaar runs as a background ARQ job after YARA-only promotion.
+    # YARA remains the synchronous gate; Bazaar flags trigger retroactive quarantine.
+    # Set to False to restore the legacy synchronous behaviour (blocks ~6 s per upload).
+    bazaar_async_enabled: bool = True
+    # When True, retroactive quarantine also soft-deletes any approved MaterialVersion
+    # rows that reference the flagged cas/ S3 key.
+    bazaar_retroactive_check_materials: bool = True
 
     smtp_host: str = "smtp.example.com"
     smtp_ip: str | None = None

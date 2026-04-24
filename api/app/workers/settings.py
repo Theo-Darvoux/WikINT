@@ -2,6 +2,8 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 
 from app.config import settings
+from typing import Any
+from app.workers.check_bazaar import check_bazaar
 from app.workers.cleanup_uploads import cleanup_uploads
 from app.workers.gdpr_cleanup import gdpr_cleanup
 from app.workers.index_content import (
@@ -19,7 +21,7 @@ from app.workers.webhook_dispatch import dispatch_webhook
 from app.workers.year_rollover import year_rollover
 
 
-async def startup(ctx: dict) -> None:
+async def startup(ctx: dict[str, Any]) -> None:
     import shutil
 
     if not shutil.which("bwrap"):
@@ -55,7 +57,7 @@ async def startup(ctx: dict) -> None:
     ctx["db_sessionmaker"] = async_sessionmaker(engine, expire_on_commit=False)
 
 
-async def shutdown(ctx: dict) -> None:
+async def shutdown(ctx: dict[str, Any]) -> None:
     scanner = ctx.get("scanner")
     if scanner is not None:
         await scanner.close()
@@ -85,6 +87,7 @@ class WorkerSettings:
         process_upload,
         dispatch_webhook,
         reset_14d_views,
+        check_bazaar,
     ]
     cron_jobs = [
         cron(cleanup_uploads, hour=3, minute=0),
@@ -103,7 +106,7 @@ class UploadFastWorkerSettings:
 
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     queue_name = UPLOAD_FAST_QUEUE
-    functions = [process_upload]
+    functions = [process_upload, check_bazaar]
     on_startup = startup
     on_shutdown = shutdown
 
@@ -113,6 +116,6 @@ class UploadSlowWorkerSettings:
 
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     queue_name = UPLOAD_SLOW_QUEUE
-    functions = [process_upload]
+    functions = [process_upload, check_bazaar]
     on_startup = startup
     on_shutdown = shutdown

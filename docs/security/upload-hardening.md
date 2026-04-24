@@ -5,9 +5,11 @@
 Every uploaded file passes through multiple security gates before it can be served to any user:
 
 ```
-Client Upload → Quarantine → YARA Scan → MalwareBazaar → PDF Safety Check
-    → Metadata Strip → Compression → Staging (uploads/) → PR Approval → Published (materials/)
+Client Upload → Quarantine → YARA Scan → PDF Safety Check → Metadata Strip → Compression
+    → Staging (uploads/) → [Asynchronous MalwareBazaar] → PR Approval → Published (materials/)
 ```
+
+*Note: MalwareBazaar runs asynchronously after the file has been staged but before it is approved. If a threat is detected retroactively, the file is automatically quarantined.*
 
 No shortcut exists. Even if a bug in the upload router somehow skipped validation, the `generate_presigned_get()` function contains a hard-coded check that refuses to generate download URLs for any key starting with `quarantine/`.
 
@@ -27,21 +29,12 @@ The scanner is instantiated once during app startup and stored in `app.state.sca
 
 ### Dual-Engine Scanning
 
-YARA and MalwareBazaar scans run **concurrently** via `asyncio.gather`:
+Scanning utilizes both YARA (local) and MalwareBazaar (external API). By default, these are decoupled to optimize upload performance:
 
-```python
-yara_result, bazaar_result = await asyncio.gather(
-    self._scan_yara(file_bytes, filename),
-    self._check_malwarebazaar(sha256, filename),
-    return_exceptions=True,
-)
-```
+1. **Synchronous (YARA)**: Files are scanned locally against YARA rules before promotion. This is the primary gate.
+2. **Asynchronous (MalwareBazaar)**: Controlled by `bazaar_async_enabled` (default: `True`). The Bazaar lookup happens in a background worker after promotion to staging.
 
-Using `return_exceptions=True` means both scans complete even if one fails. The results are then checked:
-
-1. **If either scan raised an exception:** The upload is rejected (fail-closed). The error message says "temporarily unavailable" rather than exposing internal details.
-2. **If either scan detected a threat:** The upload is rejected with `ERR_MALWARE_DETECTED`.
-3. **If both return None:** The file is clean.
+If `bazaar_async_enabled` is set to `False`, the scanner falls back to the legacy concurrent behavior where both run synchronously via `asyncio.gather`.
 
 ### YARA Scanning
 
@@ -56,8 +49,28 @@ Queries the abuse.ch MalwareBazaar API by SHA-256 hash:
 - `hash_not_found` / `no_results` → clean
 - `ok` → known malware, extract signature name
 - Timeout/HTTP error → controlled by `malwarebazaar_fail_closed` setting:
-  - `true` (default): Propagate exception → fail-closed
+  - `true` (default): Propagate exception → fail-closed (or background retry)
   - `false`: Log warning, return None (YARA is authoritative)
+
+## Asynchronous MalwareBazaar & Retroactive Quarantine
+
+To avoid the ~6-second latency of external API lookups during file uploads, MalwareBazaar is integrated as a "fire-and-forget" background job.
+
+### The Flow
+1. **Sync Stage**: File passes YARA scan and is promoted to the `uploads/` (staging) prefix.
+2. **Enqueue**: Upon successful promotion, the `check_bazaar` background job is enqueued in the `upload` worker queue.
+3. **Background Lookup**: The worker queries MalwareBazaar. To prevent redundant API calls, a tombstone is written to Redis (`bazaar:clean:{sha256}`) for 24 hours upon a "CLEAN" result.
+4. **Retroactive Hit**: If Bazaar returns a threat hit, the `retroactive_quarantine` module is triggered.
+
+### Retroactive Quarantine Logic
+If a file previously marked as "clean" is later identified as a threat:
+- **Database**: The `Upload` row status is changed to `malicious` and `error_detail` is updated with the threat name.
+- **CAS Refcounting**: The CAS reference count is decremented. If the count reaches 0, the physical S3 object in `cas/` is deleted.
+- **Material Versions**: If `bazaar_retroactive_check_materials` is enabled, any approved `MaterialVersion` entries referencing the file are soft-deleted. If a `Material` has no surviving versions, it is also soft-deleted.
+- **Quota**: The user's upload quota slot is released.
+- **SSE Notification**: A `MALICIOUS` event is pushed to the uploader's browser via SSE, allowing the UI to react in real-time even if the user has already navigated away from the upload page.
+
+All retroactive operations are **idempotent** and defensive, ensuring that the system remains consistent even if a job is retried or multiple files share the same hash.
 
 ### Backward Compatibility
 
