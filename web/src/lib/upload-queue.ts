@@ -54,6 +54,15 @@ export interface QueueItem {
 
     /** Relative directory path from drop root, e.g. "FolderA/sub". "" = current dir. */
     targetDirPath: string;
+
+    /**
+     * When true, this item came from a batch-zip extraction.
+     * The quarantine key is already reserved on the server; no File object is needed.
+     * The upload engine will skip directly to SSE tracking.
+     */
+    isFromBatchZip?: boolean;
+    /** Name of the source folder, set for batch-zip items and placeholder zip items. */
+    folderName?: string;
 }
 
 interface UploadQueueState {

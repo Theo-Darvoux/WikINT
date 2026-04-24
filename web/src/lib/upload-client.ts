@@ -808,6 +808,119 @@ function _handleUploadEvent(
     }
 }
 
+// ── Batch-zip types and helpers ───────────────────────────────────────────────
+
+export interface BatchZipEntry {
+    filename: string;
+    relative_path: string;
+    quarantine_key: string;
+    upload_id: string;
+    size: number;
+    mime_type: string;
+}
+
+export interface BatchZipResponse {
+    files: BatchZipEntry[];
+    skipped: number;
+    errors: string[];
+}
+
+/**
+ * Track an already-uploaded file that is sitting in quarantine waiting for
+ * pipeline processing.  Used for files extracted from a batch-zip upload —
+ * the zip endpoint already placed them in quarantine and enqueued the ARQ job;
+ * the client only needs to subscribe to the SSE stream.
+ *
+ * Returns the same UploadResult shape as uploadFile().
+ */
+export async function trackExistingUpload(
+    quarantineKey: string,
+    options: Pick<UploadFileOptions, "onProgress" | "onStatusUpdate" | "signal"> = {},
+): Promise<UploadResult> {
+    const { onProgress, signal } = options;
+
+    onProgress?.(80);
+
+    const result = await _waitForUploadCompletion(quarantineKey, {
+        onProgress: (p) => onProgress?.(80 + Math.round(p * 19)),
+        onStatusUpdate: options.onStatusUpdate,
+        signal,
+    });
+
+    onProgress?.(100);
+
+    return {
+        file_key: result.file_key,
+        size: result.size,
+        original_size: result.original_size,
+        mime_type: result.mime_type,
+        content_encoding: result.content_encoding ?? null,
+        correctedName: result.file_name ?? result.file_key.split("/").pop() ?? quarantineKey,
+        wasCompressed: false,
+    };
+}
+
+/**
+ * Upload a zip blob to the batch-zip endpoint and return the list of
+ * individual file entries the server extracted and queued.
+ *
+ * onProgress receives 0–100 (upload transfer progress only; server-side
+ * processing for each file is tracked separately via trackExistingUpload).
+ */
+export async function uploadBatchZip(
+    zipBlob: Blob,
+    options: Pick<UploadFileOptions, "onProgress" | "signal"> = {},
+): Promise<BatchZipResponse> {
+    const { onProgress, signal } = options;
+    const token = getAccessToken();
+    const headers: Record<string, string> = { "X-Client-ID": getClientId() };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    return new Promise<BatchZipResponse>((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(new Error("Upload cancelled"));
+            return;
+        }
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                onProgress?.(Math.round((e.loaded / e.total) * 100));
+            }
+        };
+
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                    resolve(JSON.parse(xhr.responseText) as BatchZipResponse);
+                } catch {
+                    reject(new Error("Invalid response from batch-zip endpoint"));
+                }
+            } else {
+                let detail = `Batch-zip upload failed (${xhr.status})`;
+                try {
+                    const body = JSON.parse(xhr.responseText) as { detail?: string };
+                    if (body.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+                } catch { /* ignore */ }
+                reject(new ApiError(xhr.status, detail));
+            }
+        };
+
+        xhr.onerror = () => reject(new Error("Network error during batch-zip upload"));
+        xhr.onabort = () => reject(new Error("Upload cancelled"));
+
+        xhr.open("POST", `${API_BASE}/upload/batch-zip`);
+        for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+
+        signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+
+        const form = new FormData();
+        form.append("file", zipBlob, "batch.zip");
+        xhr.send(form);
+    });
+}
+
 // ── Status polling fallback ───────────────────────────────────────────────────
 
 /**

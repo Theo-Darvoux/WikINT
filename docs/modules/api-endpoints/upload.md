@@ -2,11 +2,12 @@
 
 ## Overview
 
-WikINT supports three upload methods, each suited for different file sizes and client capabilities:
+WikINT supports four upload methods:
 
 1. **Direct Upload** (`POST /api/upload`) — Stream file through the API server. Simplest, good for files < 50 MiB.
 2. **Presigned Upload** (`POST /api/upload/init` → PUT to S3 → `POST /api/upload/complete`) — Client uploads directly to S3. Better for larger files, bypasses API bandwidth. **Deprecated** (Sunset: 2027-01-01); use direct or TUS instead.
 3. **TUS Resumable Upload** (`/api/tus/*`) — Resumable protocol for unreliable connections and very large files (up to 500 MiB).
+4. **Batch-Zip Upload** (`POST /api/upload/batch-zip`) — Client zips a folder, uploads one zip; server extracts and queues each file individually through the full security pipeline.
 
 All three methods converge on the same outcome: a file in `quarantine/` and an ARQ job enqueued for async processing.
 
@@ -187,6 +188,38 @@ Clients should read `recommended_path` and `direct_threshold_mb` at startup inst
 Sets a Redis cancellation flag (`upload:cancel:{upload_id}`, 1h TTL), deletes the quarantine object from S3, and removes the entry from the user's quota sorted set. Idempotent — returns 204 even if the upload_id is not found.
 
 The background worker checks the cancellation flag between pipeline stages and aborts if set.
+
+## Batch-Zip Upload (`POST /api/upload/batch-zip`)
+
+**Input:** `multipart/form-data` with a `file` field containing a `.zip` archive (max 500 MiB).
+**Output:** `BatchZipResponse { files: BatchZipEntry[], skipped: int, errors: string[] }`
+
+Accepts a single zip file, extracts it safely, and queues each contained file for individual processing through the full security pipeline (malware scan, MIME validation, SVG sanitization, metadata strip, compression). Each `BatchZipEntry` in the response contains a `quarantine_key` the client uses to subscribe to the SSE stream via `GET /api/upload/events/{quarantine_key}`.
+
+### Flow
+
+1. Stream zip to a server-side temp file (500 MiB max)
+2. Validate zip magic bytes
+3. Phase-1 path scan: reject entire zip if any entry contains `..`, absolute path, or null bytes (zip slip)
+4. Check member count (200 regular / 2 000 privileged) and total declared uncompressed size (2 GiB)
+5. Check compression ratio ≤ 100× (zip bomb detection)
+6. Extract each member to an individual temp file with a hard byte counter (prevents decompression bombs)
+7. Skip automatically: directories, symlinks, `__MACOSX/`, `.DS_Store`, `._*`
+8. For each extracted file: validate extension → MIME detection → per-type size limit → SVG safety → quota reservation → S3 quarantine upload → ARQ job enqueue
+9. Return results (files that passed) + skipped count + per-file error messages
+10. Clean up temp directory in finally block
+
+### Security Limits
+
+| Limit | Regular | Privileged (moderator/bureau/vieux) |
+|---|---|---|
+| Zip file size | 500 MiB | 500 MiB |
+| Max extracted files | 200 | 2 000 |
+| Max total uncompressed | 2 GiB | 2 GiB |
+| Max compression ratio | 100× | 100× |
+| Max path depth | 20 levels | 20 levels |
+
+Files that fail individual validation (wrong extension, oversized, SVG unsafe, quota exceeded) are skipped with an error message; the remaining files are still processed. A zip that triggers security invariants (zip slip, zip bomb) is rejected entirely.
 
 ## CAS Deduplication Check (`POST /api/upload/check-exists`)
 

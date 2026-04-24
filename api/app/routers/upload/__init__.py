@@ -18,6 +18,7 @@ from app.routers.upload.helpers import (
     _create_upload_row,
     _enqueue_processing,
 )
+from app.routers.upload.batch_zip import router as batch_zip_router
 from app.routers.upload.presigned import router as presigned_router
 from app.routers.upload.sse import router as sse_router
 from app.routers.upload.sse import upload_events
@@ -61,6 +62,7 @@ router.add_api_route(
     status_code=202,
 )
 
+router.include_router(batch_zip_router)
 router.include_router(presigned_router)
 router.include_router(sse_router)
 router.include_router(status_router)

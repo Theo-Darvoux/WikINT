@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Sun,
   Moon,
+  Monitor,
   Zap,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -109,28 +110,44 @@ export default function SettingsPage() {
           <CardTitle className="flex items-center gap-2 text-base">
             {theme === "dark" ? (
               <Moon className="h-4 w-4" />
-            ) : (
+            ) : theme === "light" ? (
               <Sun className="h-4 w-4" />
+            ) : (
+              <Monitor className="h-4 w-4" />
             )}
             Appearance
           </CardTitle>
-          <CardDescription>Switch between light and dark mode.</CardDescription>
+          <CardDescription>
+            Choose your preferred theme or follow system settings.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button
-            variant="outline"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          >
-            {theme === "dark" ? (
-              <>
-                <Sun className="mr-2 h-4 w-4" /> Switch to light mode
-              </>
-            ) : (
-              <>
-                <Moon className="mr-2 h-4 w-4" /> Switch to dark mode
-              </>
-            )}
-          </Button>
+          <div className="grid grid-cols-3 gap-2">
+            <Button
+              variant={theme === "light" ? "default" : "outline"}
+              className="w-full"
+              onClick={() => setTheme("light")}
+            >
+              <Sun className="mr-2 h-4 w-4" />
+              Light
+            </Button>
+            <Button
+              variant={theme === "dark" ? "default" : "outline"}
+              className="w-full"
+              onClick={() => setTheme("dark")}
+            >
+              <Moon className="mr-2 h-4 w-4" />
+              Dark
+            </Button>
+            <Button
+              variant={theme === "system" ? "default" : "outline"}
+              className="w-full"
+              onClick={() => setTheme("system")}
+            >
+              <Monitor className="mr-2 h-4 w-4" />
+              System
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

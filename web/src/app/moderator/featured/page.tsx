@@ -1,12 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, Star, CalendarRange, ExternalLink } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Plus, Trash2, Star, CalendarRange, ExternalLink, Check, ChevronsUpDown, Search, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { useSearch } from "@/components/search/use-search";
 import {
   Dialog,
   DialogContent,
@@ -49,11 +64,81 @@ function formatDateRange(startAt: string, endAt: string): string {
   return `${fmt(startAt)} → ${fmt(endAt)}`;
 }
 
-function toLocalDatetimeInput(isoString?: string): string {
-  if (!isoString) return "";
-  const d = new Date(isoString);
+function toLocalDateInput(isoString?: string | Date): string {
+  const d = isoString ? new Date(isoString) : new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function MaterialSearch({ onSelect }: { onSelect: (id: string, title: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const { results, loading } = useSearch(query);
+  const [selectedTitle, setSelectedTitle] = useState("");
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal h-10 px-3"
+        >
+          <span className="truncate">
+            {selectedTitle || <span className="text-muted-foreground">Search materials...</span>}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Type material title..."
+            value={query}
+            onValueChange={setQuery}
+          />
+          <CommandList className="max-h-[300px]">
+            {loading && (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-sm text-muted-foreground">Searching...</span>
+              </div>
+            )}
+            {!loading && results.length === 0 && query.length > 0 && <CommandEmpty>No materials found.</CommandEmpty>}
+            {!loading && results.length === 0 && query.length === 0 && <CommandEmpty className="py-6 text-muted-foreground">Start typing to search...</CommandEmpty>}
+            <CommandGroup>
+              {results.filter(r => r.search_type === "material").map((result) => {
+                const title = result.title || result.file_name || "Untitled";
+                return (
+                  <CommandItem
+                    key={result.id}
+                    value={result.id}
+                    onSelect={() => {
+                      setSelectedTitle(title);
+                      onSelect(result.id, title);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        selectedTitle === title ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    <div className="flex flex-col overflow-hidden">
+                      <span className="font-medium truncate">{title}</span>
+                      <span className="text-[10px] text-muted-foreground font-mono truncate">{result.id}</span>
+                    </div>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 interface AddFeaturedDialogProps {
@@ -64,18 +149,20 @@ interface AddFeaturedDialogProps {
 
 function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogProps) {
   const [materialId, setMaterialId] = useState("");
+  const [materialTitle, setMaterialTitle] = useState("");
   const [titleOverride, setTitleOverride] = useState("");
   const [descOverride, setDescOverride] = useState("");
-  const [startAt, setStartAt] = useState(toLocalDatetimeInput(new Date().toISOString()));
+  const [startAt, setStartAt] = useState(toLocalDateInput());
   const [endAt, setEndAt] = useState("");
   const [priority, setPriority] = useState<number>(0);
   const [submitting, setSubmitting] = useState(false);
 
   const resetForm = () => {
     setMaterialId("");
+    setMaterialTitle("");
     setTitleOverride("");
     setDescOverride("");
-    setStartAt(toLocalDatetimeInput(new Date().toISOString()));
+    setStartAt(toLocalDateInput());
     setEndAt("");
     setPriority(0);
   };
@@ -93,10 +180,15 @@ function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogP
 
     setSubmitting(true);
     try {
+      // Format dates to include default times: start of day for startAt, end of day for endAt
+      // We use local time by constructing the string carefully then converting to ISO
+      const startIso = new Date(`${startAt}T00:00:00`).toISOString();
+      const endIso = new Date(`${endAt}T23:59:59`).toISOString();
+
       const payload: Record<string, unknown> = {
         material_id: materialId.trim(),
-        start_at: new Date(startAt).toISOString(),
-        end_at: new Date(endAt).toISOString(),
+        start_at: startIso,
+        end_at: endIso,
         priority,
       };
       if (titleOverride.trim()) payload.title = titleOverride.trim();
@@ -130,15 +222,16 @@ function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogP
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="material-id">Material ID <span className="text-destructive" aria-hidden>*</span></Label>
-            <Input
-              id="material-id"
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              value={materialId}
-              onChange={(e) => setMaterialId(e.target.value)}
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-muted-foreground">The UUID of the material to feature.</p>
+            <Label htmlFor="material-search">Search Material <span className="text-destructive" aria-hidden>*</span></Label>
+            <MaterialSearch onSelect={(id, title) => {
+              setMaterialId(id);
+              setMaterialTitle(title);
+            }} />
+            {materialId && (
+              <p className="text-[10px] text-muted-foreground font-mono mt-1">
+                Selected: {materialId}
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -164,12 +257,14 @@ function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogP
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="start-at">Start <span className="text-destructive" aria-hidden>*</span></Label>
-              <Input id="start-at" type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+              <Label htmlFor="start-at">Start Date <span className="text-destructive" aria-hidden>*</span></Label>
+              <Input id="start-at" type="date" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+              <p className="text-[10px] text-muted-foreground italic">Starts at 00:00</p>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="end-at">End <span className="text-destructive" aria-hidden>*</span></Label>
-              <Input id="end-at" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+              <Label htmlFor="end-at">End Date <span className="text-destructive" aria-hidden>*</span></Label>
+              <Input id="end-at" type="date" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+              <p className="text-[10px] text-muted-foreground italic">Ends at 23:59</p>
             </div>
           </div>
 

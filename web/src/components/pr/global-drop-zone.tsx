@@ -6,7 +6,7 @@ import { create } from "zustand";
 import { UploadDrawer } from "@/components/pr/upload-drawer";
 import { usePathname } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
-import { collectDroppedFiles, type ScannedFile } from "@/lib/drop-utils";
+import { collectDroppedItems, type ScannedFile, type DroppedItems } from "@/lib/drop-utils";
 
 
 // ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ export function GlobalDropZone() {
     const [localDrawerOpen, setLocalDrawerOpen] = useState(false);
     const [target, setTarget] = useState<UploadTarget | null>(null);
     const dragCounterRef = useRef(0);
-    const [pendingFiles, setPendingFiles] = useState<ScannedFile[]>([]);
+    const [pendingItems, setPendingItems] = useState<DroppedItems>({ files: [], folders: [] });
 
 
     const { uploadTarget, browseContext, setDismissOverlay, clear } = useDropZoneStore();
@@ -130,7 +130,7 @@ export function GlobalDropZone() {
             setLocalDrawerOpen(open);
             if (!open) {
                 clear();
-                setPendingFiles([]);
+                setPendingItems({ files: [], folders: [] });
                 // Reset drag state — prevents the overlay from re-appearing
                 // when the drawer handled the drop internally (stopPropagation).
                 dragCounterRef.current = 0;
@@ -140,11 +140,10 @@ export function GlobalDropZone() {
         [clear],
     );
 
-    // Resolve target and open dock drawer with the given files
-    const handleFileDrop = useCallback(
-        async (files: ScannedFile[]) => {
-            setPendingFiles(files);
-
+    // Resolve target and open drawer with files + folders
+    const handleItemsDrop = useCallback(
+        async (items: DroppedItems) => {
+            setPendingItems(items);
 
             // Prefer the live browse context (tracks ghost dirs) over an API fetch
             if (browseContext) {
@@ -241,9 +240,9 @@ export function GlobalDropZone() {
             setIsDragOver(false);
 
             if (!e.dataTransfer?.items.length) return;
-            collectDroppedFiles(e.dataTransfer.items).then(handleFileDrop);
+            collectDroppedItems(e.dataTransfer.items).then(handleItemsDrop);
         },
-        [handleFileDrop],
+        [handleItemsDrop],
     );
 
 
@@ -278,7 +277,8 @@ export function GlobalDropZone() {
                     directoryId={target.directoryId}
                     directoryName={target.directoryName}
                     parentMaterialId={target.parentMaterialId}
-                    initialFiles={pendingFiles}
+                    initialFiles={pendingItems.files}
+                    initialFolderEntries={pendingItems.folders}
                 />
             )}
         </>

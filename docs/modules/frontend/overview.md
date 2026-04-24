@@ -8,8 +8,20 @@
 | React 19 | UI library |
 | TypeScript | Type safety |
 | Tailwind CSS | Styling |
+| next-themes | Theme management (Light/Dark/System) |
 | Zustand | Client-side state management |
 | shadcn/ui | UI component library |
+
+## Theme Handling
+
+The application supports Light, Dark, and System themes using `next-themes`.
+
+- **Default Behavior**: On first visit, the application defaults to the **System** theme, matching the user's operating system preference.
+- **Persistence**: User theme selections (Light or Dark) are persisted in `localStorage` and will override the system setting on subsequent visits.
+- **Implementation**:
+    - The `ThemeProvider` in `web/src/app/layout.tsx` is configured with `defaultTheme="system"` and `enableSystem={true}`.
+    - Components use the `useTheme` hook from `next-themes` to access the current `theme` or the `resolvedTheme` (which is always either `light` or `dark`).
+    - The **Settings** page (`app/settings/page.tsx`) provides a three-way toggle for users to explicitly choose their preference or return to system settings.
 
 ## App Router Structure
 

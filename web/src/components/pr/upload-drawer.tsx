@@ -27,17 +27,21 @@ import {
     ImageIcon,
     Play,
     Pause,
+    ChevronDown,
+    ChevronRight,
+    Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useStagingStore } from "@/lib/staging-store";
 import type { CreateMaterialOp } from "@/lib/staging-store";
 import { cn } from "@/lib/utils";
 import { MAX_FILE_SIZE_MB, ACCEPTED_FILE_TYPES } from "@/lib/file-utils";
-import { uploadFile, getUploadConfig, logicalFileSize, type UploadConfig } from "@/lib/upload-client";
+import { uploadFile, getUploadConfig, logicalFileSize, trackExistingUpload, uploadBatchZip, type UploadConfig } from "@/lib/upload-client";
 import { ApiError } from "@/lib/api-client";
 import { TagInput } from "@/components/ui/tag-input";
 import { useDropZoneStore } from "@/components/pr/global-drop-zone";
-import { collectDroppedFiles, extractDirPaths, type ScannedFile } from "@/lib/drop-utils";
+import { collectDroppedItems, extractDirPaths, traverseFolder, zipScannedFiles, type ScannedFile } from "@/lib/drop-utils";
+import { useAuth } from "@/hooks/use-auth";
 
 
 
@@ -51,13 +55,16 @@ interface UploadDrawerProps {
     directoryName?: string;
     /** When set, uploaded files become attachments of this material */
     parentMaterialId?: string | null;
-    /** Files to auto-add when the drawer opens (from global drop zone) */
+    /** Flat files to auto-add when the drawer opens (from global drop zone) */
     initialFiles?: File[] | ScannedFile[];
+    /** Top-level folder entries to zip and upload via batch-zip (from global drop zone) */
+    initialFolderEntries?: Array<{ entry: FileSystemDirectoryEntry; name: string }>;
 }
 
 
 const MAX_CONCURRENT_UPLOADS = 4; // simultaneous XHR uploads
-const MAX_FILES_PER_BATCH = 50;
+const maxFilesPerBatch_DEFAULT = 50;
+const PRIVILEGED_ROLES = new Set(["moderator", "bureau", "vieux"]);
 
 function fileSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
@@ -97,7 +104,12 @@ export function UploadDrawer({
     directoryName,
     parentMaterialId,
     initialFiles,
+    initialFolderEntries,
 }: UploadDrawerProps) {
+    const { user } = useAuth();
+    const isPrivileged = PRIVILEGED_ROLES.has(user?.role ?? "");
+    const maxFilesPerBatch = isPrivileged ? Infinity : maxFilesPerBatch_DEFAULT;
+
     const addOperations = useStagingStore((s) => s.addOperations);
     const nextTempId = useStagingStore((s) => s.nextTempId);
     const setReviewOpen = useStagingStore((s) => s.setReviewOpen);
@@ -121,6 +133,8 @@ export function UploadDrawer({
 
     // Local-only non-serializable state
     const fileObjectsRef = useRef<Map<string, File>>(new Map());
+    // Maps clientId → quarantine_key for files already uploaded via batch-zip
+    const quarantineKeysRef = useRef<Map<string, string>>(new Map());
     const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
     const tusHandlesRef = useRef<Map<string, TusUploadHandle>>(new Map());
     const previewUrlsRef = useRef<Map<string, string>>(new Map());
@@ -130,6 +144,9 @@ export function UploadDrawer({
     const uploadQueueRef = useRef<string[]>([]); // Store clientIds
 
     const [pendingDirPaths, setPendingDirPaths] = useState<DirPathMap>(new Map());
+    const [foldersExpanded, setFoldersExpanded] = useState(true);
+    const [editingPath, setEditingPath] = useState<string | null>(null);
+    const [editValue, setEditValue] = useState("");
     const [batchTags, setBatchTags] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dropzoneRef = useRef<HTMLDivElement>(null);
@@ -152,6 +169,8 @@ export function UploadDrawer({
     // (U2) Re-attach engine / handle lost file references on mount
     useEffect(() => {
         files.forEach((item) => {
+            // Batch-zip items have no File object — that's expected, skip them
+            if (item.isFromBatchZip) return;
             if ((item.status === "pending" || item.status === "uploading" || item.status === "paused") && !fileObjectsRef.current.has(item.clientId)) {
                 // We lost the File object (refreshed page).
                 // For now, mark as error since we can't recover the File handle.
@@ -190,6 +209,46 @@ export function UploadDrawer({
 
         const runUpload = async (cid: string) => {
             const item = useUploadQueue.getState().items.find(i => i.clientId === cid);
+
+            // ── Batch-zip fast path: file is already in quarantine on the server ──
+            const quarantineKey = quarantineKeysRef.current.get(cid);
+            if (quarantineKey) {
+                updateItem(cid, { status: "uploading", progress: 80, error: undefined });
+                const controller = new AbortController();
+                abortControllersRef.current.set(cid, controller);
+
+                try {
+                    const result = await trackExistingUpload(quarantineKey, {
+                        onProgress: (pct) => updateItem(cid, { progress: pct }),
+                        onStatusUpdate: (msg, si, st) => updateItem(cid, { processingStatus: msg, stageIndex: si, stageTotal: st }),
+                        signal: controller.signal,
+                    });
+
+                    const currentItem = useUploadQueue.getState().items.find(i => i.clientId === cid);
+                    updateItem(cid, {
+                        status: "done",
+                        progress: 100,
+                        fileKey: result.file_key,
+                        correctedName: result.correctedName,
+                        serverSize: logicalFileSize(result),
+                        mimeType: result.mime_type,
+                        title: currentItem?.title === titleFromFilename(currentItem?.fileName ?? "") ? titleFromFilename(result.correctedName) : currentItem?.title,
+                    });
+                } catch (err) {
+                    const msg = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : "Processing failed");
+                    if (msg !== "Upload cancelled") {
+                        const isVirus = msg.includes("ERR_MALWARE_DETECTED");
+                        updateItem(cid, { status: isVirus ? "virus" : "error", error: msg });
+                    }
+                } finally {
+                    quarantineKeysRef.current.delete(cid);
+                    abortControllersRef.current.delete(cid);
+                    setActiveCount(Math.max(0, useUploadQueue.getState().activeCount - 1));
+                    drainQueue();
+                }
+                return;
+            }
+
             const file = fileObjectsRef.current.get(cid);
 
             if (!item || !file) {
@@ -285,6 +344,37 @@ export function UploadDrawer({
         drainQueue();
     }, [updateItem, setActiveCount]);
 
+    /** Rename a folder path and propagate to all child paths and queue items. */
+    const commitRename = useCallback(
+        (oldPath: string) => {
+            const newLeaf = editValue.trim().replace(/\//g, "");
+            setEditingPath(null);
+            setEditValue("");
+            if (!newLeaf || newLeaf === oldPath.split("/").pop()) return;
+
+            const newPath = [...oldPath.split("/").slice(0, -1), newLeaf].join("/");
+
+            setPendingDirPaths((prev) => {
+                const next = new Map<string, string>();
+                for (const [key, val] of prev) {
+                    if (key === oldPath) next.set(newPath, val);
+                    else if (key.startsWith(oldPath + "/")) next.set(newPath + key.slice(oldPath.length), val);
+                    else next.set(key, val);
+                }
+                return next;
+            });
+
+            for (const item of useUploadQueue.getState().items) {
+                if (!item.targetDirPath) continue;
+                if (item.targetDirPath === oldPath)
+                    updateItem(item.clientId, { targetDirPath: newPath });
+                else if (item.targetDirPath.startsWith(oldPath + "/"))
+                    updateItem(item.clientId, { targetDirPath: newPath + item.targetDirPath.slice(oldPath.length) });
+            }
+        },
+        [editValue, updateItem],
+    );
+
     /** Shared logic: validate, create dir temp IDs, build FileEntry[], start uploads. */
     const processScannedFiles = useCallback(
         (scanned: ScannedFile[]) => {
@@ -317,13 +407,13 @@ export function UploadDrawer({
 
             if (valid.length === 0) return;
 
-            const remaining = MAX_FILES_PER_BATCH - files.length;
+            const remaining = maxFilesPerBatch - files.length;
             if (remaining <= 0) {
-                toast.error(`Maximum ${MAX_FILES_PER_BATCH} files per batch`);
+                toast.error(`Maximum ${maxFilesPerBatch} files per batch`);
                 return;
             }
             if (valid.length > remaining) {
-                toast.warning(`Only adding ${remaining} file(s) — batch limit is ${MAX_FILES_PER_BATCH}`);
+                toast.warning(`Only adding ${remaining} file(s) — batch limit is ${maxFilesPerBatch}`);
                 valid = valid.slice(0, remaining);
             }
 
@@ -333,9 +423,6 @@ export function UploadDrawer({
                 const newDirMap: DirPathMap = new Map();
                 for (const path of dirPaths) newDirMap.set(path, nextTempId("dir"));
                 setPendingDirPaths((prev) => new Map([...prev, ...newDirMap]));
-                toast.info(
-                    `Detected ${dirPaths.length} folder${dirPaths.length > 1 ? "s" : ""}. They will be created when you stage.`,
-                );
             }
 
             // Create FileEntry for each file
@@ -370,19 +457,140 @@ export function UploadDrawer({
         [startUpload, nextTempId, addItems, files.length, config],
     );
 
+    /**
+     * Zip a folder entry client-side and upload it via the batch-zip endpoint.
+     * Each extracted file becomes an individual queue item tracked via SSE.
+     */
+    const processFolderViaZip = useCallback(
+        async (entry: FileSystemDirectoryEntry, folderName: string) => {
+            const placeholderId = crypto.randomUUID();
+
+            addItems([{
+                clientId: placeholderId,
+                uploadId: crypto.randomUUID(),
+                fileName: `${folderName}.zip`,
+                fileSize: 0,
+                fileMimeType: "application/zip",
+                title: folderName,
+                status: "pending",
+                progress: 0,
+                processingStatus: "Scanning folder…",
+                targetDirPath: "",
+                folderName,
+                isFromBatchZip: true,
+            }]);
+
+            const controller = new AbortController();
+            abortControllersRef.current.set(placeholderId, controller);
+
+            try {
+                // Traverse folder to collect files
+                updateItem(placeholderId, { status: "uploading", progress: 2, processingStatus: "Scanning folder…" });
+                const scanned = await traverseFolder(entry);
+
+                if (scanned.length === 0) {
+                    updateItem(placeholderId, { status: "error", error: "Folder is empty or contains no supported files." });
+                    return;
+                }
+
+                // Zip all collected files (level 0 = store-only, no compression)
+                updateItem(placeholderId, { progress: 5, processingStatus: "Zipping…" });
+                const zipBlob = await zipScannedFiles(scanned, (ratio) => {
+                    updateItem(placeholderId, { progress: 5 + Math.round(ratio * 25) }); // 5–30%
+                });
+
+                if (controller.signal.aborted) return;
+
+                // Upload zip to batch-zip endpoint
+                updateItem(placeholderId, { processingStatus: "Uploading…" });
+                const response = await uploadBatchZip(zipBlob, {
+                    onProgress: (pct) => updateItem(placeholderId, { progress: 30 + Math.round(pct * 0.5) }), // 30–80%
+                    signal: controller.signal,
+                });
+
+                // Remove placeholder
+                abortControllersRef.current.delete(placeholderId);
+                removeItem(placeholderId);
+
+                if (response.files.length === 0) {
+                    const msg = response.errors.length > 0 ? response.errors[0] : "No valid files in folder.";
+                    toast.warning(`${folderName}: ${msg}`);
+                    return;
+                }
+
+                // Build directory path map for staging.
+                // f.relative_path already starts with folderName (e.g. "Livrables/sub/file.pdf"),
+                // so we derive directory paths directly from it without re-prepending folderName.
+                const newDirMap: DirPathMap = new Map();
+                for (const f of response.files) {
+                    const parts = f.relative_path.split("/");
+                    for (let depth = 1; depth < parts.length; depth++) {
+                        const dirPath = parts.slice(0, depth).join("/");
+                        if (!newDirMap.has(dirPath)) newDirMap.set(dirPath, nextTempId("dir"));
+                    }
+                }
+                if (newDirMap.size > 0) {
+                    setPendingDirPaths((prev) => new Map([...prev, ...newDirMap]));
+                }
+
+                // Create queue items for each extracted file (already in quarantine)
+                const newItems: QueueItem[] = response.files.map((f) => {
+                    const clientId = crypto.randomUUID();
+                    quarantineKeysRef.current.set(clientId, f.quarantine_key);
+
+                    const parts = f.relative_path.split("/");
+                    // relative_path already includes folderName as root component
+                    const targetDirPath = parts.length > 1 ? parts.slice(0, -1).join("/") : folderName;
+
+                    return {
+                        clientId,
+                        uploadId: f.upload_id,
+                        fileName: f.filename,
+                        fileSize: f.size,
+                        fileMimeType: f.mime_type,
+                        title: titleFromFilename(f.filename),
+                        status: "pending" as const,
+                        progress: 0,
+                        processingStatus: "",
+                        targetDirPath,
+                        folderName,
+                        isFromBatchZip: true,
+                    };
+                });
+
+                addItems(newItems);
+                for (const item of newItems) startUpload(item.clientId);
+
+                if (response.skipped > 0) {
+                    toast.warning(`${folderName}: ${response.skipped} file${response.skipped > 1 ? "s" : ""} skipped — ${response.errors.slice(0, 2).join(", ")}${response.errors.length > 2 ? "…" : ""}`);
+                }
+
+            } catch (err) {
+                const msg = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : "Folder upload failed");
+                if (msg !== "Upload cancelled") {
+                    updateItem(placeholderId, { status: "error", error: msg });
+                } else {
+                    removeItem(placeholderId);
+                }
+                abortControllersRef.current.delete(placeholderId);
+            }
+        },
+        [addItems, updateItem, removeItem, nextTempId, startUpload],
+    );
+
     /** Add flat files (from file input or flat drag). All go to current directory. */
     const addFlatFiles = useCallback(
         (newFiles: FileList | File[] | ScannedFile[]) => {
             const currentCount = useUploadQueue.getState().items.length;
-            const remaining = MAX_FILES_PER_BATCH - currentCount;
+            const remaining = maxFilesPerBatch - currentCount;
             if (remaining <= 0) {
-                toast.error(`Maximum ${MAX_FILES_PER_BATCH} files per batch`);
+                toast.error(`Maximum ${maxFilesPerBatch} files per batch`);
                 return;
             }
             const filesArray = Array.isArray(newFiles) ? newFiles : Array.from(newFiles);
             const capped = (filesArray as (File | ScannedFile)[]).slice(0, remaining);
             if (capped.length < newFiles.length) {
-                toast.warning(`Only adding ${remaining} file(s) — batch limit is ${MAX_FILES_PER_BATCH}`);
+                toast.warning(`Only adding ${remaining} file(s) — batch limit is ${maxFilesPerBatch}`);
             }
 
             const scanned: ScannedFile[] = capped.map(f => {
@@ -396,16 +604,23 @@ export function UploadDrawer({
     );
 
 
-    // Auto-process files passed from global drop zone or external trigger
+    // Auto-process files/folders passed from global drop zone or external trigger
     useEffect(() => {
-        if (open && initialFiles && initialFiles.length > 0 && !initialFilesProcessedRef.current) {
+        const hasFiles = (initialFiles?.length ?? 0) > 0;
+        const hasFolders = (initialFolderEntries?.length ?? 0) > 0;
+        if (open && (hasFiles || hasFolders) && !initialFilesProcessedRef.current) {
             initialFilesProcessedRef.current = true;
-            queueMicrotask(() => addFlatFiles(initialFiles));
+            if (hasFiles) queueMicrotask(() => addFlatFiles(initialFiles!));
+            if (hasFolders) {
+                for (const { entry, name } of initialFolderEntries!) {
+                    void processFolderViaZip(entry, name);
+                }
+            }
         }
         if (!open) {
             initialFilesProcessedRef.current = false;
         }
-    }, [open, initialFiles, addFlatFiles]);
+    }, [open, initialFiles, initialFolderEntries, addFlatFiles, processFolderViaZip]);
 
     // When the drawer is open, intercept drops ANYWHERE on the page and add files
     const dismissOverlay = useDropZoneStore((s) => s.dismissOverlay);
@@ -432,6 +647,24 @@ export function UploadDrawer({
         return () => document.removeEventListener("paste", handlePaste);
     }, [open, addFlatFiles]);
 
+    /** Process a DataTransferItemList — flat files go directly, folders are zipped. */
+    const processDropItems = useCallback(
+        async (items: DataTransferItemList) => {
+            let dropped: { files: ScannedFile[]; folders: Array<{ entry: FileSystemDirectoryEntry; name: string }> };
+            try {
+                dropped = await collectDroppedItems(items);
+            } catch {
+                toast.error("Failed to read dropped items");
+                return;
+            }
+            if (dropped.files.length > 0) processScannedFiles(dropped.files);
+            for (const { entry, name } of dropped.folders) {
+                void processFolderViaZip(entry, name);
+            }
+        },
+        [processScannedFiles, processFolderViaZip],
+    );
+
     useEffect(() => {
         if (!open) return;
 
@@ -445,8 +678,8 @@ export function UploadDrawer({
             e.preventDefault();
             e.stopPropagation();
             dismissOverlay?.();
-            if (!e.dataTransfer?.files.length) return;
-            addFlatFiles(Array.from(e.dataTransfer.files));
+            if (!e.dataTransfer?.items.length) return;
+            void processDropItems(e.dataTransfer.items);
         };
 
         // Use capture phase so we intercept before the Sheet overlay can swallow events
@@ -457,23 +690,7 @@ export function UploadDrawer({
             document.removeEventListener("dragover", onDragOver, true);
             document.removeEventListener("drop", onDrop, true);
         };
-    }, [open, addFlatFiles, dismissOverlay]);
-
-
-    /** Process a DataTransferItemList — handles dropped folders recursively. */
-    const processDropItems = useCallback(
-        async (items: DataTransferItemList) => {
-            let scanned: ScannedFile[];
-            try {
-                scanned = await collectDroppedFiles(items);
-            } catch {
-                toast.error("Failed to read dropped files");
-                return;
-            }
-            processScannedFiles(scanned);
-        },
-        [processScannedFiles],
-    );
+    }, [open, processDropItems, dismissOverlay]);
 
     const retryFile = (clientId: string) => {
         const item = files.find((f) => f.clientId === clientId);
@@ -646,6 +863,7 @@ export function UploadDrawer({
         });
         clearAll();
         fileObjectsRef.current.clear();
+        quarantineKeysRef.current.clear();
         previewUrlsRef.current.clear();
         setPendingDirPaths(new Map());
         uploadQueueRef.current = [];
@@ -783,27 +1001,80 @@ export function UploadDrawer({
 
 
 
-                {/* Pending folders summary */}
+                {/* Pending folders — collapsable, editable */}
                 {pendingDirPaths.size > 0 && (
-                    <div className="flex flex-wrap gap-1.5 rounded-lg border border-green-200 bg-green-50/60 dark:bg-green-950/20 px-3 py-2">
-                        <span className="text-xs text-green-700 dark:text-green-400 font-medium w-full">
-                            {pendingDirPaths.size} folder{pendingDirPaths.size > 1 ? "s" : ""} will be created:
-                        </span>
-                        {[...pendingDirPaths.keys()]
-                            .sort((a, b) => {
-                                const da = a.split("/").length;
-                                const db = b.split("/").length;
-                                return da !== db ? da - db : a.localeCompare(b);
-                            })
-                            .map((path) => (
-                                <span
-                                    key={path}
-                                    className="inline-flex items-center gap-1 rounded border border-green-300 px-1.5 py-0.5 text-[10px] text-green-700 dark:text-green-400"
-                                >
-                                    <Folder className="h-2.5 w-2.5" />
-                                    {path}
-                                </span>
-                            ))}
+                    <div className="overflow-hidden rounded-lg border border-green-200 dark:border-green-800 bg-green-50/60 dark:bg-green-950/20">
+                        <button
+                            type="button"
+                            onClick={() => setFoldersExpanded((v) => !v)}
+                            className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-green-700 dark:text-green-400 hover:bg-green-100/50 dark:hover:bg-green-900/20 transition-colors"
+                        >
+                            <span>
+                                {pendingDirPaths.size} folder{pendingDirPaths.size > 1 ? "s" : ""} will be created
+                            </span>
+                            {foldersExpanded
+                                ? <ChevronDown className="h-3.5 w-3.5" />
+                                : <ChevronRight className="h-3.5 w-3.5" />}
+                        </button>
+
+                        {foldersExpanded && (
+                            <div className="border-t border-green-200 dark:border-green-800 px-2 pb-2 pt-1.5 space-y-0.5">
+                                {[...pendingDirPaths.keys()]
+                                    .sort((a, b) => {
+                                        const da = a.split("/").length;
+                                        const db = b.split("/").length;
+                                        return da !== db ? da - db : a.localeCompare(b);
+                                    })
+                                    .map((path) => {
+                                        const parts = path.split("/");
+                                        const depth = parts.length - 1;
+                                        const leafName = parts[parts.length - 1];
+                                        const isEditing = editingPath === path;
+
+                                        return (
+                                            <div
+                                                key={path}
+                                                style={{ paddingLeft: `${depth * 14 + 4}px` }}
+                                                className="flex items-center gap-1.5 group/dir"
+                                            >
+                                                <Folder className="h-3 w-3 shrink-0 text-green-600 dark:text-green-400" />
+                                                {isEditing ? (
+                                                    <input
+                                                        autoFocus
+                                                        value={editValue}
+                                                        onChange={(e) => setEditValue(e.target.value)}
+                                                        onBlur={() => commitRename(path)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") { e.preventDefault(); commitRename(path); }
+                                                            if (e.key === "Escape") { setEditingPath(null); setEditValue(""); }
+                                                        }}
+                                                        className="h-5 flex-1 min-w-0 rounded border border-green-400 dark:border-green-600 bg-white dark:bg-green-950 px-1.5 text-[11px] text-green-800 dark:text-green-200 outline-none focus:ring-1 focus:ring-green-500"
+                                                    />
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        title="Click to rename"
+                                                        onClick={() => { setEditingPath(path); setEditValue(leafName); }}
+                                                        className="flex-1 min-w-0 text-left text-[11px] text-green-700 dark:text-green-400 truncate hover:underline decoration-dotted underline-offset-2"
+                                                    >
+                                                        {leafName}
+                                                    </button>
+                                                )}
+                                                {!isEditing && (
+                                                    <button
+                                                        type="button"
+                                                        title="Rename"
+                                                        onClick={() => { setEditingPath(path); setEditValue(leafName); }}
+                                                        className="opacity-0 group-hover/dir:opacity-100 transition-opacity shrink-0 text-green-500 hover:text-green-700 dark:hover:text-green-300"
+                                                    >
+                                                        <Pencil className="h-2.5 w-2.5" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -889,7 +1160,7 @@ export function UploadDrawer({
                                                 </span>
                                             )}
                                         </div>
-                                        {!fileObjectsRef.current.has(f.clientId) && (f.status === "pending" || f.status === "uploading" || f.status === "paused") && (
+                                        {!f.isFromBatchZip && !fileObjectsRef.current.has(f.clientId) && (f.status === "pending" || f.status === "uploading" || f.status === "paused") && (
                                             <p className="text-[10px] text-destructive font-medium">
                                                 File reference lost. Re-add file to resume.
                                             </p>

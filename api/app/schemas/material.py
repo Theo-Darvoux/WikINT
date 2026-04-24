@@ -157,6 +157,28 @@ class UploadCompleteRequest(BaseModel):
     upload_id: str
 
 
+# ── Batch-zip schemas ─────────────────────────────────────────────────────────
+
+
+class BatchZipEntry(BaseModel):
+    """One successfully extracted file from a batch-zip upload."""
+
+    filename: str
+    relative_path: str
+    quarantine_key: str
+    upload_id: str
+    size: int
+    mime_type: str
+
+
+class BatchZipResponse(BaseModel):
+    """Response from POST /upload/batch-zip."""
+
+    files: list[BatchZipEntry]
+    skipped: int
+    errors: list[str]
+
+
 # ── V2 endpoints ──────────────────────────────────────────────────────────────
 
 
