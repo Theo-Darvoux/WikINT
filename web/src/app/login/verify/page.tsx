@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, useMemo } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useTranslations } from "next-intl";
@@ -14,19 +14,21 @@ function MagicLinkVerifier() {
     const t = useTranslations("Login");
     const [error, setError] = useState<string | null>(null);
     const [isVerifying, setIsVerifying] = useState(false);
-    const token = useMemo(() => searchParams.get("token"), [searchParams]);
+    const [capturedToken, setCapturedToken] = useState<string | null>(null);
     const attempted = useRef(false);
 
     useEffect(() => {
-        if (token) {
+        const urlToken = searchParams.get("token");
+        if (urlToken) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setCapturedToken(urlToken);
             // Strip token from URL to prevent Referer leakage
             window.history.replaceState({}, "", "/login/verify");
-        } else if (!isAuthenticated && !attempted.current) {
+        } else if (!capturedToken && !isAuthenticated && !attempted.current) {
             attempted.current = true;
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setError(t("invalidMagicLink"));
         }
-    }, [token, isAuthenticated, t]);
+    }, [searchParams, capturedToken, isAuthenticated, t]);
 
     useEffect(() => {
         if (isAuthenticated && user?.onboarded) {
@@ -37,10 +39,10 @@ function MagicLinkVerifier() {
     }, [isAuthenticated, user, router]);
 
     const handleVerify = async () => {
-        if (!token || isVerifying) return;
+        if (!capturedToken || isVerifying) return;
         setIsVerifying(true);
         try {
-            const data = await verifyMagicLink(token);
+            const data = await verifyMagicLink(capturedToken);
             if (data.is_new_user || !data.user.onboarded) {
                 router.replace("/onboarding");
             } else {
@@ -101,7 +103,7 @@ function MagicLinkVerifier() {
                         size="lg" 
                         className="w-full h-16 text-xl font-bold transition-all hover:scale-[1.02] active:scale-[0.98]"
                         onClick={handleVerify}
-                        disabled={isVerifying || !token}
+                        disabled={isVerifying || !capturedToken}
                     >
                         {isVerifying ? (
                             <span className="flex items-center gap-2">
