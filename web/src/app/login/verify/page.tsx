@@ -14,21 +14,16 @@ function MagicLinkVerifier() {
     const t = useTranslations("Login");
     const [error, setError] = useState<string | null>(null);
     const [isVerifying, setIsVerifying] = useState(false);
-    const [capturedToken, setCapturedToken] = useState<string | null>(null);
+    const token = searchParams.get("token");
     const attempted = useRef(false);
 
     useEffect(() => {
-        const urlToken = searchParams.get("token");
-        if (urlToken) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setCapturedToken(urlToken);
-            // Strip token from URL to prevent Referer leakage
-            window.history.replaceState({}, "", "/login/verify");
-        } else if (!capturedToken && !isAuthenticated && !attempted.current) {
+        if (!token && !isAuthenticated && !attempted.current) {
             attempted.current = true;
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setError(t("invalidMagicLink"));
         }
-    }, [searchParams, capturedToken, isAuthenticated, t]);
+    }, [token, isAuthenticated, t]);
 
     useEffect(() => {
         if (isAuthenticated && user?.onboarded) {
@@ -39,10 +34,10 @@ function MagicLinkVerifier() {
     }, [isAuthenticated, user, router]);
 
     const handleVerify = async () => {
-        if (!capturedToken || isVerifying) return;
+        if (!token || isVerifying) return;
         setIsVerifying(true);
         try {
-            const data = await verifyMagicLink(capturedToken);
+            const data = await verifyMagicLink(token);
             if (data.is_new_user || !data.user.onboarded) {
                 router.replace("/onboarding");
             } else {
@@ -103,7 +98,7 @@ function MagicLinkVerifier() {
                         size="lg" 
                         className="w-full h-16 text-xl font-bold transition-all hover:scale-[1.02] active:scale-[0.98]"
                         onClick={handleVerify}
-                        disabled={isVerifying || !capturedToken}
+                        disabled={isVerifying || !token}
                     >
                         {isVerifying ? (
                             <span className="flex items-center gap-2">
