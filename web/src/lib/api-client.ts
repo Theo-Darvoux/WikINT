@@ -1,13 +1,16 @@
 import { clearAccessToken, getAccessToken, setAccessToken, decodeToken } from "./auth-tokens";
 
 export const API_BASE = (() => {
+    // On the server, we use the internal URL to reach the API container directly
+    if (typeof window === "undefined") {
+        return process.env.API_INTERNAL_URL ?? "http://api:8000";
+    }
+
     const base = process.env.NEXT_PUBLIC_API_URL ?? "/api";
-    if (typeof window !== "undefined") {
-        // Self-healing: Upgrade http to https if the page is HTTPS and it's the same host
-        const isHttps = window.location.protocol === "https:";
-        if (isHttps && base.startsWith("http://") && base.includes(window.location.host)) {
-            return base.replace("http://", "https://");
-        }
+    // Self-healing: Upgrade http to https if the page is HTTPS and it's the same host
+    const isHttps = window.location.protocol === "https:";
+    if (isHttps && base.startsWith("http://") && base.includes(window.location.host)) {
+        return base.replace("http://", "https://");
     }
     return base;
 })();

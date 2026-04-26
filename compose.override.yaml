@@ -100,6 +100,8 @@ services:
       # Route browser API calls through nginx (port 80) so SSE works correctly.
       # Next.js dev-server rewrites buffer streaming responses and break SSE.
       - NEXT_PUBLIC_API_URL=http://localhost/api
+      # Internal API URL for SSR and rewrites
+      - API_INTERNAL_URL=http://api:8000
       # ONLYOFFICE Document Server URL (browser-facing, routed through nginx)
       - NEXT_PUBLIC_ONLYOFFICE_URL=http://localhost/onlyoffice
       # Ensure Node.js has enough heap space for large page compilation

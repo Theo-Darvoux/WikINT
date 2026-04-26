@@ -26,8 +26,11 @@ export const metadata: Metadata = {
 };
 
 
-import { getMessages, getLocale } from 'next-intl/server';
+import { getMessages } from 'next-intl/server';
 import { LocaleProvider } from '@/components/locale-provider';
+import { cookies } from 'next/headers';
+
+export const dynamic = "force-dynamic";
 
 export default async function RootLayout({
   children,
@@ -35,7 +38,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const messages = await getMessages();
-  const locale = await getLocale();
+  const locale = (await cookies()).get('NEXT_LOCALE')?.value || 'en';
 
   return (
     <html lang={locale} suppressHydrationWarning>
