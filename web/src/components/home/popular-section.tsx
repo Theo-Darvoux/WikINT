@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MaterialCard } from "./material-card";
 import { SectionHeader } from "./section-header";
 import type { MaterialDetail } from "./types";
+import { useTranslations } from "next-intl";
 
 const MAX_CARDS = 8;
 const SKELETON_COUNT = 4;
@@ -44,21 +45,22 @@ function SeeAllCard({
   href: string;
   totalCount: number;
 }) {
+  const t = useTranslations("Home");
   return (
     <Link
       href={href}
       className="block w-45 flex-none sm:w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-xl"
-      aria-label="See all materials"
+      aria-label={t("seeAllMaterials")}
     >
       <div className="flex h-full min-h-50 flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 p-4 text-center transition-colors hover:bg-muted/60">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
           <ChevronRight className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <p className="text-sm font-semibold text-foreground">See all</p>
+          <p className="text-sm font-semibold text-foreground">{t("seeAll")}</p>
           {totalCount > MAX_CARDS && (
             <p className="mt-0.5 text-xs text-muted-foreground">
-              +{totalCount - MAX_CARDS} more
+              +{totalCount - MAX_CARDS} {t("more")}
             </p>
           )}
         </div>
@@ -74,6 +76,7 @@ export function PopularSection({
   seeAllHref,
   isLoading = false,
 }: PopularSectionProps) {
+  const t = useTranslations("Home");
   const visibleMaterials = materials.slice(0, MAX_CARDS);
   const hasMore = materials.length >= MAX_CARDS;
 
@@ -83,7 +86,7 @@ export function PopularSection({
         title={title}
         subtitle={subtitle}
         seeAllHref={seeAllHref}
-        seeAllLabel="See all"
+        seeAllLabel={t("seeAll")}
       />
 
       <div className="mt-4">
@@ -94,7 +97,7 @@ export function PopularSection({
             ))
           ) : visibleMaterials.length === 0 ? (
             <p className="py-6 text-sm text-muted-foreground">
-              Nothing here yet — check back soon!
+              {t("nothingHereYet")}
             </p>
           ) : (
             <>

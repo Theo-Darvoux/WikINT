@@ -65,6 +65,13 @@ class AuthConfig(UUIDMixin, Base):
     primary_color: Mapped[str | None] = mapped_column(String(10), nullable=True)
     footer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     organization_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    legal_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    legal_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    legal_siret: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    dpo_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    dpo_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    data_transfers: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(

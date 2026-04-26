@@ -483,6 +483,13 @@ class AuthConfigPatch(BaseModel):
     primary_color: str | None = None
     footer_text: str | None = None
     organization_url: str | None = None
+    legal_name: str | None = None
+    legal_address: str | None = None
+    legal_siret: str | None = None
+    contact_email: str | None = None
+    dpo_email: str | None = None
+    dpo_address: str | None = None
+    data_transfers: str | None = None
 
 
 class DomainCreate(BaseModel):

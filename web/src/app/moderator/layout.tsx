@@ -10,12 +10,14 @@ import {
   GitPullRequest,
   Star,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 export default function ModeratorLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const t = useTranslations("Moderator");
   const { user, isAuthenticated } = useAuth();
   const pathname = usePathname();
 
@@ -27,26 +29,26 @@ export default function ModeratorLayout({
   ) {
     return (
       <div className="flex items-center justify-center p-12 text-muted-foreground">
-        You do not have permission to access the moderator area.
+        {t("noPermission")}
       </div>
     );
   }
 
   const navItems = [
-    { href: "/moderator", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/moderator/flags", label: "Flags", icon: Flag },
-    { href: "/moderator/directories", label: "Directories", icon: FolderTree },
+    { href: "/moderator", label: t("nav.dashboard"), icon: LayoutDashboard },
+    { href: "/moderator/flags", label: t("nav.flags"), icon: Flag },
+    { href: "/moderator/directories", label: t("nav.directories"), icon: FolderTree },
     {
       href: "/moderator/pull-requests",
-      label: "Contributions",
+      label: t("nav.contributions"),
       icon: GitPullRequest,
     },
-    { href: "/moderator/featured", label: "Featured", icon: Star },
+    { href: "/moderator/featured", label: t("nav.featured"), icon: Star },
   ];
 
   return (
     <div className="w-full mx-auto max-w-6xl space-y-6 p-4 sm:p-6 pb-20 sm:pb-6">
-      <h1 className="text-3xl font-bold">Moderator Area</h1>
+      <h1 className="text-3xl font-bold">{t("title")}</h1>
       <div className="flex overflow-x-auto border-b pb-px">
         {navItems.map((item) => {
           const isActive =

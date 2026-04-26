@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/popover";
 import { apiFetch, API_BASE } from "@/lib/api-client";
 import { formatDistanceToNow } from "date-fns/formatDistanceToNow";
+import { useTranslations } from "next-intl";
 
 interface NavbarNotification {
   id: string;
@@ -49,6 +50,8 @@ interface NotificationsResponse {
 }
 
 export function Navbar() {
+  const t = useTranslations("Navigation");
+  const tCommon = useTranslations("Common");
   const { user, isAuthenticated, logout } = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
   const { unreadCount, setUnreadCount } = useNotificationStore();
@@ -144,7 +147,7 @@ export function Navbar() {
                 className={`gap-2 rounded-lg font-medium ${pathname.startsWith("/browse") ? "text-foreground bg-accent" : "text-muted-foreground hover:text-foreground"}`}
               >
                 <Folder className="h-4 w-4" />
-                <span>Browse</span>
+                <span>{t("browse")}</span>
               </Button>
             </Link>
           )}
@@ -177,7 +180,7 @@ export function Navbar() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  title="Contributions"
+                  title={t("contributions")}
                   className={`rounded-full ${pathname.startsWith("/pull-requests") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
                 >
                   <Inbox className="h-4 w-4" />
@@ -191,7 +194,7 @@ export function Navbar() {
                       variant="ghost"
                       size="icon"
                       className={`relative rounded-full ${pathname.startsWith("/notifications") || popoverOpen ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                      title="Notifications"
+                      title={t("notifications")}
                     >
                       <Bell className="h-4 w-4" />
                       {unreadCount > 0 && (
@@ -203,23 +206,23 @@ export function Navbar() {
                   </PopoverTrigger>
                   <PopoverContent className="w-80 p-0" align="end">
                     <div className="flex items-center justify-between border-b px-4 py-3">
-                      <p className="text-sm font-semibold">Notifications</p>
+                      <p className="text-sm font-semibold">{t("notifications")}</p>
                       <Link
                         href="/notifications"
                         className="text-xs text-primary hover:underline"
                         onClick={() => setPopoverOpen(false)}
                       >
-                        View all
+                        {t("viewAll")}
                       </Link>
                     </div>
                     <div className="max-h-[300px] overflow-y-auto">
                       {loadingNotifications ? (
                         <div className="p-4 text-center text-sm text-muted-foreground">
-                          Loading...
+                          {tCommon("loading")}
                         </div>
                       ) : recentNotifications.length === 0 ? (
                         <div className="p-4 text-center text-sm text-muted-foreground">
-                          No new notifications
+                          {t("noNewNotifications")}
                         </div>
                       ) : (
                         <div className="flex flex-col">
@@ -251,7 +254,7 @@ export function Navbar() {
                           size="sm"
                           className="w-full text-xs"
                         >
-                          Go to Notifications
+                          {t("goToNotifications")}
                         </Button>
                       </Link>
                     </div>
@@ -265,7 +268,7 @@ export function Navbar() {
                     variant="ghost"
                     size="sm"
                     className="gap-2 rounded-full pl-2 pr-3"
-                    title="Profile"
+                    title={t("profile")}
                   >
                     <Avatar size="sm" className="h-6 w-6 border border-border">
                       <AvatarImage
@@ -299,13 +302,13 @@ export function Navbar() {
                   <DropdownMenuItem asChild className="cursor-pointer">
                     <Link href="/profile">
                       <User className="mr-2 h-4 w-4" />
-                      <span>Profile</span>
+                      <span>{t("profile")}</span>
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild className="cursor-pointer">
                     <Link href="/settings">
                       <Settings className="mr-2 h-4 w-4" />
-                      <span>Settings</span>
+                      <span>{t("settings")}</span>
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
@@ -314,7 +317,7 @@ export function Navbar() {
                     className="cursor-pointer text-destructive focus:bg-destructive/10 focus:text-destructive"
                   >
                     <LogOut className="mr-2 h-4 w-4" />
-                    <span>Log out</span>
+                    <span>{t("logout")}</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -322,7 +325,7 @@ export function Navbar() {
           ) : (
             <Link href="/login">
               <Button variant="ghost" size="sm" className="rounded-full">
-                Login
+                {t("login")}
               </Button>
             </Link>
           )}

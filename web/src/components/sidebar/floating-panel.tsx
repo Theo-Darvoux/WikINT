@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 interface FloatingPanelProps {
     open: boolean;
@@ -11,6 +12,7 @@ interface FloatingPanelProps {
 }
 
 export function FloatingPanel({ open, onClose, children }: FloatingPanelProps) {
+    const t = useTranslations("Sidebar");
     const panelRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -38,7 +40,7 @@ export function FloatingPanel({ open, onClose, children }: FloatingPanelProps) {
                 <button
                     onClick={onClose}
                     className="absolute right-3 top-3 z-10 rounded-md p-1.5 hover:bg-muted"
-                    aria-label="Close panel"
+                    aria-label={t("closePanel")}
                 >
                     <X className="h-5 w-5" />
                 </button>

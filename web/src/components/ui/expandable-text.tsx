@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 interface ExpandableTextProps {
     text: string;
@@ -20,10 +21,14 @@ export function ExpandableText({
     clampedLines = 2,
     className = "",
     buttonClassName = "",
-    showMoreLabel = "Show more",
-    showLessLabel = "Show less",
+    showMoreLabel,
+    showLessLabel,
     as: Component = "p",
 }: ExpandableTextProps) {
+    const t = useTranslations("Common");
+    const displayShowMore = showMoreLabel || t("showMore");
+    const displayShowLess = showLessLabel || t("showLess");
+    
     const [isExpanded, setIsExpanded] = useState(false);
     const [isTruncated, setIsTruncated] = useState(false);
     const textRef = useRef<HTMLParagraphElement & HTMLDivElement & HTMLSpanElement>(null);
@@ -73,7 +78,7 @@ export function ExpandableText({
                         buttonClassName
                     )}
                 >
-                    {isExpanded ? showLessLabel : showMoreLabel}
+                    {isExpanded ? displayShowLess : displayShowMore}
                 </button>
             )}
         </div>

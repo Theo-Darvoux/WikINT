@@ -19,6 +19,7 @@ import { TagInput } from "@/components/ui/tag-input";
 import { submitDirectOperations } from "@/lib/pr-client";
 import { useBrowseRefreshStore } from "@/lib/stores";
 import { sanitizeNameInput } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 interface NewFolderDialogProps {
     open: boolean;
@@ -34,6 +35,8 @@ export function NewFolderDialog({
     parentId,
     parentName,
 }: NewFolderDialogProps) {
+    const t = useTranslations("NewFolder");
+    const tAuto = useTranslations("AutoTitle");
     const addOperation = useStagingStore((s) => s.addOperation);
     const nextTempId = useStagingStore((s) => s.nextTempId);
     const [name, setName] = useState("");
@@ -61,7 +64,7 @@ export function NewFolderDialog({
     const handleDraft = () => {
         if (!canSubmit) return;
         addOperation(buildOp());
-        toast.success(`Added to draft: Folder "${name.trim()}"`);
+        toast.success(t("addedToDraft", { name: name.trim() }));
         setName("");
         setDescription("");
         setTags([]);
@@ -71,7 +74,7 @@ export function NewFolderDialog({
     const handleDirectSubmit = async () => {
         if (!canSubmit) return;
         setSubmitting(true);
-        const result = await submitDirectOperations([buildOp()]);
+        const result = await submitDirectOperations([buildOp()], undefined, undefined, tAuto);
         setSubmitting(false);
         setName("");
         setDescription("");
@@ -99,20 +102,14 @@ export function NewFolderDialog({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <FolderPlus className="h-5 w-5 text-green-600" />
-                        New folder
+                        {t("title")}
                     </DialogTitle>
                     <DialogDescription>
-                        Creating a folder
+                        {t("descBase")}
                         {parentName ? (
-                            <>
-                                {" "}
-                                in{" "}
-                                <span className="font-medium text-foreground">
-                                    {parentName}
-                                </span>
-                            </>
+                            t("descIn", { name: parentName })
                         ) : (
-                            " at the root"
+                            t("descRoot")
                         )}
                         .
                     </DialogDescription>
@@ -124,13 +121,13 @@ export function NewFolderDialog({
                             htmlFor="folder-name"
                             className="text-sm font-medium"
                         >
-                            Folder name
+                            {t("folderName")}
                         </label>
                         <Input
                             id="folder-name"
                             value={name}
                             onChange={(e) => setName(sanitizeNameInput(e.target.value))}
-                            placeholder="e.g. Week 5"
+                            placeholder={t("folderNamePlaceholder")}
                             maxLength={NAME_MAX}
                             disabled={submitting}
                             autoFocus
@@ -144,27 +141,27 @@ export function NewFolderDialog({
                             htmlFor="folder-desc"
                             className="text-sm font-medium"
                         >
-                            Description{" "}
+                            {t("description")}{" "}
                             <span className="text-muted-foreground">
-                                (optional)
+                                {t("optional")}
                             </span>
                         </label>
                         <Textarea
                             id="folder-desc"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            placeholder="What does this folder contain?"
+                            placeholder={t("descriptionPlaceholder")}
                             maxLength={500}
                             disabled={submitting}
                             rows={2}
                         />
                     </div>
                     <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Tags</label>
+                        <label className="text-sm font-medium">{t("tags")}</label>
                         <TagInput
                             tags={tags}
                             onChange={setTags}
-                            placeholder="math, analyse..."
+                            placeholder={t("tagsPlaceholder")}
                         />
                     </div>
                 </div>
@@ -176,7 +173,7 @@ export function NewFolderDialog({
                         disabled={submitting}
                         className="sm:mr-auto"
                     >
-                        Cancel
+                        {t("cancel")}
                     </Button>
                     <Button
                         variant="outline"
@@ -185,7 +182,7 @@ export function NewFolderDialog({
                         className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
                     >
                         <Plus className="h-4 w-4" />
-                        Draft
+                        {t("draft")}
                     </Button>
                     {!isDraftParent && (
                         <Button
@@ -198,7 +195,7 @@ export function NewFolderDialog({
                             ) : (
                                 <Send className="h-4 w-4" />
                             )}
-                            Create directly
+                            {t("createDirectly")}
                         </Button>
                     )}
                 </DialogFooter>

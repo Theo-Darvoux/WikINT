@@ -16,6 +16,7 @@ import { TagInput } from "@/components/ui/tag-input";
 import { useStagingStore, unwrapOp } from "@/lib/staging-store";
 import { sanitizeNameInput } from "@/lib/utils";
 import type { Operation } from "@/lib/staging-store";
+import { useTranslations } from "next-intl";
 
 interface StagedItemEditDialogProps {
     /** The index in the staging operations array, or null if closed */
@@ -24,6 +25,9 @@ interface StagedItemEditDialogProps {
 }
 
 export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogProps) {
+    const t = useTranslations("Staging");
+    const tWizard = useTranslations("PRWizard");
+    const tCommon = useTranslations("Common");
     const operations = useStagingStore((s) => s.operations);
     const updateOperation = useStagingStore((s) => s.updateOperation);
 
@@ -76,7 +80,7 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
             newOp.tags = tags;
             // create_material requires title, so guarantee one
             if (op.op === "create_material" && !newOp.title) {
-                newOp.title = "Untitled";
+                newOp.title = t("untitled");
             }
         } else if (op.op === "create_directory" || op.op === "edit_directory") {
             newOp.name = title.trim() || undefined;
@@ -84,7 +88,7 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
             newOp.tags = tags;
             // create_directory requires name
             if (op.op === "create_directory" && !newOp.name) {
-                newOp.name = "New Folder";
+                newOp.name = t("newFolder");
             }
         }
 
@@ -99,17 +103,17 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
         <Dialog open={index !== null && isEditable} onOpenChange={(open) => !open && onClose()}>
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
-                    <DialogTitle>Edit item</DialogTitle>
+                    <DialogTitle>{t("editItemTitle")}</DialogTitle>
                     <DialogDescription>
-                        Edit this item&apos;s details before adding it permanently.
+                        {t("editItemDescription")}
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="grid gap-4 py-4">
                     <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Name / Title</label>
+                        <label className="text-sm font-medium">{tWizard("nameTitle")}</label>
                         <Input
-                            placeholder="File or folder title"
+                            placeholder={tWizard("nameTitle")}
                             value={title}
                             onChange={(e) => setTitle(sanitizeNameInput(e.target.value))}
                             maxLength={NAME_MAX}
@@ -120,9 +124,9 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
                     </div>
 
                     <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Description</label>
+                        <label className="text-sm font-medium">{tWizard("description")}</label>
                         <Textarea
-                            placeholder="Optional description..."
+                            placeholder={tWizard("description")}
                             className="resize-none"
                             rows={3}
                             value={description}
@@ -131,9 +135,9 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
                     </div>
 
                     <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Tags</label>
+                        <label className="text-sm font-medium">{tWizard("tags")}</label>
                         <TagInput
-                            placeholder="Add a tag..."
+                            placeholder={tWizard("tagsPlaceholder")}
                             tags={tags}
                             onChange={(newTags) => setTags(newTags)}
                         />
@@ -141,8 +145,8 @@ export function StagedItemEditDialog({ index, onClose }: StagedItemEditDialogPro
                 </div>
 
                 <DialogFooter>
-                    <Button variant="outline" onClick={onClose}>Cancel</Button>
-                    <Button onClick={handleSave}>Save</Button>
+                    <Button variant="outline" onClick={onClose}>{tCommon("cancel")}</Button>
+                    <Button onClick={handleSave}>{tCommon("save")}</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

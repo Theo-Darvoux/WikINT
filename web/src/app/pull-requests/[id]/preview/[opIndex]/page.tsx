@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api-client";
 import { getFileBadgeColor, getFileBadgeLabel, getFileExtension } from "@/lib/file-utils";
 import { MarkdownRenderer } from "@/components/viewers/markdown-renderer";
+import { useTranslations } from "next-intl";
 
 // pdfjs must be client-only (uses Promise.withResolvers at module-eval time)
 const PdfPreview = dynamic(
@@ -79,6 +80,7 @@ function getViewerType(mimeType: string, fileName: string): string {
 /* ── Sub-viewers ───────────────────────────────────────────────────────────── */
 
 function TextPreview({ url, type }: { url: string; type: "markdown" | "code" | "csv" }) {
+    const t = useTranslations("Preview");
     const [content, setContent] = useState("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -94,7 +96,7 @@ function TextPreview({ url, type }: { url: string; type: "markdown" | "code" | "
     }, [url]);
 
     if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
-    if (error) return <div className="flex h-full items-center justify-center text-sm text-destructive">Failed to load content</div>;
+    if (error) return <div className="flex h-full items-center justify-center text-sm text-destructive">{t("failedToLoad")}</div>;
 
     if (type === "markdown") {
         return (
@@ -119,24 +121,25 @@ function TextPreview({ url, type }: { url: string; type: "markdown" | "code" | "
 }
 
 function GenericFallback({ url, fileName, mimeType }: { url: string; fileName: string; mimeType: string }) {
+    const t = useTranslations("Preview");
     return (
         <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
             <FileText className="h-16 w-16 text-muted-foreground/30" />
             <div>
                 <p className="font-medium">{fileName}</p>
-                <p className="text-sm text-muted-foreground mt-0.5">{mimeType || "Unknown type"} — preview unavailable</p>
+                <p className="text-sm text-muted-foreground mt-0.5">{mimeType || t("unknownType")} {t("previewUnavailable")}</p>
             </div>
             <div className="flex gap-2">
                 <Button asChild variant="outline">
                     <a href={url} download={fileName}>
                         <Download className="mr-1.5 h-4 w-4" />
-                        Download
+                        {t("download")}
                     </a>
                 </Button>
                 <Button asChild variant="outline">
                     <a href={url} target="_blank" rel="noreferrer">
                         <ExternalLink className="mr-1.5 h-4 w-4" />
-                        Open in new tab
+                        {t("openInNewTab")}
                     </a>
                 </Button>
             </div>
@@ -161,6 +164,7 @@ interface PageProps {
 }
 
 export default function PRPreviewPage({ params }: PageProps) {
+    const t = useTranslations("Preview");
     const { id: prId, opIndex: opIndexStr } = use(params);
     const opIndex = Number(opIndexStr);
     const router = useRouter();
@@ -191,7 +195,7 @@ export default function PRPreviewPage({ params }: PageProps) {
                 setPrTitle(pr.title);
                 setPresignedUrl(preview.url);
             } catch (e: unknown) {
-                if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load preview");
+                if (!cancelled) setError(e instanceof Error ? e.message : t("failedToLoadPreview"));
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -214,14 +218,14 @@ export default function PRPreviewPage({ params }: PageProps) {
                     size="icon"
                     className="shrink-0"
                     onClick={() => router.back()}
-                    title="Back to contribution"
+                    title={t("backToContribution")}
                 >
                     <ArrowLeft className="h-4 w-4" />
                 </Button>
 
                 <div className="flex min-w-0 flex-1 items-center gap-2.5">
                     <Icon className={`h-4 w-4 shrink-0 ${iconColor}`} />
-                    <span className="truncate text-sm font-medium">{fileName || "Preview"}</span>
+                    <span className="truncate text-sm font-medium">{fileName || t("titleDefault")}</span>
                     {fileName && (
                         <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${getFileBadgeColor(fileName)}`}>
                             {getFileBadgeLabel(fileName, mimeType)}
@@ -232,14 +236,14 @@ export default function PRPreviewPage({ params }: PageProps) {
                 <div className="flex shrink-0 items-center gap-2">
                     {prTitle && (
                         <Badge variant="secondary" className="hidden sm:flex gap-1 text-xs font-normal">
-                            Contribution ·
+                            {t("contribution")} ·
                             <Link href={`/pull-requests/${prId}`} className="hover:underline truncate max-w-[160px]">
                                 {prTitle}
                             </Link>
                         </Badge>
                     )}
                     <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
-                        Pending
+                        {t("pending")}
                     </Badge>
                 </div>
             </div>
@@ -256,11 +260,11 @@ export default function PRPreviewPage({ params }: PageProps) {
                     <div className="flex h-full flex-col items-center justify-center gap-3 text-center p-8">
                         <AlertCircle className="h-10 w-10 text-destructive/50" />
                         <div>
-                            <p className="font-medium text-destructive">Preview unavailable</p>
+                            <p className="font-medium text-destructive">{t("previewUnavailableTitle")}</p>
                             <p className="text-sm text-muted-foreground mt-1">{error}</p>
                         </div>
                         <Button variant="outline" onClick={() => router.back()}>
-                            Back to contribution
+                            {t("backToContribution")}
                         </Button>
                     </div>
                 )}

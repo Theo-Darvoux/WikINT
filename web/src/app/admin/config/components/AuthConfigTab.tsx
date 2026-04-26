@@ -12,6 +12,7 @@ import { TabsContent } from "@/components/ui/tabs";
 import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 interface Domain {
     id: string;
@@ -70,6 +71,7 @@ function ToggleRow({
 }
 
 export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProps) {
+    const t = useTranslations("Admin.Config.Authentication");
     const [authForm, setAuthForm] = useState<Partial<AuthConfig>>({});
     const [isAuthModified, setIsAuthModified] = useState(false);
     
@@ -106,12 +108,12 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
             setDomains((prev) => [...prev, added]);
             setNewDomain("");
             setNewAutoApprove(true);
-            toast.success(`Domain @${added.domain} added`);
+            toast.success(t("domains.success.added", { domain: added.domain }));
         } catch (err: any) {
             if (err?.message?.includes("already exists") || err?.message?.includes("409")) {
-                toast.error("Domain already exists");
+                toast.error(t("domains.errors.alreadyExists"));
             } else {
-                toast.error("Failed to add domain");
+                toast.error(t("domains.errors.addFailed"));
             }
         } finally {
             setAddingDomain(false);
@@ -130,7 +132,7 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                 )
             );
         } catch {
-            toast.error("Failed to update domain");
+            toast.error(t("domains.errors.updateFailed"));
         }
     };
 
@@ -138,15 +140,15 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
         try {
             await apiFetch(`/admin/auth-config/domains/${domainId}`, { method: "DELETE" });
             setDomains((prev) => prev.filter((d) => d.id !== domainId));
-            toast.success(`Domain @${domain} removed`);
+            toast.success(t("domains.success.removed", { domain }));
         } catch {
-            toast.error("Failed to remove domain");
+            toast.error(t("domains.errors.removeFailed"));
         }
     };
 
     const handleSave = async () => {
         await patchConfig(authForm);
-        toast.success("Authentication configuration updated");
+        toast.success(t("success"));
         setIsAuthModified(false);
     };
 
@@ -166,25 +168,24 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
     return (
         <TabsContent value="authentication" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <p className="text-sm text-muted-foreground">
-                Control authentication providers, allowed email domains, and access policies.
-                Changes take effect immediately (cache TTL: 60 s).
+                {t("description")}
             </p>
 
             <Card>
                 <CardHeader>
                     <div className="flex items-center gap-2">
                         <Shield className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-base">Authentication Methods</CardTitle>
+                        <CardTitle className="text-base">{t("methods.title")}</CardTitle>
                     </div>
                     <CardDescription>
-                        Toggle which login methods are active on the platform.
+                        {t("methods.description")}
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="divide-y px-6 pb-4">
                     <ToggleRow
                         icon={Mail}
-                        label="TOTP / Email codes"
-                        description="Users receive a one-time code at their email address to verify identity."
+                        label={t("methods.totp.label")}
+                        description={t("methods.totp.description")}
                         checked={authForm.totp_enabled ?? config.totp_enabled}
                         disabled={saving}
                         onToggle={() => {
@@ -195,8 +196,8 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                     <div className="flex flex-col gap-4 py-4">
                         <ToggleRow
                             icon={Globe}
-                            label="Google OAuth"
-                            description="Allow users to sign in with their Google account."
+                            label={t("methods.google.label")}
+                            description={t("methods.google.description")}
                             checked={authForm.google_oauth_enabled ?? config.google_oauth_enabled}
                             disabled={saving || (!authForm.google_client_id && !config.google_client_id)}
                             onToggle={() => {
@@ -205,12 +206,12 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                             }}
                         />
                         <div className="ml-8 space-y-2">
-                            <Label htmlFor="google-client-id" className="text-xs font-medium text-muted-foreground">Google Client ID</Label>
+                            <Label htmlFor="google-client-id" className="text-xs font-medium text-muted-foreground">{t("methods.google.clientId")}</Label>
                             <div className="flex gap-2">
                                 <Input
                                     id="google-client-id"
                                     type="text"
-                                    placeholder="your-client-id.apps.googleusercontent.com"
+                                    placeholder={t("methods.google.clientIdPlaceholder")}
                                     value={authForm.google_client_id ?? config.google_client_id ?? ""}
                                     onChange={(e) => {
                                         setAuthForm(prev => ({ ...prev, google_client_id: e.target.value }));
@@ -221,14 +222,14 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                             </div>
                             {!(authForm.google_client_id ?? config.google_client_id) && (
                                 <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                                    You must set a Google Client ID before enabling this feature.
+                                    {t("methods.google.clientIdRequired")}
                                 </p>
                             )}
                         </div>
                         <ToggleRow
                             icon={Lock}
-                            label="Email + password (classic)"
-                            description="Traditional login using email and a password."
+                            label={t("methods.classic.label")}
+                            description={t("methods.classic.description")}
                             checked={authForm.classic_auth_enabled ?? config.classic_auth_enabled}
                             disabled={saving}
                             onToggle={() => {
@@ -244,17 +245,17 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                 <CardHeader>
                     <div className="flex items-center gap-2">
                         <Clock className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-base">Session Policy</CardTitle>
+                        <CardTitle className="text-base">{t("session.title")}</CardTitle>
                     </div>
                     <CardDescription>
-                        Determine how long user sessions remain valid.
+                        {t("session.description")}
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="grid gap-6 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label htmlFor="jwt-access" className="text-sm font-medium">
-                                Access Token Expiry (Days)
+                                {t("session.accessExpiry")}
                             </Label>
                             <div className="flex items-center gap-3">
                                 <Input
@@ -271,13 +272,13 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                                 />
                             </div>
                             <p className="text-[11px] text-muted-foreground">
-                                Short-lived token for API requests. Usually 7 days.
+                                {t("session.accessExpiryHelp")}
                             </p>
                         </div>
 
                         <div className="space-y-2">
                             <Label htmlFor="jwt-refresh" className="text-sm font-medium">
-                                Refresh Token Expiry (Days)
+                                {t("session.refreshExpiry")}
                             </Label>
                             <div className="flex items-center gap-3">
                                 <Input
@@ -294,7 +295,7 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                                 />
                             </div>
                             <p className="text-[11px] text-muted-foreground">
-                                Long-lived session token. Usually 31 days.
+                                {t("session.refreshExpiryHelp")}
                             </p>
                         </div>
                     </div>
@@ -305,17 +306,14 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                 <CardHeader>
                     <div className="flex items-center gap-2">
                         <Globe className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-base">Allowed Email Domains</CardTitle>
+                        <CardTitle className="text-base">{t("domains.title")}</CardTitle>
                     </div>
-                    <CardDescription>
-                        Emails from these domains can request access.
-                        Toggle <strong>Auto-approve</strong> to let users from that domain skip the pending queue.
-                    </CardDescription>
+                    <CardDescription dangerouslySetInnerHTML={{ __html: t.raw("domains.description") }} />
                 </CardHeader>
                 <CardContent className="space-y-4">
                     {domains.length === 0 ? (
                         <p className="text-sm text-muted-foreground italic">
-                            No domains configured — fallback to default domains.
+                            {t("domains.empty")}
                         </p>
                     ) : (
                         <div className="divide-y rounded-lg border">
@@ -325,8 +323,8 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                                         <Globe2 className="h-4 w-4 text-primary" />
                                     </div>
                                     <div className="flex flex-col">
-                                        <span className="text-sm font-bold text-primary">Allow all domains</span>
-                                        <span className="text-[10px] text-muted-foreground">Bypass whitelist for all providers</span>
+                                        <span className="text-sm font-bold text-primary">{t("domains.allowAll.label")}</span>
+                                        <span className="text-[10px] text-muted-foreground">{t("domains.allowAll.description")}</span>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -360,7 +358,7 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                                                     : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
                                             )}
                                         >
-                                            {d.auto_approve ? "Auto-approve" : "Manual review"}
+                                            {d.auto_approve ? t("domains.autoApprove") : t("domains.manualReview")}
                                         </Badge>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">
@@ -386,7 +384,7 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
 
                     <div className="flex flex-col gap-3 rounded-lg border border-dashed bg-muted/30 p-4">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                            Add a domain
+                            {t("domains.add.title")}
                         </p>
                         <div className="flex gap-2">
                             <div className="relative flex-1">
@@ -395,7 +393,7 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                                 </span>
                                 <Input
                                     className="pl-7 font-mono text-sm"
-                                    placeholder="example.com"
+                                    placeholder={t("domains.add.placeholder")}
                                     value={newDomain}
                                     onChange={(e) => setNewDomain(e.target.value)}
                                     onKeyDown={(e) => e.key === "Enter" && handleAddDomain()}
@@ -410,7 +408,7 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                                 ) : (
                                     <Plus className="h-4 w-4" />
                                 )}
-                                <span className="ml-1.5">Add</span>
+                                <span className="ml-1.5">{t("domains.add.button")}</span>
                             </Button>
                         </div>
                         <div className="flex items-center gap-2">
@@ -420,7 +418,7 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                                 onCheckedChange={setNewAutoApprove}
                             />
                             <Label htmlFor="new-domain-auto-approve" className="text-xs">
-                                Auto-approve users from this domain
+                                {t("domains.add.autoApproveLabel")}
                             </Label>
                         </div>
                     </div>
@@ -430,7 +428,7 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
             <div className="flex justify-end gap-3 p-6 border-t bg-muted/20 rounded-b-lg">
                 {isAuthModified && (
                     <Button variant="outline" onClick={handleDiscard}>
-                        Discard Changes
+                        {t("discard")}
                     </Button>
                 )}
                 <Button 
@@ -443,7 +441,7 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                     ) : (
                         <Save className="h-4 w-4" />
                     )}
-                    Save Authentication Settings
+                    {t("save")}
                 </Button>
             </div>
         </TabsContent>

@@ -6,6 +6,7 @@ import { useIsMobile } from "@/hooks/use-media-query";
 import { API_BASE } from "@/lib/api-client";
 import { getAccessToken } from "@/lib/auth-tokens";
 import { ViewerShell } from "./viewer-shell";
+import { useTranslations } from "next-intl";
 
 interface VideoPlayerProps {
     fileKey: string;
@@ -14,6 +15,7 @@ interface VideoPlayerProps {
 }
 
 export function VideoPlayer({ materialId, material, fileKey }: VideoPlayerProps) {
+    const t = useTranslations("Viewers");
     const isMobile = useIsMobile();
     const [loading, setLoading] = useState(true);
  
@@ -24,7 +26,7 @@ export function VideoPlayer({ materialId, material, fileKey }: VideoPlayerProps)
     const streamUrl = token 
         ? `${API_BASE}/materials/${materialId}/file?token=${encodeURIComponent(token)}&v=${fileKey}`
         : `${API_BASE}/materials/${materialId}/file?v=${fileKey}`;
-
+ 
     return (
         <ViewerShell loading={false} error={null}>
             <div className="flex h-full w-full items-center justify-center">
@@ -35,7 +37,7 @@ export function VideoPlayer({ materialId, material, fileKey }: VideoPlayerProps)
                             className="h-full w-full border-0"
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                             allowFullScreen
-                            title="Video Player"
+                            title={t("videoTitle")}
                         />
                     </div>
                 ) : (
@@ -53,7 +55,7 @@ export function VideoPlayer({ materialId, material, fileKey }: VideoPlayerProps)
                             onError={() => setLoading(false)}
                             playsInline={isMobile}
                         >
-                            Your browser does not support the video tag.
+                            {t("videoNotSupported")}
                         </video>
                     </div>
                 )}

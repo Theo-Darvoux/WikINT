@@ -19,6 +19,8 @@ import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { type PullRequestOut } from "@/components/home/types";
+import { useTranslations, useLocale } from "next-intl";
+import { fr, enUS } from "date-fns/locale";
 
 const OP_ICONS: Record<string, React.ElementType> = {
     create_material: FilePlus,
@@ -35,6 +37,9 @@ interface PullRequestProps {
 }
 
 export function PRCard({ pr }: PullRequestProps) {
+    const t = useTranslations("PRs");
+    const locale = useLocale();
+    const dateLocale = locale === "fr" ? fr : enUS;
     const isApproved = pr.status === "approved";
     const isOpen = pr.status === "open";
     const isCancelled = pr.status === "cancelled";
@@ -83,13 +88,13 @@ export function PRCard({ pr }: PullRequestProps) {
                     {pr.reverted_by_pr_id && (
                         <Badge variant="outline" className="shrink-0 gap-0.5 text-[10px] h-5 font-normal border-amber-200 text-amber-600 dark:border-amber-800">
                             <Undo2 className="h-2.5 w-2.5" />
-                            Reverted
+                            {t("reverted")}
                         </Badge>
                     )}
                     {pr.type === "revert" && (
                         <Badge variant="outline" className="shrink-0 gap-0.5 text-[10px] h-5 font-normal border-blue-200 text-blue-600 dark:border-blue-800">
                             <Undo2 className="h-2.5 w-2.5" />
-                            Revert
+                            {t("revert")}
                         </Badge>
                     )}
                     {summaryTypes.map((st) => {
@@ -101,14 +106,7 @@ export function PRCard({ pr }: PullRequestProps) {
                                 className="shrink-0 gap-0.5 text-[10px] h-5 font-normal"
                             >
                                 {Icon && <Icon className="h-2.5 w-2.5" />}
-                                {st
-                                    .split("_")
-                                    .map(
-                                        (w) =>
-                                            w.charAt(0).toUpperCase() +
-                                            w.slice(1),
-                                    )
-                                    .join(" ")}
+                                {t(`operations.${st}` as any)}
                             </Badge>
                         );
                     })}
@@ -120,6 +118,7 @@ export function PRCard({ pr }: PullRequestProps) {
                     {" · "}
                     {formatDistanceToNow(new Date(pr.created_at), {
                         addSuffix: true,
+                        locale: dateLocale,
                     })}
                 </p>
             </div>

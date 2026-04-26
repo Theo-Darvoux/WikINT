@@ -10,6 +10,7 @@ import type { ThreadData } from "@/hooks/use-annotations";
 import { usePinchZoom } from "@/hooks/use-pinch-zoom";
 import { useMaterialFile } from "@/hooks/use-material-file";
 import { ViewerShell } from "./viewer-shell";
+import { useTranslations } from "next-intl";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -207,6 +208,7 @@ function LazyBlock({ estimatedHeight, scrollRootRef, children }: {
 }
 
 export function PdfViewer({ materialId, fileKey, annotations = [], onAnnotationClick }: PdfViewerProps) {
+    const t = useTranslations("Viewers");
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const { blobUrl, loading, error } = useMaterialFile({
@@ -272,8 +274,8 @@ export function PdfViewer({ materialId, fileKey, annotations = [], onAnnotationC
     }, []);
 
     const onDocumentLoadError = useCallback((err: Error) => {
-        setParseError(err.message ?? "Failed to parse PDF");
-    }, []);
+        setParseError(err.message ?? t("pdf.failedToParse"));
+    }, [t]);
 
     useEffect(() => {
         const scrollEl = scrollRef.current;
@@ -340,7 +342,7 @@ export function PdfViewer({ materialId, fileKey, annotations = [], onAnnotationC
                     onClick={() => setTwoPageView(!twoPageView)}
                     disabled={loading}
                     className={`rounded-md p-2 transition-colors disabled:opacity-40 ${twoPageView ? "bg-zinc-200 dark:bg-zinc-800 text-foreground" : "text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground"}`}
-                    title="Toggle two page view"
+                    title={t("pdf.toggleTwoPage")}
                 >
                     <BookOpen className="h-4 w-4" />
                 </button>
@@ -348,7 +350,7 @@ export function PdfViewer({ materialId, fileKey, annotations = [], onAnnotationC
             toolbarCenter={
                 numPages > 0 && (
                     <span className="text-xs tabular-nums text-muted-foreground">
-                        Page {currentPage} of {numPages}
+                        {t("pdf.page", { current: currentPage, total: numPages })}
                     </span>
                 )
             }
@@ -358,7 +360,7 @@ export function PdfViewer({ materialId, fileKey, annotations = [], onAnnotationC
                         onClick={() => setZoom(z => Math.max(MIN_ZOOM, z - ZOOM_STEP))}
                         disabled={zoom <= MIN_ZOOM || loading}
                         className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
-                        title="Zoom out (Ctrl+-)"
+                        title={t("pdf.zoomOut")}
                     >
                         <ZoomOut className="h-4 w-4" />
                     </button>
@@ -366,7 +368,7 @@ export function PdfViewer({ materialId, fileKey, annotations = [], onAnnotationC
                         onClick={() => setZoom(100)}
                         disabled={loading}
                         className="min-w-12 rounded-md px-2 py-1 text-center text-xs font-medium tabular-nums transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-40"
-                        title="Reset zoom (Ctrl+0)"
+                        title={t("pdf.resetZoom")}
                     >
                         {zoom}%
                     </button>
@@ -374,7 +376,7 @@ export function PdfViewer({ materialId, fileKey, annotations = [], onAnnotationC
                         onClick={() => setZoom(z => Math.min(MAX_ZOOM, z + ZOOM_STEP))}
                         disabled={zoom >= MAX_ZOOM || loading}
                         className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
-                        title="Zoom in (Ctrl++)"
+                        title={t("pdf.zoomIn")}
                     >
                         <ZoomIn className="h-4 w-4" />
                     </button>

@@ -13,6 +13,8 @@ import { useIsMobile } from "@/hooks/use-media-query";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { FlagButton } from "@/components/flags/flag-button";
 import { ExpandableText } from "@/components/ui/expandable-text";
+import { useTranslations, useLocale } from "next-intl";
+import { fr, enUS } from "date-fns/locale";
 
 interface PRComment {
     id: string;
@@ -25,6 +27,10 @@ interface PRComment {
 const MAX_COMMENT_LENGTH = 1000;
 
 export function PRComments({ prId }: { prId: string }) {
+    const t = useTranslations("Comments");
+    const tCommon = useTranslations("Common");
+    const locale = useLocale();
+    const dateLocale = locale === "fr" ? fr : enUS;
     const isMobile = useIsMobile();
     const { user } = useAuthStore();
     const [comments, setComments] = useState<PRComment[]>([]);
@@ -50,7 +56,7 @@ export function PRComments({ prId }: { prId: string }) {
     const handleSubmit = async () => {
         if (!body.trim()) return;
         if (body.length > MAX_COMMENT_LENGTH) {
-            toast.error(`Comment exceeds ${MAX_COMMENT_LENGTH.toLocaleString()} character limit`);
+            toast.error(t("characterLimit", { limit: MAX_COMMENT_LENGTH.toLocaleString() }));
             return;
         }
         setSubmitting(true);
@@ -62,7 +68,7 @@ export function PRComments({ prId }: { prId: string }) {
             setBody("");
             setComments((prev) => [...prev, newComment]);
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to post comment");
+            toast.error(err instanceof Error ? err.message : t("failedToPost"));
         } finally {
             setSubmitting(false);
         }
@@ -71,7 +77,7 @@ export function PRComments({ prId }: { prId: string }) {
     const handleEdit = async (id: string) => {
         if (!editBody.trim()) return;
         if (editBody.length > MAX_COMMENT_LENGTH) {
-            toast.error(`Comment exceeds ${MAX_COMMENT_LENGTH.toLocaleString()} character limit`);
+            toast.error(t("characterLimit", { limit: MAX_COMMENT_LENGTH.toLocaleString() }));
             return;
         }
         try {
@@ -83,7 +89,7 @@ export function PRComments({ prId }: { prId: string }) {
             setEditBody("");
             setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to edit comment");
+            toast.error(err instanceof Error ? err.message : t("failedToEdit"));
         }
     };
 
@@ -92,7 +98,7 @@ export function PRComments({ prId }: { prId: string }) {
             await apiFetch(`/pr-comments/${id}`, { method: "DELETE" });
             setComments((prev) => prev.filter((c) => c.id !== id));
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to delete comment");
+            toast.error(err instanceof Error ? err.message : t("failedToDelete"));
         }
     };
 
@@ -122,7 +128,7 @@ export function PRComments({ prId }: { prId: string }) {
                 <div className="flex flex-col items-center gap-2 py-6 text-muted-foreground">
                     <MessageSquare className="h-8 w-8 opacity-40" />
                     <p className="text-sm">
-                        No comments yet. Start the discussion.
+                        {t("noComments")}
                     </p>
                 </div>
             )}
@@ -157,14 +163,14 @@ export function PRComments({ prId }: { prId: string }) {
                                         onClick={() => handleEdit(c.id)}
                                         disabled={!editBody.trim() || editBody.length > MAX_COMMENT_LENGTH}
                                     >
-                                        Save
+                                        {t("save")}
                                     </Button>
                                     <Button
                                         size="sm"
                                         variant="ghost"
                                         onClick={() => setEditingId(null)}
                                     >
-                                        Cancel
+                                        {t("cancel")}
                                     </Button>
                                 </div>
                             </div>
@@ -184,11 +190,12 @@ export function PRComments({ prId }: { prId: string }) {
                         <div className="min-w-0 flex-1">
                             <div className="flex items-baseline gap-2">
                                 <span className="text-sm font-medium">
-                                    {c.author?.display_name || "[deleted]"}
+                                    {c.author?.display_name || tCommon("deletedUser")}
                                 </span>
                                 <span className="text-xs text-muted-foreground">
                                     {formatDistanceToNow(new Date(c.created_at), {
                                         addSuffix: true,
+                                        locale: dateLocale,
                                     })}
                                 </span>
                             </div>
@@ -196,8 +203,8 @@ export function PRComments({ prId }: { prId: string }) {
                                 text={c.body}
                                 clampedLines={4}
                                 className="mt-1 text-sm leading-relaxed"
-                                showMoreLabel="See more"
-                                showLessLabel="See less"
+                                showMoreLabel={t("seeMore")}
+                                showLessLabel={t("seeLess")}
                             />
                             <div className="mt-1 flex flex-wrap gap-1">
                                 {canEdit && (
@@ -206,14 +213,14 @@ export function PRComments({ prId }: { prId: string }) {
                                         className="flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
                                     >
                                         <Edit2 className="h-3 w-3" />
-                                        Edit
+                                        {t("edit")}
                                     </button>
                                 )}
                                 {canDelete ? (
                                     <ConfirmDeleteDialog
                                         onConfirm={() => handleDelete(c.id)}
-                                        title="Delete comment"
-                                        description="Are you sure you want to delete this comment? This action cannot be undone."
+                                        title={t("delete")}
+                                        description={t("deleteConfirm")}
                                     />
                                 ) : (
                                     <FlagButton
@@ -233,7 +240,7 @@ export function PRComments({ prId }: { prId: string }) {
             {/* Comment form */}
             <div className="space-y-2 pt-2">
                 <Textarea
-                    placeholder="Leave a comment…"
+                    placeholder={t("placeholder")}
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
                     maxLength={MAX_COMMENT_LENGTH}
@@ -258,7 +265,7 @@ export function PRComments({ prId }: { prId: string }) {
                         </span>
                         {!isMobile && (
                             <span className="text-[9px] text-muted-foreground italic opacity-70">
-                                Shift+Enter for new line
+                                {tCommon("shiftEnterForNewLine")}
                             </span>
                         )}
                     </div>
@@ -269,7 +276,7 @@ export function PRComments({ prId }: { prId: string }) {
                         className="gap-1.5"
                     >
                         <Send className="h-3.5 w-3.5" />
-                        {submitting ? "Posting…" : "Comment"}
+                        {submitting ? t("posting") : t("post")}
                     </Button>
                 </div>
             </div>

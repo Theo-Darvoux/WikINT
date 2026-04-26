@@ -34,7 +34,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -r appuser && useradd -r -g appuser -m appuser && \
-    chown appuser:appuser /app
+    chown appuser:appuser /app && \
+    mkdir -p /var/lib/wikint && chown appuser:appuser /var/lib/wikint
 
 COPY --from=builder --chown=appuser:appuser /venv /venv
 ENV UV_PROJECT_ENVIRONMENT=/venv

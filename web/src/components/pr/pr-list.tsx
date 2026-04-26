@@ -14,20 +14,22 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useTranslations } from "next-intl";
 
 type StatusFilter = "open" | "approved" | "rejected" | "cancelled" | null;
-
-const TABS: { value: StatusFilter; label: string; icon: React.ElementType }[] =
-  [
-    { value: "open", label: "Pending", icon: Inbox },
-    { value: "approved", label: "Approved", icon: CheckCircle2 },
-    { value: "rejected", label: "Rejected", icon: XCircle },
-    { value: "cancelled", label: "Cancelled", icon: Ban },
-  ];
-
 const PAGE_SIZE = 20;
 
 export function PRList() {
+  const t = useTranslations("PRs");
+
+  const TABS: { value: StatusFilter; labelKey: string; icon: React.ElementType }[] =
+    [
+      { value: "open", labelKey: "pending", icon: Inbox },
+      { value: "approved", labelKey: "approved", icon: CheckCircle2 },
+      { value: "rejected", labelKey: "rejected", icon: XCircle },
+      { value: "cancelled", labelKey: "cancelled", icon: Ban },
+    ];
+
   const [prs, setPrs] = useState<PullRequestOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -102,8 +104,8 @@ export function PRList() {
   };
 
   const emptyMessage = filterStatus
-    ? `No ${filterStatus} contributions`
-    : "No contributions yet";
+    ? t("noContributions", { status: t(TABS.find(tab => tab.value === filterStatus)?.labelKey as any).toLowerCase() })
+    : t("noContributionsYet");
 
   const EmptyIcon =
     filterStatus === "open"
@@ -120,12 +122,12 @@ export function PRList() {
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Contributions</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("contributions")}</h1>
       </div>
 
       {/* Tab bar */}
       <div className="flex items-center gap-1 border-b overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        {TABS.map(({ value, label, icon: Icon }) => {
+        {TABS.map(({ value, labelKey, icon: Icon }) => {
           const active = filterStatus === value;
           const count = counts[value!];
           return (
@@ -151,7 +153,7 @@ export function PRList() {
                     : ""
                 }`}
               />
-              {label}
+              {t(labelKey as any)}
               {count !== null && count > 0 && (
                 <span
                   className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
@@ -180,7 +182,7 @@ export function PRList() {
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          All
+          {t("all")}
           {filterStatus === null && (
             <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-foreground" />
           )}
@@ -198,8 +200,8 @@ export function PRList() {
           <p className="text-sm font-medium">{emptyMessage}</p>
           <p className="text-xs mt-1 opacity-70">
             {filterStatus === "open"
-              ? "Stage changes from the browse page to create one."
-              : "Contributions will appear here once they exist."}
+              ? t("stageChangesToCreate")
+              : t("contributionsAppearHere")}
           </p>
         </div>
       ) : (
@@ -221,10 +223,10 @@ export function PRList() {
             onClick={() => setPage((p) => p - 1)}
           >
             <ChevronLeft className="h-4 w-4" />
-            Newer
+            {t("newer")}
           </Button>
           <span className="text-xs tabular-nums text-muted-foreground">
-            Page {page}
+            {t("page", { page })}
           </span>
           <Button
             variant="ghost"
@@ -233,7 +235,7 @@ export function PRList() {
             disabled={prs.length < PAGE_SIZE}
             onClick={() => setPage((p) => p + 1)}
           >
-            Older
+            {t("older")}
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>

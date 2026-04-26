@@ -3,6 +3,7 @@
 import { FileText } from "lucide-react";
 import { useDownload } from "@/hooks/use-download";
 import { ViewerShell } from "./viewer-shell";
+import { useTranslations } from "next-intl";
 
 interface GenericViewerProps {
     fileKey: string;
@@ -15,6 +16,7 @@ interface GenericViewerProps {
  * Offers a download button and displays the file name.
  */
 export function GenericViewer({ materialId, fileName, fileKey }: GenericViewerProps) {
+    const t = useTranslations("Preview");
     const { downloadMaterial, isDownloading } = useDownload();
 
     return (
@@ -26,8 +28,7 @@ export function GenericViewer({ materialId, fileName, fileKey }: GenericViewerPr
                 
                 <h3 className="mb-2 text-xl font-semibold text-foreground">{fileName}</h3>
                 <p className="mb-8 max-w-md text-sm text-muted-foreground">
-                    WikINT doesn&apos;t support direct previewing for this file type yet. 
-                    You can download it to view it with your local applications.
+                    {t("notSupported")}
                 </p>
 
                 <button
@@ -38,7 +39,7 @@ export function GenericViewer({ materialId, fileName, fileKey }: GenericViewerPr
                     {isDownloading ? (
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
                     ) : null}
-                    Download File
+                    {t("downloadFile")}
                 </button>
             </div>
         </ViewerShell>

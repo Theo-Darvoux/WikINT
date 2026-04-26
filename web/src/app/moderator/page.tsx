@@ -5,6 +5,7 @@ import { Users, FileText, GitPullRequest, Flag } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 interface ModeratorStats {
     user_count: number;
@@ -14,23 +15,25 @@ interface ModeratorStats {
 }
 
 export default function ModeratorDashboard() {
+    const t = useTranslations("Moderator.dashboard");
+    const tCommon = useTranslations("Common");
     const [stats, setStats] = useState<ModeratorStats | null>(null);
 
     useEffect(() => {
         apiFetch<ModeratorStats>("/moderator/stats")
             .then(setStats)
-            .catch(() => toast.error("Failed to load stats"));
-    }, []);
+            .catch(() => toast.error(t("stats.loadError")));
+    }, [t]);
 
     if (!stats) {
-        return <div className="p-6 text-center text-muted-foreground">Loading...</div>;
+        return <div className="p-6 text-center text-muted-foreground">{tCommon("loading")}</div>;
     }
 
     const cards = [
-        { title: "Total Users", value: stats.user_count, icon: Users },
-        { title: "Materials", value: stats.material_count, icon: FileText },
-        { title: "Open PRs", value: stats.open_pr_count, icon: GitPullRequest },
-        { title: "Open Flags", value: stats.open_flag_count, icon: Flag },
+        { title: t("stats.userCount"), value: stats.user_count, icon: Users },
+        { title: t("stats.materialCount"), value: stats.material_count, icon: FileText },
+        { title: t("stats.openPrCount"), value: stats.open_pr_count, icon: GitPullRequest },
+        { title: t("stats.openFlagCount"), value: stats.open_flag_count, icon: Flag },
     ];
 
     return (

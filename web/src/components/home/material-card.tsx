@@ -11,6 +11,7 @@ import {
 import { getMaterialBrowsePath } from "./file-type-display";
 import { MaterialPreview } from "./material-preview";
 import type { MaterialDetail } from "./types";
+import { useTranslations } from "next-intl";
 
 interface MaterialCardProps {
   material: MaterialDetail;
@@ -18,6 +19,7 @@ interface MaterialCardProps {
 }
 
 export function MaterialCard({ material, className }: MaterialCardProps) {
+  const t = useTranslations("Home");
   const versionInfo = material.current_version_info;
   const fileName = versionInfo?.file_name ?? null;
   const mimeType = versionInfo?.file_mime_type ?? null;
@@ -88,7 +90,7 @@ export function MaterialCard({ material, className }: MaterialCardProps) {
 
           {/* Stats row — pushed to the bottom */}
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground pt-1 mt-auto">
-            <span className="flex items-center gap-1" title="Total views">
+            <span className="flex items-center gap-1" title={t("totalViews")}>
               <Eye className="h-3 w-3" />
               {material.total_views.toLocaleString()}
             </span>
@@ -97,7 +99,7 @@ export function MaterialCard({ material, className }: MaterialCardProps) {
                 "flex items-center gap-1",
                 material.is_liked && "text-primary",
               )}
-              title="Likes"
+              title={t("likes")}
             >
               <ThumbsUp
                 className={cn(

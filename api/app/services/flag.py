@@ -28,7 +28,10 @@ TARGET_TABLE_MAP: dict[str, type[UUIDMixin]] = {
 def _to_uuid(value: str | uuid.UUID) -> uuid.UUID:
     if isinstance(value, uuid.UUID):
         return value
-    return uuid.UUID(value)
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        raise BadRequestError(f"Invalid UUID: {value}")
 
 
 async def _validate_target(db: AsyncSession, target_type: str, target_id: uuid.UUID) -> None:

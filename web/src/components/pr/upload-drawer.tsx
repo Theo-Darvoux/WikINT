@@ -42,6 +42,7 @@ import { TagInput } from "@/components/ui/tag-input";
 import { useDropZoneStore } from "@/components/pr/global-drop-zone";
 import { collectDroppedItems, extractDirPaths, traverseFolder, zipScannedFiles, type ScannedFile } from "@/lib/drop-utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useTranslations } from "next-intl";
 
 
 
@@ -66,11 +67,11 @@ const MAX_CONCURRENT_UPLOADS = 4; // simultaneous XHR uploads
 const maxFilesPerBatch_DEFAULT = 50;
 const PRIVILEGED_ROLES = new Set(["moderator", "bureau", "vieux"]);
 
-function fileSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+function fileSize(bytes: number, t: (key: string, values?: Record<string, string | number | Date>) => string): string {
+    if (bytes < 1024) return t("units.b", { count: bytes });
+    if (bytes < 1024 * 1024) return t("units.kb", { count: (bytes / 1024).toFixed(1) });
+    if (bytes < 1024 * 1024 * 1024) return t("units.mb", { count: (bytes / (1024 * 1024)).toFixed(1) });
+    return t("units.gb", { count: (bytes / (1024 * 1024 * 1024)).toFixed(2) });
 }
 
 function titleFromFilename(name: string): string {
@@ -106,6 +107,8 @@ export function UploadDrawer({
     initialFiles,
     initialFolderEntries,
 }: UploadDrawerProps) {
+    const t = useTranslations("UploadDrawer");
+    const tUpload = useTranslations("Upload");
     const { user } = useAuth();
     const isPrivileged = PRIVILEGED_ROLES.has(user?.role ?? "");
     const maxFilesPerBatch = isPrivileged ? Infinity : maxFilesPerBatch_DEFAULT;
@@ -176,11 +179,11 @@ export function UploadDrawer({
                 // For now, mark as error since we can't recover the File handle.
                 updateItem(item.clientId, {
                     status: "error",
-                    error: "File reference lost after page refresh. Please remove and re-add this file.",
+                    error: t("errorReferenceLost"),
                 });
             }
         });
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [files, updateItem, t]);
 
     // ── beforeunload handler (S17) ──
     useEffect(() => {
@@ -235,7 +238,7 @@ export function UploadDrawer({
                         title: currentItem?.title === titleFromFilename(currentItem?.fileName ?? "") ? titleFromFilename(result.correctedName) : currentItem?.title,
                     });
                 } catch (err) {
-                    const msg = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : "Processing failed");
+                    const msg = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : t("errorProcessing"));
                     if (msg !== "Upload cancelled") {
                         const isVirus = msg.includes("ERR_MALWARE_DETECTED");
                         updateItem(cid, { status: isVirus ? "virus" : "error", error: msg });
@@ -301,6 +304,7 @@ export function UploadDrawer({
                     signal: controller.signal,
                     uploadId: item.uploadId,
                     tusUrl: item.tusUrl,
+                    t: tUpload,
                 });
 
                 const currentItem = useUploadQueue.getState().items.find(i => i.clientId === cid);
@@ -317,7 +321,7 @@ export function UploadDrawer({
                     title: currentItem?.title === titleFromFilename(file.name) ? titleFromFilename(result.correctedName) : currentItem?.title,
                 });
             } catch (err) {
-                const msg = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : "Upload failed");
+                const msg = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : t("errorProcessing"));
                 if (msg !== "Upload cancelled") {
                     const isVirus = msg.includes("ERR_MALWARE_DETECTED");
                     updateItem(cid, {
@@ -342,7 +346,7 @@ export function UploadDrawer({
         // Enqueue, then try to drain
         uploadQueueRef.current.push(clientId);
         drainQueue();
-    }, [updateItem, setActiveCount]);
+    }, [updateItem, setActiveCount, t, tUpload]);
 
     /** Rename a folder path and propagate to all child paths and queue items. */
     const commitRename = useCallback(
@@ -385,7 +389,7 @@ export function UploadDrawer({
             // ── Comprehensive client-side validation ──
             const oversized = scanned.filter((s) => s.file.size > currentMaxSize);
             oversized.forEach((s) =>
-                toast.error(`${s.file.name} exceeds the ${config?.max_file_size_mb || MAX_FILE_SIZE_MB} MiB size limit`),
+                toast.error(t("fileExceedsLimit", { name: s.file.name, limit: config?.max_file_size_mb || MAX_FILE_SIZE_MB })),
             );
 
             let valid = scanned.filter((s) => s.file.size <= currentMaxSize);
@@ -398,7 +402,7 @@ export function UploadDrawer({
                     const isAllowedMime = f.type ? config.allowed_mimetypes.includes(f.type) : false;
 
                     if (!isAllowedExt && !isAllowedMime && !f.type.startsWith("text/")) {
-                        toast.error(`File type '${f.type || ext}' is not supported.`);
+                        toast.error(t("fileTypeNotSupported", { type: f.type || ext }));
                         return false;
                     }
                     return true;
@@ -407,13 +411,13 @@ export function UploadDrawer({
 
             if (valid.length === 0) return;
 
-            const remaining = maxFilesPerBatch - files.length;
+            const remaining = maxFilesPerBatch - useUploadQueue.getState().items.length;
             if (remaining <= 0) {
-                toast.error(`Maximum ${maxFilesPerBatch} files per batch`);
+                toast.error(t("maxFilesPerBatch", { count: maxFilesPerBatch }));
                 return;
             }
             if (valid.length > remaining) {
-                toast.warning(`Only adding ${remaining} file(s) — batch limit is ${maxFilesPerBatch}`);
+                toast.warning(t("onlyAddingCapped", { count: remaining, limit: maxFilesPerBatch }));
                 valid = valid.slice(0, remaining);
             }
 
@@ -454,7 +458,7 @@ export function UploadDrawer({
             addItems(newItems);
             for (const item of newItems) startUpload(item.clientId);
         },
-        [startUpload, nextTempId, addItems, files.length, config],
+        [startUpload, nextTempId, addItems, config, maxFilesPerBatch, t],
     );
 
     /**
@@ -474,7 +478,7 @@ export function UploadDrawer({
                 title: folderName,
                 status: "pending",
                 progress: 0,
-                processingStatus: "Scanning folder…",
+                processingStatus: t("scanningFolder"),
                 targetDirPath: "",
                 folderName,
                 isFromBatchZip: true,
@@ -485,16 +489,16 @@ export function UploadDrawer({
 
             try {
                 // Traverse folder to collect files
-                updateItem(placeholderId, { status: "uploading", progress: 2, processingStatus: "Scanning folder…" });
+                updateItem(placeholderId, { status: "uploading", progress: 2, processingStatus: t("scanningFolder") });
                 const scanned = await traverseFolder(entry);
 
                 if (scanned.length === 0) {
-                    updateItem(placeholderId, { status: "error", error: "Folder is empty or contains no supported files." });
+                    updateItem(placeholderId, { status: "error", error: t("folderEmpty") });
                     return;
                 }
 
                 // Zip all collected files (level 0 = store-only, no compression)
-                updateItem(placeholderId, { progress: 5, processingStatus: "Zipping…" });
+                updateItem(placeholderId, { progress: 5, processingStatus: t("zipping") });
                 const zipBlob = await zipScannedFiles(scanned, (ratio) => {
                     updateItem(placeholderId, { progress: 5 + Math.round(ratio * 25) }); // 5–30%
                 });
@@ -502,7 +506,7 @@ export function UploadDrawer({
                 if (controller.signal.aborted) return;
 
                 // Upload zip to batch-zip endpoint
-                updateItem(placeholderId, { processingStatus: "Uploading…" });
+                updateItem(placeholderId, { processingStatus: t("uploadsInProgress") });
                 const response = await uploadBatchZip(zipBlob, {
                     onProgress: (pct) => updateItem(placeholderId, { progress: 30 + Math.round(pct * 0.5) }), // 30–80%
                     signal: controller.signal,
@@ -513,7 +517,7 @@ export function UploadDrawer({
                 removeItem(placeholderId);
 
                 if (response.files.length === 0) {
-                    const msg = response.errors.length > 0 ? response.errors[0] : "No valid files in folder.";
+                    const msg = response.errors.length > 0 ? response.errors[0] : t("noValidFiles");
                     toast.warning(`${folderName}: ${msg}`);
                     return;
                 }
@@ -562,11 +566,11 @@ export function UploadDrawer({
                 for (const item of newItems) startUpload(item.clientId);
 
                 if (response.skipped > 0) {
-                    toast.warning(`${folderName}: ${response.skipped} file${response.skipped > 1 ? "s" : ""} skipped — ${response.errors.slice(0, 2).join(", ")}${response.errors.length > 2 ? "…" : ""}`);
+                    toast.warning(`${folderName}: ${t("filesSkipped", { count: response.skipped, errors: response.errors.slice(0, 2).join(", ") + (response.errors.length > 2 ? "…" : "") })}`);
                 }
 
             } catch (err) {
-                const msg = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : "Folder upload failed");
+                const msg = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : t("folderUploadFailed"));
                 if (msg !== "Upload cancelled") {
                     updateItem(placeholderId, { status: "error", error: msg });
                 } else {
@@ -575,7 +579,7 @@ export function UploadDrawer({
                 abortControllersRef.current.delete(placeholderId);
             }
         },
-        [addItems, updateItem, removeItem, nextTempId, startUpload],
+        [addItems, updateItem, removeItem, nextTempId, startUpload, t],
     );
 
     /** Add flat files (from file input or flat drag). All go to current directory. */
@@ -584,13 +588,13 @@ export function UploadDrawer({
             const currentCount = useUploadQueue.getState().items.length;
             const remaining = maxFilesPerBatch - currentCount;
             if (remaining <= 0) {
-                toast.error(`Maximum ${maxFilesPerBatch} files per batch`);
+                toast.error(t("maxFilesPerBatch", { count: maxFilesPerBatch }));
                 return;
             }
             const filesArray = Array.isArray(newFiles) ? newFiles : Array.from(newFiles);
             const capped = (filesArray as (File | ScannedFile)[]).slice(0, remaining);
             if (capped.length < newFiles.length) {
-                toast.warning(`Only adding ${remaining} file(s) — batch limit is ${maxFilesPerBatch}`);
+                toast.warning(t("onlyAddingCapped", { count: remaining, limit: maxFilesPerBatch }));
             }
 
             const scanned: ScannedFile[] = capped.map(f => {
@@ -600,7 +604,7 @@ export function UploadDrawer({
 
             processScannedFiles(scanned);
         },
-        [processScannedFiles],
+        [processScannedFiles, maxFilesPerBatch, t],
     );
 
 
@@ -654,7 +658,7 @@ export function UploadDrawer({
             try {
                 dropped = await collectDroppedItems(items);
             } catch {
-                toast.error("Failed to read dropped items");
+                toast.error(t("failedToReadDropped"));
                 return;
             }
             if (dropped.files.length > 0) processScannedFiles(dropped.files);
@@ -662,7 +666,7 @@ export function UploadDrawer({
                 void processFolderViaZip(entry, name);
             }
         },
-        [processScannedFiles, processFolderViaZip],
+        [processScannedFiles, processFolderViaZip, t],
     );
 
     useEffect(() => {
@@ -758,16 +762,11 @@ export function UploadDrawer({
 
     const canStage = doneFiles.length > 0 && inFlightCount === 0;
 
-    const stageLabel =
-        doneFiles.length === files.length
-            ? `Add to draft (${doneFiles.length})`
-            : `Add to draft (${doneFiles.length}/${files.length})`;
-
     const handleStage = () => {
         // ── Explicit messaging for errors (U14) ──
         if (errorFiles.length > 0) {
             const confirmed = window.confirm(
-                `${errorFiles.length} file(s) failed and will not be included. Continue?`
+                t("confirmFailedFiles", { count: errorFiles.length })
             );
             if (!confirmed) return;
         }
@@ -824,7 +823,7 @@ export function UploadDrawer({
         setPendingDirPaths(new Map());
 
         const total = dirOps.length + matOps.length;
-        toast.success(`${total} change${total > 1 ? "s" : ""} added to draft`);
+        toast.success(t("addedToDraft", { count: total }));
 
         if (errorFiles.length === 0) {
             onOpenChange(false);
@@ -877,12 +876,12 @@ export function UploadDrawer({
         }
         // Block close while uploads are running
         if (inFlightFiles.length > 0) {
-            toast.warning("Wait for uploads to finish before closing");
+            toast.warning(t("waitUploads"));
             return;
         }
         // Warn if done files are present but not yet staged (H-1)
         if (doneFiles.length > 0) {
-            if (window.confirm(`${doneFiles.length} file${doneFiles.length > 1 ? "s" : ""} uploaded but not staged. Discard them?`)) {
+            if (window.confirm(t("discardUploaded", { count: doneFiles.length }))) {
                 doClose();
             }
             return;
@@ -898,43 +897,31 @@ export function UploadDrawer({
                 onInteractOutside={(e) => {
                     e.preventDefault();
                     if (inFlightFiles.length > 0) {
-                        toast.warning("Uploads are in progress — wait for them to finish");
+                        toast.warning(t("uploadsInProgress"));
                     }
                 }}
                 onPointerDownOutside={(e) => e.preventDefault()}
             >
                 <SheetHeader>
-                    <SheetTitle>{parentMaterialId ? "Upload Attachments" : "Upload Files"}</SheetTitle>
+                    <SheetTitle>{parentMaterialId ? t("titleAttachments") : t("titleFiles")}</SheetTitle>
                     <SheetDescription>
                         {parentMaterialId ? (
-                            <>
-                                Attach files to{" "}
-                                <span className="font-medium text-foreground">
-                                    {directoryName || "this material"}
-                                </span>
-                                . They&apos;ll appear in your staged changes.
-                            </>
+                            t("descAttachments", { name: directoryName || t("untitled") })
                         ) : (
-                            <>
-                                Drop files or folders into{" "}
-                                <span className="font-medium text-foreground">
-                                    {directoryName || "this folder"}
-                                </span>
-                                . Folder structure is preserved.
-                            </>
+                            t("descFiles", { name: directoryName || t("untitled") }) // Using untitled as fallback for "this folder" if needed, but descFiles has {name}
                         )}
                     </SheetDescription>
                 </SheetHeader>
 
                 <div className="space-y-1.5 py-4">
-                    <label className="text-sm font-medium">Batch Tags</label>
+                    <label className="text-sm font-medium">{t("batchTags")}</label>
                     <TagInput
                         tags={batchTags}
                         onChange={setBatchTags}
-                        placeholder="Apply tags to all files and folders…"
+                        placeholder={t("batchTagsPlaceholder")}
                     />
                     <p className="text-[10px] text-muted-foreground">
-                        Tags entered here will be applied to every file and folder in this batch.
+                        {t("batchTagsHint")}
                     </p>
                 </div>
 
@@ -942,7 +929,7 @@ export function UploadDrawer({
                 <div
                     ref={dropzoneRef}
                     role="region"
-                    aria-label="Drop files or folders here"
+                    aria-label={t("dropzoneActive")}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
@@ -974,16 +961,16 @@ export function UploadDrawer({
                         <div className="pointer-events-none flex flex-col items-center gap-2 text-center">
                             <p className="text-sm text-muted-foreground">
                                 {isDragging
-                                    ? "Drop files or folders here"
-                                    : "Drag & drop files or folders, or click to browse"}
+                                    ? t("dropzoneActive")
+                                    : t("dropzoneDefault")}
                             </p>
                             <p className="text-xs text-muted-foreground/70">
-                                Max {MAX_FILE_SIZE_MB} MiB per file · Folder structure preserved on drop
+                                {t("dropzoneHint", { limit: MAX_FILE_SIZE_MB })}
                             </p>
                         </div>
                     ) : (
                         <p className="pointer-events-none text-xs text-muted-foreground">
-                            {isDragging ? "Drop to add more" : "Drop more files or folders here"}
+                            {isDragging ? t("dropMoreActive") : t("dropMoreDefault")}
                         </p>
                     )}
                     <input
@@ -1010,7 +997,7 @@ export function UploadDrawer({
                             className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-green-700 dark:text-green-400 hover:bg-green-100/50 dark:hover:bg-green-900/20 transition-colors"
                         >
                             <span>
-                                {pendingDirPaths.size} folder{pendingDirPaths.size > 1 ? "s" : ""} will be created
+                                {t("foldersWillBeCreated", { count: pendingDirPaths.size })}
                             </span>
                             {foldersExpanded
                                 ? <ChevronDown className="h-3.5 w-3.5" />
@@ -1053,7 +1040,7 @@ export function UploadDrawer({
                                                 ) : (
                                                     <button
                                                         type="button"
-                                                        title="Click to rename"
+                                                        title={t("clickToRename")}
                                                         onClick={() => { setEditingPath(path); setEditValue(leafName); }}
                                                         className="flex-1 min-w-0 text-left text-[11px] text-green-700 dark:text-green-400 truncate hover:underline decoration-dotted underline-offset-2"
                                                     >
@@ -1063,7 +1050,7 @@ export function UploadDrawer({
                                                 {!isEditing && (
                                                     <button
                                                         type="button"
-                                                        title="Rename"
+                                                        title={t("rename")}
                                                         onClick={() => { setEditingPath(path); setEditValue(leafName); }}
                                                         className="opacity-0 group-hover/dir:opacity-100 transition-opacity shrink-0 text-green-500 hover:text-green-700 dark:hover:text-green-300"
                                                     >
@@ -1120,7 +1107,7 @@ export function UploadDrawer({
                                                     /* eslint-disable-next-line @next/next/no-img-element */
                                                     <img
                                                         src={previewUrlsRef.current.get(f.clientId)}
-                                                        alt="preview"
+                                                        alt={t("previewAlt")}
                                                         className="h-full w-full object-cover"
                                                     />
                                                 )
@@ -1146,23 +1133,23 @@ export function UploadDrawer({
                                                 updateTitleField(f.clientId, e.target.value)
                                             }
                                             className="h-7 text-sm font-medium"
-                                            placeholder="Title"
+                                            placeholder={t("titlePlaceholder")}
                                         />
                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                             <span className="shrink-0">
                                                 {f.serverSize != null
-                                                    ? fileSize(f.serverSize)
-                                                    : fileSize(f.fileSize)}
+                                                    ? fileSize(f.serverSize, t)
+                                                    : fileSize(f.fileSize, t)}
                                             </span>
                                             {f.wasCompressed && (
                                                 <span className="shrink-0 rounded bg-blue-100 px-1 py-0.5 text-[9px] font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-                                                    compressed
+                                                    {t("compressed")}
                                                 </span>
                                             )}
                                         </div>
                                         {!f.isFromBatchZip && !fileObjectsRef.current.has(f.clientId) && (f.status === "pending" || f.status === "uploading" || f.status === "paused") && (
                                             <p className="text-[10px] text-destructive font-medium">
-                                                File reference lost. Re-add file to resume.
+                                                {t("fileReferenceLost")}
                                             </p>
                                         )}
                                         {f.targetDirPath && (
@@ -1176,13 +1163,13 @@ export function UploadDrawer({
                                                 {/* Upload / transfer bar */}
                                                 <div className="flex flex-col gap-0.5">
                                                     <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                                                        <span>Upload</span>
+                                                        <span>{t("Upload.uploading", { ns: "Upload" })}</span>
                                                         {f.status !== "paused" && (
                                                             <span>
                                                                 {Math.min(Math.round(f.progress * 100 / 80), 100)}%
                                                                 {etaMap.get(f.clientId) && f.progress < 80 && (
                                                                     <span className="ml-1">
-                                                                        · {((etaMap.get(f.clientId)?.bps ?? 0) / (1024 * 1024)).toFixed(1)} MB/s · ~{etaMap.get(f.clientId)?.etaSec}s
+                                                                        · {((etaMap.get(f.clientId)?.bps ?? 0) / (1024 * 1024)).toFixed(1)} {t("mbPerSec")} · ~{etaMap.get(f.clientId)?.etaSec}{t("secondsShort")}
                                                                     </span>
                                                                 )}
                                                             </span>
@@ -1199,7 +1186,7 @@ export function UploadDrawer({
                                                     <div className="flex flex-col gap-0.5">
                                                         <div className="flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
                                                             <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0" />
-                                                            <span className="truncate">{f.processingStatus || "Processing…"}</span>
+                                                            <span className="truncate">{f.processingStatus || t("Upload.processing", { ns: "Upload" })}</span>
                                                             {f.stageIndex != null && f.stageTotal != null && (
                                                                 <span className="ml-auto shrink-0 font-normal text-muted-foreground">
                                                                     {f.stageIndex + 1}/{f.stageTotal}
@@ -1216,17 +1203,17 @@ export function UploadDrawer({
                                                 )}
 
                                                 {f.status === "paused" && (
-                                                    <p className="text-[10px] text-muted-foreground">Paused</p>
+                                                    <p className="text-[10px] text-muted-foreground">{t("paused")}</p>
                                                 )}
                                             </div>
                                         )}
                                         {f.status === "virus" && (
                                             <div className="rounded-md bg-destructive/10 px-2 py-1.5">
                                                 <p className="text-xs font-semibold text-destructive">
-                                                    Threat detected — file rejected
+                                                    {t("threatDetected")}
                                                 </p>
                                                 <p className="mt-0.5 text-[10px] text-destructive/80">
-                                                    This file was flagged as malicious by the virus scanner and has been deleted from storage. It cannot be uploaded.
+                                                    {t("threatDescription")}
                                                 </p>
                                             </div>
                                         )}
@@ -1245,7 +1232,7 @@ export function UploadDrawer({
                                                 size="icon"
                                                 className="h-7 w-7"
                                                 onClick={() => pauseUpload(f.clientId)}
-                                                title="Pause"
+                                                title={t("pause")}
                                             >
                                                 <Pause className="h-3.5 w-3.5" />
                                             </Button>
@@ -1256,7 +1243,7 @@ export function UploadDrawer({
                                                 size="icon"
                                                 className="h-7 w-7"
                                                 onClick={() => resumeUpload(f.clientId)}
-                                                title="Resume"
+                                                title={t("resume")}
                                             >
                                                 <Play className="h-3.5 w-3.5" />
                                             </Button>
@@ -1269,7 +1256,7 @@ export function UploadDrawer({
                                                 onClick={() =>
                                                     retryFile(f.clientId)
                                                 }
-                                                title="Retry"
+                                                title={t("retry")}
                                             >
                                                 <RotateCcw className="h-3.5 w-3.5" />
                                             </Button>
@@ -1281,7 +1268,7 @@ export function UploadDrawer({
                                             onClick={() =>
                                                 removeFile(f.clientId)
                                             }
-                                            title="Remove"
+                                            title={t("remove")}
                                         >
                                             <X className="h-3.5 w-3.5" />
                                         </Button>
@@ -1299,7 +1286,9 @@ export function UploadDrawer({
                         className="w-full gap-2"
                     >
                         <PackagePlus className="h-4 w-4" />
-                        {stageLabel}
+                        {doneFiles.length === files.length
+                            ? t("addToDraft", { count: doneFiles.length })
+                            : t("addToDraftProgress", { count: doneFiles.length, total: files.length })}
                     </Button>
                 </SheetFooter>
             </SheetContent>

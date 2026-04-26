@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RefreshCw, X, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { RotateCw, XCircle, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -9,8 +9,10 @@ import { Label } from "@/components/ui/label";
 import { apiFetch } from "@/lib/api-client";
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
-interface DLQJob {
+interface FailedJob {
     id: string;
     job_name: string;
     upload_id: string | null;
@@ -22,32 +24,36 @@ interface DLQJob {
 }
 
 interface PaginatedJobs {
-    items: DLQJob[];
+    items: FailedJob[];
     total: number;
     page: number;
     pages: number;
 }
 
 export default function AdminDLQPage() {
-    const [jobs, setJobs] = useState<DLQJob[]>([]);
+    const t = useTranslations("Admin.DLQ");
+    const { show } = useConfirmDialog();
+
+    const [jobs, setJobs] = useState<FailedJob[]>([]);
     const [page, setPage] = useState(1);
     const [pages, setPages] = useState(1);
     const [total, setTotal] = useState(0);
     const [showResolved, setShowResolved] = useState(false);
     const [loading, setLoading] = useState(true);
-    const { show } = useConfirmDialog();
 
     const fetchJobs = async (p = page) => {
         setLoading(true);
         try {
-            const params = new URLSearchParams({ page: String(p), limit: "25", resolved: String(showResolved) });
+            const params = new URLSearchParams({ page: String(p), limit: "50" });
+            if (showResolved) params.append("resolved", "true");
+
             const data = await apiFetch<PaginatedJobs>(`/admin/dlq?${params}`);
             setJobs(data.items);
             setPage(data.page);
             setPages(data.pages);
             setTotal(data.total);
         } catch {
-            toast.error("Failed to load dead letter queue");
+            toast.error(t("errors.load"));
         } finally {
             setLoading(false);
         }
@@ -55,54 +61,59 @@ export default function AdminDLQPage() {
 
     useEffect(() => { fetchJobs(1); }, [showResolved]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const handleRetry = (job: DLQJob) => {
+    const handleRetry = async (job: FailedJob) => {
         show(
-            "Retry job?",
-            `Re-enqueue "${job.job_name}"? It will run again with the original payload.`,
+            t("actions.retry.title"),
+            t("actions.retry.description", { name: job.job_name }),
             async () => {
                 try {
                     await apiFetch(`/admin/dlq/${job.id}/retry`, { method: "POST" });
-                    toast.success("Job re-enqueued");
-                    fetchJobs(page);
+                    setJobs((prev) => prev.filter((j) => j.id !== job.id));
+                    toast.success(t("actions.retry.success"));
                 } catch {
-                    toast.error("Failed to retry job");
+                    toast.error(t("actions.retry.error"));
                 }
             }
         );
     };
 
-    const handleDismiss = (job: DLQJob) => {
+    const handleDismiss = async (job: FailedJob) => {
         show(
-            "Dismiss job?",
-            `Mark "${job.job_name}" as resolved without retrying. This cannot be undone.`,
+            t("actions.dismiss.title"),
+            t("actions.dismiss.description", { name: job.job_name }),
             async () => {
                 try {
                     await apiFetch(`/admin/dlq/${job.id}/dismiss`, { method: "POST" });
-                    toast.success("Job dismissed");
-                    fetchJobs(page);
+                    setJobs((prev) =>
+                        prev.map((j) => (j.id === job.id ? { ...j, resolved_at: new Date().toISOString() } : j))
+                    );
+                    toast.success(t("actions.dismiss.success"));
                 } catch {
-                    toast.error("Failed to dismiss job");
+                    toast.error(t("actions.dismiss.error"));
                 }
             }
         );
     };
 
     return (
-        <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+        <div className="space-y-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold">{t("title")}</h1>
+                    <p className="text-sm text-muted-foreground">
+                        {t("jobCount", { count: total })}
+                    </p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Label htmlFor="show-resolved" className="text-sm cursor-pointer">
+                        {t("showResolved")}
+                    </Label>
                     <Switch
                         id="show-resolved"
                         checked={showResolved}
                         onCheckedChange={setShowResolved}
                     />
-                    <Label htmlFor="show-resolved" className="text-sm text-muted-foreground">
-                        Show resolved
-                    </Label>
                 </div>
-                <span className="text-sm text-muted-foreground">
-                    {total} job{total !== 1 ? "s" : ""}
-                </span>
             </div>
 
             <div className="rounded-lg border bg-card">
@@ -110,43 +121,38 @@ export default function AdminDLQPage() {
                     <table className="w-full text-left text-sm">
                         <thead className="border-b bg-muted/50 text-muted-foreground">
                             <tr>
-                                <th className="p-4 font-medium">Job</th>
-                                <th className="p-4 font-medium hidden sm:table-cell">Attempts</th>
-                                <th className="p-4 font-medium hidden md:table-cell">Error</th>
-                                <th className="p-4 font-medium hidden sm:table-cell">Created</th>
-                                <th className="p-4 font-medium text-right">Actions</th>
+                                <th className="p-4 font-medium">{t("table.job")}</th>
+                                <th className="p-4 font-medium">{t("table.attempts")}</th>
+                                <th className="p-4 font-medium">{t("table.error")}</th>
+                                <th className="p-4 font-medium">{t("table.created")}</th>
+                                <th className="p-4 font-medium text-right">{t("table.actions")}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y">
                             {loading && jobs.length === 0 && (
                                 <tr>
                                     <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                                        Loading...
+                                        {t("state.loading")}
                                     </td>
                                 </tr>
                             )}
                             {!loading && jobs.length === 0 && (
                                 <tr>
-                                    <td colSpan={5} className="p-10 text-center">
-                                        <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-muted-foreground/30" />
-                                        <p className="text-sm text-muted-foreground">
-                                            {showResolved ? "No jobs found." : "No failed jobs. All good."}
-                                        </p>
+                                    <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                                        {showResolved ? t("state.noFound") : t("state.empty")}
                                     </td>
                                 </tr>
                             )}
                             {jobs.map((job) => (
                                 <tr key={job.id} className="transition-colors hover:bg-muted/30">
                                     <td className="p-4">
-                                        <div className="space-y-1">
-                                            <p className="font-medium font-mono text-xs">{job.job_name}</p>
-                                            {job.upload_id && (
-                                                <p className="text-[11px] text-muted-foreground font-mono">
-                                                    upload: {job.upload_id.slice(0, 8)}…
-                                                </p>
-                                            )}
+                                        <div className="flex flex-col">
+                                            <span className="font-medium font-mono text-xs">{job.job_name}</span>
+                                            <span className="text-[10px] font-mono opacity-50">{job.id}</span>
                                             {job.resolved_at && (
-                                                <Badge variant="secondary" className="text-[10px]">resolved</Badge>
+                                                <Badge variant="outline" className="mt-1 w-fit text-[9px] h-4 px-1 bg-green-500/5 text-green-600 border-green-200">
+                                                    {t("state.resolved")}
+                                                </Badge>
                                             )}
                                         </div>
                                     </td>
@@ -171,22 +177,22 @@ export default function AdminDLQPage() {
                                         {!job.resolved_at && (
                                             <div className="flex justify-end gap-1">
                                                 <Button
+                                                    variant="ghost"
                                                     size="sm"
-                                                    variant="outline"
-                                                    className="h-8 gap-1.5"
+                                                    className="h-8 text-xs gap-1.5"
                                                     onClick={() => handleRetry(job)}
                                                 >
-                                                    <RefreshCw className="h-3 w-3" />
-                                                    Retry
+                                                    <RotateCw className="h-3 w-3" />
+                                                    {t("actions.retry.label")}
                                                 </Button>
                                                 <Button
-                                                    size="sm"
                                                     variant="ghost"
-                                                    className="h-8 gap-1.5 text-muted-foreground"
+                                                    size="sm"
+                                                    className="h-8 text-xs gap-1.5 text-muted-foreground"
                                                     onClick={() => handleDismiss(job)}
                                                 >
-                                                    <X className="h-3 w-3" />
-                                                    Dismiss
+                                                    <XCircle className="h-3 w-3" />
+                                                    {t("actions.dismiss.label")}
                                                 </Button>
                                             </div>
                                         )}
@@ -199,15 +205,25 @@ export default function AdminDLQPage() {
             </div>
 
             {pages > 1 && (
-                <div className="flex items-center justify-center gap-3">
-                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => fetchJobs(page - 1)}>
-                        <ChevronLeft className="h-4 w-4" />
-                        Previous
+                <div className="flex items-center justify-center gap-2">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={page <= 1}
+                        onClick={() => fetchJobs(page - 1)}
+                    >
+                        {t("pagination.previous")}
                     </Button>
-                    <span className="text-sm text-muted-foreground">{page} of {pages}</span>
-                    <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => fetchJobs(page + 1)}>
-                        Next
-                        <ChevronRight className="h-4 w-4" />
+                    <span className="text-sm text-muted-foreground">
+                        {page} {t("pagination.of")} {pages}
+                    </span>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={page >= pages}
+                        onClick={() => fetchJobs(page + 1)}
+                    >
+                        {t("pagination.next")}
                     </Button>
                 </div>
             )}

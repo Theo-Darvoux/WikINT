@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 interface AuthConfig {
     s3_endpoint: string | null;
@@ -61,11 +62,11 @@ function ToggleRow({
 }
 
 export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigTabProps) {
+    const t = useTranslations("Admin.Config.Storage");
     const [storageForm, setStorageForm] = useState<Partial<AuthConfig>>({});
     const [isStorageModified, setIsStorageModified] = useState(false);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setStorageForm({
             s3_endpoint: config.s3_endpoint,
             s3_access_key: config.s3_access_key,
@@ -81,7 +82,7 @@ export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigT
 
     const handleSave = async () => {
         await patchConfig(storageForm);
-        toast.success("Storage configuration updated");
+        toast.success(t("success"));
         setIsStorageModified(false);
     };
 
@@ -105,19 +106,19 @@ export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigT
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Database className="h-5 w-5 text-primary" />
-                        S3 Storage Configuration
+                        {t("title")}
                     </CardTitle>
                     <CardDescription>
-                        Configure where files are stored. Supports AWS S3, Cloudflare R2, MinIO, etc.
+                        {t("description")}
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
-                            <Label htmlFor="s3_endpoint">S3 Endpoint</Label>
+                            <Label htmlFor="s3_endpoint">{t("endpoint")}</Label>
                             <Input
                                 id="s3_endpoint"
-                                placeholder="e.g. s3.amazonaws.com"
+                                placeholder={t("placeholders.endpoint")}
                                 value={storageForm.s3_endpoint || ""}
                                 onChange={(e) => {
                                     setStorageForm((prev) => ({ ...prev, s3_endpoint: e.target.value }));
@@ -125,14 +126,14 @@ export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigT
                                 }}
                             />
                             <p className="text-[10px] text-muted-foreground">
-                                Do not include http:// or https://
+                                {t("endpointHelp")}
                             </p>
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="s3_region">Region</Label>
+                            <Label htmlFor="s3_region">{t("region")}</Label>
                             <Input
                                 id="s3_region"
-                                placeholder="e.g. us-east-1"
+                                placeholder={t("placeholders.region")}
                                 value={storageForm.s3_region || ""}
                                 onChange={(e) => {
                                     setStorageForm((prev) => ({ ...prev, s3_region: e.target.value }));
@@ -141,10 +142,10 @@ export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigT
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="s3_bucket">Bucket Name</Label>
+                            <Label htmlFor="s3_bucket">{t("bucket")}</Label>
                             <Input
                                 id="s3_bucket"
-                                placeholder="my-bucket"
+                                placeholder={t("placeholders.bucket")}
                                 value={storageForm.s3_bucket || ""}
                                 onChange={(e) => {
                                     setStorageForm((prev) => ({ ...prev, s3_bucket: e.target.value }));
@@ -153,10 +154,10 @@ export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigT
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="s3_public_endpoint">Public Endpoint (Optional)</Label>
+                            <Label htmlFor="s3_public_endpoint">{t("publicEndpoint")}</Label>
                             <Input
                                 id="s3_public_endpoint"
-                                placeholder="e.g. my-cdn.example.com"
+                                placeholder={t("placeholders.publicEndpoint")}
                                 value={storageForm.s3_public_endpoint || ""}
                                 onChange={(e) => {
                                     setStorageForm((prev) => ({ ...prev, s3_public_endpoint: e.target.value }));
@@ -168,7 +169,7 @@ export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigT
 
                     <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
-                            <Label htmlFor="s3_access_key">Access Key</Label>
+                            <Label htmlFor="s3_access_key">{t("accessKey")}</Label>
                             <Input
                                 id="s3_access_key"
                                 type="password"
@@ -181,7 +182,7 @@ export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigT
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="s3_secret_key">Secret Key</Label>
+                            <Label htmlFor="s3_secret_key">{t("secretKey")}</Label>
                             <Input
                                 id="s3_secret_key"
                                 type="password"
@@ -197,12 +198,12 @@ export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigT
                     
                     <div className="pt-4 border-t space-y-4">
                         <div className="space-y-2 max-w-xs">
-                            <Label htmlFor="max_storage_gb">Global Storage Limit (GB)</Label>
+                            <Label htmlFor="max_storage_gb">{t("maxStorage")}</Label>
                             <div className="flex items-center gap-3">
                                 <Input
                                     id="max_storage_gb"
                                     type="number"
-                                    placeholder="e.g. 10"
+                                    placeholder={t("placeholders.maxStorage")}
                                     value={storageForm.max_storage_gb ?? ""}
                                     onChange={(e) => {
                                         const val = e.target.value === "" ? null : parseInt(e.target.value);
@@ -213,15 +214,14 @@ export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigT
                                 <span className="text-sm font-bold text-muted-foreground whitespace-nowrap">GB</span>
                             </div>
                             <p className="text-[10px] text-muted-foreground">
-                                Prevents new uploads when total storage usage exceeds this value. 
-                                Set to 0 or leave empty for no limit.
+                                {t("maxStorageHelp")}
                             </p>
                         </div>
 
                         <ToggleRow
                             icon={Cloud}
-                            label="Use SSL"
-                            description="Whether to use HTTPS for S3 operations."
+                            label={t("useSsl")}
+                            description={t("useSslDescription")}
                             checked={storageForm.s3_use_ssl ?? true}
                             onToggle={() => {
                                 setStorageForm((prev) => ({
@@ -235,7 +235,7 @@ export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigT
                         <div className="flex justify-end gap-3">
                             {isStorageModified && (
                                 <Button variant="outline" onClick={handleDiscard}>
-                                    Discard Changes
+                                    {t("discard")}
                                 </Button>
                             )}
                             <Button 
@@ -248,7 +248,7 @@ export function StorageConfigTab({ config, saving, patchConfig }: StorageConfigT
                                 ) : (
                                     <Save className="h-4 w-4" />
                                 )}
-                                Save Storage Settings
+                                {t("save")}
                             </Button>
                         </div>
                     </div>

@@ -12,19 +12,23 @@ import { toast } from "sonner";
 import { Sparkles, GraduationCap, CheckCircle2, ArrowRight } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
-const ACADEMIC_YEARS = [
-    { value: "1A", label: "1A", description: "First year" },
-    { value: "2A", label: "2A", description: "Second year" },
-    { value: "3A+", label: "3A+", description: "Third year +" },
-] as const;
+import { useTranslations } from "next-intl";
+import Link from "next/link";
 
 export default function OnboardingPage() {
+    const t = useTranslations("Onboarding");
     const { user, fetchMe } = useAuth();
     const [displayName, setDisplayName] = useState("");
     const [academicYear, setAcademicYear] = useState<string>("");
     const [gdprConsent, setGdprConsent] = useState(false);
     const [loading, setLoading] = useState(false);
     const router = useRouter();
+
+    const ACADEMIC_YEARS = [
+        { value: "1A", label: t("years.1A.label"), description: t("years.1A.description") },
+        { value: "2A", label: t("years.2A.label"), description: t("years.2A.description") },
+        { value: "3A+", label: t("years.3A+.label"), description: t("years.3A+.description") },
+    ] as const;
 
     // Autocomplete with SSO name if available
     useEffect(() => {
@@ -36,7 +40,7 @@ export default function OnboardingPage() {
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         if (!gdprConsent) {
-            toast.error("You must accept the terms to continue");
+            toast.error(t("termsRequired"));
             return;
         }
         setLoading(true);
@@ -51,9 +55,9 @@ export default function OnboardingPage() {
             });
             await fetchMe();
             router.push("/");
-            toast.success("Profile set up successfully!");
+            toast.success(t("success"));
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Onboarding failed");
+            toast.error(err instanceof Error ? err.message : t("failed"));
         } finally {
             setLoading(false);
         }
@@ -70,9 +74,9 @@ export default function OnboardingPage() {
                     <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                         <Sparkles className="h-6 w-6 text-primary animate-pulse" />
                     </div>
-                    <CardTitle className="text-3xl font-extrabold tracking-tight">Welcome to WikINT!</CardTitle>
+                    <CardTitle className="text-3xl font-extrabold tracking-tight">{t("welcome")}</CardTitle>
                     <CardDescription className="text-base mt-2">
-                        Complete your profile to unlock all features
+                        {t("completeProfile")}
                     </CardDescription>
                 </CardHeader>
 
@@ -83,18 +87,18 @@ export default function OnboardingPage() {
                             <div className="flex items-center gap-2">
                                 <Label htmlFor="displayName" className="text-sm font-semibold flex items-center gap-2">
                                     <CheckCircle2 className="h-4 w-4 text-primary" />
-                                    Display name
+                                    {t("displayName")}
                                 </Label>
                                 {user?.display_name && (
                                     <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
-                                        Imported from Google
+                                        {t("importedFromGoogle")}
                                     </span>
                                 )}
                             </div>
                             <Input
                                 id="displayName"
                                 type="text"
-                                placeholder="E.g. John Doe"
+                                placeholder={t("displayNamePlaceholder")}
                                 value={displayName}
                                 onChange={(e) => setDisplayName(e.target.value)}
                                 className="h-12 bg-background/50 border-primary/20 focus:border-primary transition-all text-lg"
@@ -107,7 +111,7 @@ export default function OnboardingPage() {
                         <div className="space-y-3">
                             <Label className="text-sm font-semibold flex items-center gap-2">
                                 <GraduationCap className="h-4 w-4 text-primary" />
-                                Academic year
+                                {t("academicYear")}
                             </Label>
                             <div className="grid grid-cols-3 gap-3">
                                 {ACADEMIC_YEARS.map((year) => (
@@ -152,12 +156,15 @@ export default function OnboardingPage() {
                                     htmlFor="gdpr"
                                     className="text-sm font-medium leading-normal cursor-pointer text-muted-foreground group-hover:text-foreground transition-colors"
                                 >
-                                    I agree to the processing of my personal data for WikINT.
+                                    {t("gdprAgree")}
                                     <span className="block mt-1 text-xs opacity-70 italic">
-                                        Materials I upload become platform property. See our{" "}
-                                        <a href="/privacy" className="text-primary underline underline-offset-4 hover:opacity-100 font-bold">
-                                            privacy policy
-                                        </a>.
+                                        {t.rich("gdprNote", {
+                                            privacy: (chunks) => (
+                                                <Link href="/privacy" className="text-primary underline underline-offset-4 hover:opacity-100 font-bold">
+                                                    {chunks}
+                                                </Link>
+                                            )
+                                        })}
                                     </span>
                                 </Label>
                             </div>
@@ -171,7 +178,7 @@ export default function OnboardingPage() {
                             disabled={loading || !academicYear || !displayName || !gdprConsent}
                         >
                             <span className="relative z-10 flex items-center justify-center gap-2">
-                                {loading ? "Finalizing..." : "Get Started"}
+                                {loading ? t("finalizing") : t("getStarted")}
                                 {!loading && <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />}
                             </span>
                             <div className="absolute inset-0 bg-gradient-to-r from-primary via-primary/80 to-primary opacity-0 group-hover:opacity-100 transition-opacity" />

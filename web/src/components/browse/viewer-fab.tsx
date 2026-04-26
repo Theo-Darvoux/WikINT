@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import {
   Download,
@@ -33,6 +33,7 @@ import {
   DrawerClose,
 } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 // ─── Action cell ──────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ function ActionCell({
       "bg-violet-500/15 dark:bg-violet-500/20 text-violet-500 hover:bg-violet-500/20 dark:hover:bg-violet-500/30": tint === "violet",
       "bg-blue-500/15 dark:bg-blue-500/20 text-blue-500 hover:bg-blue-500/20 dark:hover:bg-blue-500/30": tint === "primary",
       "bg-destructive/10 text-destructive hover:bg-destructive/20": tint === "destructive",
+      "opacity-50 grayscale pointer-events-none": disabled,
     },
   );
 
@@ -134,8 +136,14 @@ export function ViewerFab({
   open,
   onOpenChange,
 }: ViewerFabProps) {
+  const t = useTranslations("Browse");
   const pathname = usePathname();
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const searchParams = useSearchParams();
+  const isPreview = !!searchParams.get("preview_pr");
+  const isDraft = materialId.startsWith("$");
+  const isRestricted = isPreview || isDraft;
+
   const { openSidebar, updateSidebarData } = useUIStore();
   const { downloadMaterial, isDownloading } = useDownload();
   const { print, isPrinting, canPrint } = usePrint({
@@ -159,12 +167,12 @@ export function ViewerFab({
         });
       } catch (err) {
         if (err instanceof Error && err.name !== "AbortError") {
-          toast.error("Sharing failed");
+          toast.error(t("sharingFailed"));
         }
       }
     } else {
       navigator.clipboard.writeText(shareUrl).then(() => {
-        toast.success("Link copied to clipboard");
+        toast.success(t("linkCopied"));
       });
     }
   };
@@ -184,7 +192,7 @@ export function ViewerFab({
     } catch {
       setIsLiked(!next);
       setLikeCount(likeCount);
-      toast.error("Failed to update like");
+      toast.error(t("failedToUpdateLike") || "Failed to update like");
     } finally {
       setIsLiking(false);
     }
@@ -196,7 +204,7 @@ export function ViewerFab({
         op: "delete_material",
         material_id: materialId,
     });
-    toast.success("Added deletion to draft");
+    toast.success(t("addedDeletionToDraft"));
     close();
   };
 
@@ -211,7 +219,7 @@ export function ViewerFab({
         )}
       >
         {/* Visually hidden title satisfies Radix's a11y requirement */}
-        <DrawerTitle className="sr-only">Document actions</DrawerTitle>
+        <DrawerTitle className="sr-only">{t("documentActions")}</DrawerTitle>
 
         {/* The Drawer component provides its own drag handle viavaul's styling */}
 
@@ -235,7 +243,7 @@ export function ViewerFab({
                 <Download className="h-5 w-5" />
               )
             }
-            label="Download"
+            label={t("download")}
             disabled={isDownloading}
             onClick={() => {
               close();
@@ -246,7 +254,7 @@ export function ViewerFab({
           {/* ── Share ── */}
           <ActionCell
             icon={<Share2 className="h-5 w-5" />}
-            label="Share"
+            label={t("share")}
             onClick={() => {
               close();
               handleShare();
@@ -263,7 +271,7 @@ export function ViewerFab({
                   <Printer className="h-5 w-5" />
                 )
               }
-              label="Print"
+              label={t("print")}
               disabled={isPrinting}
               onClick={() => {
                 close();
@@ -275,7 +283,7 @@ export function ViewerFab({
           {/* ── Details ── */}
           <ActionCell
             icon={<Info className="h-5 w-5" />}
-            label="Details"
+            label={t("details")}
             onClick={() => {
               close();
               openSidebar("details", {
@@ -289,7 +297,8 @@ export function ViewerFab({
           {/* ── Chat ── */}
           <ActionCell
             icon={<MessageSquare className="h-5 w-5" />}
-            label="Chat"
+            label={t("chat")}
+            disabled={isRestricted}
             onClick={() => {
               close();
               openSidebar("chat", {
@@ -303,7 +312,8 @@ export function ViewerFab({
           {/* ── Annotations ── */}
           <ActionCell
             icon={<Highlighter className="h-5 w-5" />}
-            label="Annotations"
+            label={t("annotations")}
+            disabled={isRestricted}
             onClick={() => {
               close();
               openSidebar("annotations", {
@@ -317,7 +327,8 @@ export function ViewerFab({
           {/* ── Edits ── */}
           <ActionCell
             icon={<Inbox className="h-5 w-5" />}
-            label="Edits"
+            label={t("edits")}
+            disabled={isRestricted}
             onClick={() => {
               close();
               openSidebar("edits", {
@@ -331,7 +342,7 @@ export function ViewerFab({
           {/* ── Edit (Metadata & Content) ── */}
           <ActionCell
             icon={<Edit className="h-5 w-5" />}
-            label="Edit"
+            label={t("edit")}
             onClick={() => {
               close();
               setEditDialogOpen(true);
@@ -347,8 +358,9 @@ export function ViewerFab({
                 <ThumbsUp className={cn("h-5 w-5", isLiked && "fill-blue-500")} />
               )
             }
-            label={isLiked ? "Liked" : "Like"}
+            label={isLiked ? t("liked") : t("like")}
             tint={isLiked ? "primary" : "default"}
+            disabled={isRestricted}
             onClick={handleLike}
           />
 
@@ -356,7 +368,7 @@ export function ViewerFab({
           {!isAttachment && (
             <ActionCell
               icon={<Paperclip className="h-5 w-5" />}
-              label="Attachments"
+              label={t("attachments")}
               tint="violet"
               href={`${pathname}/attachments`}
               badge={attachmentCount}
@@ -370,24 +382,28 @@ export function ViewerFab({
               targetId={materialId}
               variant="ghost"
               size="icon"
-              className="h-16 w-16 rounded-2xl bg-destructive/10 text-destructive hover:bg-destructive/20 active:scale-90 transition-transform"
+              disabled={isRestricted}
+              className={cn(
+                "h-16 w-16 rounded-2xl bg-destructive/10 text-destructive hover:bg-destructive/20 active:scale-90 transition-transform",
+                isRestricted && "opacity-50 pointer-events-none"
+              )}
               iconClassName="h-5 w-5"
               hideText
             />
             <span className="text-[11.5px] font-medium text-muted-foreground text-center truncate w-full px-1">
-              Report
+              {t("report")}
             </span>
           </div>
 
           {/* ── Delete ── */}
           <ConfirmDeleteDialog
             onConfirm={handleDelete}
-            title="Delete Document"
-            description={`Are you sure you want to request the deletion of "${materialTitle || "this document"}"? This will be added to your current draft.`}
+            title={t("deleteDocument")}
+            description={t("deleteDocumentConfirm", { title: materialTitle || t("thisDocument") })}
             trigger={
                 <ActionCell
                     icon={<Trash2 className="h-5 w-5" />}
-                    label="Delete"
+                    label={t("delete")}
                     tint="destructive"
                 />
             }

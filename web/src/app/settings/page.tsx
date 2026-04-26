@@ -10,6 +10,7 @@ import {
   Moon,
   Monitor,
   Zap,
+  Globe,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -24,15 +25,31 @@ import { Switch } from "@/components/ui/switch";
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { apiFetch } from "@/lib/api-client";
 import { performLogout } from "@/lib/auth-sync";
-import { toast } from "sonner";
+import { useTranslations } from "next-intl";
+import { useChangeLocale } from "@/hooks/use-change-locale";
 import { useAuthStore } from "@/lib/stores";
+import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function SettingsPage() {
+  const t = useTranslations("Settings");
+  const tLanguages = useTranslations("Languages");
+  const { locale, changeLocale, isPending: localePending } = useChangeLocale();
   const [exporting, setExporting] = useState(false);
   const { show } = useConfirmDialog();
   const { theme, setTheme } = useTheme();
   const { user, setUser } = useAuthStore();
   const [updating, setUpdating] = useState(false);
+
+  const handleLanguageChange = (newLocale: string) => {
+    void changeLocale(newLocale);
+  };
 
   const isStaff = user?.role === "bureau" || user?.role === "vieux" || user?.role === "moderator";
 
@@ -47,10 +64,10 @@ export default function SettingsPage() {
       });
       setUser({ ...user, auto_approve: updated.auto_approve });
       toast.success(
-        newValue ? "Auto-approval enabled" : "Auto-approval disabled",
+        newValue ? t("contributions.autoApproveEnabled") : t("contributions.autoApproveDisabled"),
       );
     } catch {
-      toast.error("Update failed");
+      toast.error(t("updateFailed"));
     } finally {
       setUpdating(false);
     }
@@ -71,9 +88,9 @@ export default function SettingsPage() {
       a.download = "my-data-export.json";
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("Data exported successfully");
+      toast.success(t("export.success"));
     } catch {
-      toast.error("Failed to export data");
+      toast.error(t("export.error"));
     } finally {
       setExporting(false);
     }
@@ -81,18 +98,18 @@ export default function SettingsPage() {
 
   const handleDeleteAccount = () => {
     show(
-      "Delete your account?",
-      "Your account will be deactivated and personal data anonymized immediately. All personal data will be permanently deleted after 30 days. Contributed materials remain on the platform.",
+      t("deleteAccount.confirmTitle"),
+      t("deleteAccount.confirmDesc"),
       async () => {
         try {
           await apiFetch("/users/me", { method: "DELETE" });
           performLogout();
           toast.success(
-            "Account deactivated. Data will be deleted in 30 days.",
+            t("deleteAccount.success"),
           );
           window.location.href = "/login";
         } catch {
-          toast.error("Failed to delete account");
+          toast.error(t("deleteAccount.error"));
         }
       },
     );
@@ -102,7 +119,7 @@ export default function SettingsPage() {
     <div className="w-full mx-auto max-w-2xl space-y-6 p-6 pb-24 md:pb-6">
       <div className="flex items-center gap-3">
         <Shield className="h-6 w-6 text-primary" />
-        <h1 className="text-2xl font-bold">Privacy & Settings</h1>
+        <h1 className="text-2xl font-bold">{t("title")}</h1>
       </div>
 
       <Card>
@@ -115,10 +132,10 @@ export default function SettingsPage() {
             ) : (
               <Monitor className="h-4 w-4" />
             )}
-            Appearance
+            {t("appearance.title")}
           </CardTitle>
           <CardDescription>
-            Choose your preferred theme or follow system settings.
+            {t("appearance.description")}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -129,7 +146,7 @@ export default function SettingsPage() {
               onClick={() => setTheme("light")}
             >
               <Sun className="mr-2 h-4 w-4" />
-              Light
+              {t("appearance.light")}
             </Button>
             <Button
               variant={theme === "dark" ? "default" : "outline"}
@@ -137,7 +154,7 @@ export default function SettingsPage() {
               onClick={() => setTheme("dark")}
             >
               <Moon className="mr-2 h-4 w-4" />
-              Dark
+              {t("appearance.dark")}
             </Button>
             <Button
               variant={theme === "system" ? "default" : "outline"}
@@ -145,8 +162,31 @@ export default function SettingsPage() {
               onClick={() => setTheme("system")}
             >
               <Monitor className="mr-2 h-4 w-4" />
-              System
+              {t("appearance.system")}
             </Button>
+          </div>
+
+          <div className="pt-4 mt-4 border-t">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium flex items-center gap-2">
+                  <Globe className="h-4 w-4" />
+                  {t("appearance.language")}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {t("appearance.languageDesc")}
+                </div>
+              </div>
+              <Select value={locale} onValueChange={handleLanguageChange} disabled={localePending}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">{tLanguages("en")}</SelectItem>
+                  <SelectItem value="fr">{tLanguages("fr")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -156,19 +196,18 @@ export default function SettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Zap className="h-4 w-4 text-amber-500" />
-              Contributions
+              {t("contributions.title")}
             </CardTitle>
             <CardDescription>
-              Manage how your modifications are published on the platform.
+              {t("contributions.description")}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
               <div className="space-y-0.5">
-                <p className="text-sm font-medium">Auto-approval</p>
+                <p className="text-sm font-medium">{t("contributions.autoApprove")}</p>
                 <p className="text-xs text-muted-foreground mr-8">
-                  Your modifications are published immediately without going
-                  through a pending contribution (PR).
+                  {t("contributions.autoApproveDesc")}
                 </p>
               </div>
               <Switch
@@ -185,16 +224,15 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Download className="h-4 w-4" />
-            Export your data
+            {t("export.title")}
           </CardTitle>
           <CardDescription>
-            Download a JSON archive of all your personal data including your
-            profile, contributions, annotations, comments, and reports.
+            {t("export.description")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button variant="outline" onClick={handleExport} disabled={exporting}>
-            {exporting ? "Preparing export..." : "Download my data"}
+            {exporting ? t("export.preparing") : t("export.button")}
           </Button>
         </CardContent>
       </Card>
@@ -203,11 +241,10 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base text-destructive">
             <Trash2 className="h-4 w-4" />
-            Delete account
+            {t("deleteAccount.title")}
           </CardTitle>
           <CardDescription>
-            Permanently delete your account and all associated data. This action
-            cannot be undone.
+            {t("deleteAccount.description")}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -215,18 +252,17 @@ export default function SettingsPage() {
             <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
             <div className="space-y-1 text-sm">
               <p>
-                Your account will be immediately deactivated and your personal
-                data anonymized.
+                {t("deleteAccount.warning1")}
               </p>
-              <p className="text-muted-foreground">
-                Your personal data (name, email, bio) will be permanently
-                deleted. Contributed materials remain on the platform in
-                anonymized form as per the content license in our{" "}
-                <a href="/privacy" className="underline hover:text-foreground">
-                  privacy policy
-                </a>
-                .
-              </p>
+              <div className="text-muted-foreground">
+                {t.rich("deleteAccount.warning2", {
+                  link: (chunks) => (
+                    <a href="/privacy" className="underline hover:text-foreground">
+                      {chunks}
+                    </a>
+                  )
+                })}
+              </div>
             </div>
           </div>
           <Button
@@ -234,7 +270,7 @@ export default function SettingsPage() {
             className="mt-3"
             onClick={handleDeleteAccount}
           >
-            Delete my account
+            {t("deleteAccount.button")}
           </Button>
         </CardContent>
       </Card>

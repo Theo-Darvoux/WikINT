@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SectionHeader } from "./section-header";
 import { formatDistanceToNow } from "date-fns/formatDistanceToNow";
 import type { PullRequestOut } from "./types";
+import { useTranslations } from "next-intl";
 
 interface RecentPRsSectionProps {
     prs: PullRequestOut[];
@@ -28,6 +29,7 @@ function PRRowSkeleton() {
 
 
 function PRRow({ pr }: { pr: PullRequestOut }) {
+    const t = useTranslations("Home");
     const authorLabel =
         pr.author?.display_name ?? pr.author?.email ?? "Unknown";
 
@@ -63,7 +65,7 @@ function PRRow({ pr }: { pr: PullRequestOut }) {
             <div className="flex shrink-0 items-center gap-2">
                 {/* Open status */}
                 <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                    Open
+                    {t("open")}
                 </span>
             </div>
 
@@ -74,16 +76,17 @@ function PRRow({ pr }: { pr: PullRequestOut }) {
 }
 
 export function RecentPRsSection({ prs, isLoading = false }: RecentPRsSectionProps) {
+    const t = useTranslations("Home");
     // Don't render an empty section once data is loaded
     if (!isLoading && prs.length === 0) return null;
 
     return (
-        <section aria-label="Recent contributions">
+        <section aria-label={t("recentContributions")}>
             <SectionHeader
-                title="Recent Contributions"
-                subtitle="Help review these open contributions from the community"
+                title={t("recentContributions")}
+                subtitle={t("helpReviewContributions")}
                 seeAllHref="/pull-requests"
-                seeAllLabel="All contributions"
+                seeAllLabel={t("allContributions")}
             />
 
             <div className="mt-4 rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -97,7 +100,7 @@ export function RecentPRsSection({ prs, isLoading = false }: RecentPRsSectionPro
                     <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
                         <GitMerge className="h-8 w-8 text-muted-foreground/30" />
                         <p className="text-sm text-muted-foreground">
-                            No open contributions right now.
+                            {t("noOpenContributions")}
                         </p>
                     </div>
                 ) : (

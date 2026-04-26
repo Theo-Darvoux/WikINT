@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { uploadFile, logicalFileSize } from "@/lib/upload-client";
 import { useStagingStore } from "@/lib/staging-store";
+import { useTranslations } from "next-intl";
 
 interface AsyncMaterialImageProps {
     src: string;
@@ -61,6 +62,7 @@ function MissingImageUploadDialog({
     expectedFileName: string;
     material: Record<string, unknown>;
 }) {
+    const t = useTranslations("MissingImage");
     const [status, setStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
     const [progress, setProgress] = useState(0);
     const [processingStatus, setProcessingStatus] = useState("");
@@ -90,7 +92,7 @@ function MissingImageUploadDialog({
         async (file: File) => {
             // Validate MIME is an image
             if (!file.type.startsWith("image/")) {
-                setErrorMsg("Only image files are accepted.");
+                setErrorMsg(t("onlyImages"));
                 return;
             }
 
@@ -99,7 +101,7 @@ function MissingImageUploadDialog({
             setStatus("uploading");
             setProgress(0);
             setErrorMsg("");
-            setProcessingStatus("Preparing…");
+            setProcessingStatus(t("preparing"));
 
             try {
                 const result = await uploadFile(file, {
@@ -136,7 +138,7 @@ function MissingImageUploadDialog({
                     return;
                 }
                 setStatus("error");
-                setErrorMsg((err as Error).message || "Upload failed");
+                setErrorMsg((err as Error).message || t("failed"));
             } finally {
                 abortRef.current = null;
             }
@@ -153,10 +155,9 @@ function MissingImageUploadDialog({
         >
             <DialogContent className="sm:max-w-sm">
                 <DialogHeader>
-                    <DialogTitle>Upload missing image</DialogTitle>
+                    <DialogTitle>{t("title")}</DialogTitle>
                     <DialogDescription>
-                        Upload the correct image to attach it to this document. It will be
-                        staged for review before being applied.
+                        {t("description")}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -166,14 +167,14 @@ function MissingImageUploadDialog({
                         {expectedFileName}
                     </span>
                     <span className="shrink-0 rounded border border-amber-400/40 bg-amber-50 dark:bg-amber-950/30 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
-                        locked
+                        {t("locked")}
                     </span>
                 </div>
 
                 {status === "idle" && (
                     <div
                         role="region"
-                        aria-label="Drop image file here"
+                        aria-label={t("dropZoneLabel")}
                         className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
                             isDragging
                                 ? "border-primary bg-primary/5"
@@ -201,11 +202,9 @@ function MissingImageUploadDialog({
                     >
                         <UploadCloud className="h-7 w-7 mx-auto text-muted-foreground mb-2" />
                         <p className="text-sm text-muted-foreground">
-                            Drop a{" "}
-                            <span className="font-semibold text-foreground">
-                                .{expectedExt}
-                            </span>{" "}
-                            image here, or click to browse
+                            {t.rich("dropHere", {
+                                ext: (chunks) => <span className="font-semibold text-foreground">.{expectedExt}</span>
+                            })}
                         </p>
                         <input
                             ref={fileInputRef}
@@ -233,7 +232,7 @@ function MissingImageUploadDialog({
                                     setErrorMsg("");
                                 }}
                             >
-                                Try again
+                                {t("tryAgain")}
                             </Button>
                         )}
                     </div>
@@ -244,7 +243,7 @@ function MissingImageUploadDialog({
                         <div className="flex items-center gap-2">
                             <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
                             <span className="text-xs text-muted-foreground truncate">
-                                {processingStatus || "Uploading…"}
+                                {processingStatus || t("uploading")}
                             </span>
                         </div>
                         <div
@@ -266,7 +265,7 @@ function MissingImageUploadDialog({
                             size="sm"
                             onClick={() => abortRef.current?.abort()}
                         >
-                            Cancel
+                            {t("cancel")}
                         </Button>
                     </div>
                 )}
@@ -274,7 +273,7 @@ function MissingImageUploadDialog({
                 {status === "done" && (
                     <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 py-1">
                         <CheckCircle2 className="h-4 w-4 shrink-0" />
-                        Staged! Opening review…
+                        {t("staged")}
                     </div>
                 )}
             </DialogContent>
@@ -287,6 +286,7 @@ function MissingImageUploadDialog({
 // ────────────────────────────────────────────────────────────────────────────────
 
 export function AsyncMaterialImage({ src, alt, material, className }: AsyncMaterialImageProps) {
+    const t = useTranslations("MissingImage");
     const [url, setUrl] = useState<string | null>(null);
     const [error, setError] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -395,7 +395,7 @@ export function AsyncMaterialImage({ src, alt, material, className }: AsyncMater
         return (
             <span className="my-4 flex items-center justify-center rounded-md bg-muted p-8 animate-pulse border border-border">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Resolving image &apos;{src}&apos;...</span>
+                <span className="text-sm text-muted-foreground">{t("resolving", { src })}</span>
             </span>
         );
     }
@@ -411,21 +411,21 @@ export function AsyncMaterialImage({ src, alt, material, className }: AsyncMater
                     title={decodedFileName}
                 >
                     <ImageOff className="h-5 w-5 shrink-0" />
-                    <span className="flex-1 min-w-0 break-all">Failed to load image: {decodedFileName}</span>
+                    <span className="flex-1 min-w-0 break-all">{t("failedToLoad", { fileName: decodedFileName })}</span>
                     {canUpload && (
                         <Button
                             type="button"
                             size="sm"
                             variant="outline"
                             className="shrink-0 h-7 gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/60 bg-transparent"
-                            aria-label={`Upload missing image "${decodedFileName}"`}
+                            aria-label={t("uploadMissingLabel", { fileName: decodedFileName })}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setUploadDialogOpen(true);
                             }}
                         >
                             <PlusCircle className="h-3.5 w-3.5" />
-                            Upload
+                            {t("upload")}
                         </Button>
                     )}
                 </span>

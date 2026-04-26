@@ -19,6 +19,7 @@ import { submitDirectOperations } from "@/lib/pr-client";
 import { TagInput } from "@/components/ui/tag-input";
 import { useBrowseRefreshStore } from "@/lib/stores";
 import { sanitizeNameInput } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 interface EditItemDialogProps {
     open: boolean;
@@ -35,6 +36,8 @@ export function EditItemDialog({
     onOpenChange,
     target,
 }: EditItemDialogProps) {
+    const t = useTranslations("EditItem");
+    const tAuto = useTranslations("AutoTitle");
     const addOperation = useStagingStore((s) => s.addOperation);
     const isMaterial = target.type === "material";
 
@@ -96,14 +99,14 @@ export function EditItemDialog({
     const handleDraft = () => {
         if (!canSubmit) return;
         addOperation(buildOp());
-        toast.success(`Added to draft: "${title.trim()}"`);
+        toast.success(t("addedToDraft", { name: title.trim() }));
         onOpenChange(false);
     };
 
     const handleDirectSubmit = async () => {
         if (!canSubmit) return;
         setSubmitting(true);
-        const result = await submitDirectOperations([buildOp()]);
+        const result = await submitDirectOperations([buildOp()], undefined, undefined, tAuto);
         setSubmitting(false);
         onOpenChange(false);
         if (result?.status === "approved") {
@@ -122,7 +125,7 @@ export function EditItemDialog({
     };
 
     const Icon = isMaterial ? FilePenLine : FolderPen;
-    const typeLabel = isMaterial ? "a document" : "a folder";
+    const typeLabel = isMaterial ? t("document") : t("folder");
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -130,14 +133,10 @@ export function EditItemDialog({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Icon className="h-5 w-5 text-blue-600" />
-                        Edit {typeLabel}
+                        {t("title", { type: typeLabel })}
                     </DialogTitle>
                     <DialogDescription>
-                        Editing{" "}
-                        <span className="font-medium text-foreground">
-                            {currentTitle}
-                        </span>
-                        . You can submit the contribution directly or add it to your draft.
+                        {t("description", { name: currentTitle })}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -147,7 +146,7 @@ export function EditItemDialog({
                             htmlFor="edit-title"
                             className="text-sm font-medium"
                         >
-                            {isMaterial ? "Title" : "Name"}
+                            {isMaterial ? t("titleLabel") : t("nameLabel")}
                         </label>
                         <Input
                             id="edit-title"
@@ -167,9 +166,9 @@ export function EditItemDialog({
                             htmlFor="edit-desc"
                             className="text-sm font-medium"
                         >
-                            Description{" "}
+                            {t("descriptionLabel")}{" "}
                             <span className="text-muted-foreground">
-                                (optional)
+                                {t("optional")}
                             </span>
                         </label>
                         <Textarea
@@ -187,13 +186,13 @@ export function EditItemDialog({
                             htmlFor="edit-tags"
                             className="text-sm font-medium"
                         >
-                            Tags
+                            {t("tagsLabel")}
                         </label>
                         <TagInput
                             key={target.id}
                             tags={tags}
                             onChange={setTags}
-                            placeholder="math, algebra..."
+                            placeholder={t("tagsPlaceholder")}
                         />
                     </div>
                 </div>
@@ -205,7 +204,7 @@ export function EditItemDialog({
                         disabled={submitting}
                         className="sm:mr-auto"
                     >
-                        Cancel
+                        {t("cancel")}
                     </Button>
                     <Button
                         variant="outline"
@@ -214,7 +213,7 @@ export function EditItemDialog({
                         className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
                     >
                         <Plus className="h-4 w-4" />
-                        Add to draft
+                        {t("addToDraft")}
                     </Button>
                     {!isDraftTarget && (
                         <Button
@@ -227,7 +226,7 @@ export function EditItemDialog({
                             ) : (
                                 <Send className="h-4 w-4" />
                             )}
-                            Submit directly
+                            {t("submitDirectly")}
                         </Button>
                     )}
                 </DialogFooter>

@@ -21,9 +21,10 @@ Handles material CRUD operations and search indexing. Key functions:
 
 Search documents include: id, title, slug, type, description, tag names, browse path, author info.
 
-### Download Tracking
-- `increment_download_count(db, material_id)` — Atomic increment of the denormalized counter
-- `create_download_audit(db, user_id, material_id, ip)` — Audit log entry
+### Interactions
+- `toggle_like(db, user_id, material_id)` — Toggle like status; atomic counter update.
+- `toggle_favourite(db, user_id, material_id)` — Toggle bookmark status.
+- **Restrictions**: Interactions are restricted for "draft" items (ID starting with `$`) and items viewed in Pull Request preview mode. The backend validates UUID integrity and raises `BadRequestError` for invalid IDs.
 
 ## User Service (`api/app/services/user.py`)
 

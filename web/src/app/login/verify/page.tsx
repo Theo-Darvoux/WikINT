@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { useTranslations } from "next-intl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -10,24 +11,22 @@ function MagicLinkVerifier() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const { verifyMagicLink, isAuthenticated, user } = useAuth();
+    const t = useTranslations("Login");
     const [error, setError] = useState<string | null>(null);
-    const [token, setToken] = useState<string | null>(null);
     const [isVerifying, setIsVerifying] = useState(false);
+    const token = useMemo(() => searchParams.get("token"), [searchParams]);
     const attempted = useRef(false);
 
     useEffect(() => {
-        if (attempted.current) return;
-        attempted.current = true;
-
-        const t = searchParams.get("token");
-        if (t) {
-            setToken(t);
+        if (token) {
             // Strip token from URL to prevent Referer leakage
             window.history.replaceState({}, "", "/login/verify");
-        } else if (!isAuthenticated) {
-            setError("Invalid magic link — no token provided.");
+        } else if (!isAuthenticated && !attempted.current) {
+            attempted.current = true;
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setError(t("invalidMagicLink"));
         }
-    }, [searchParams, isAuthenticated]);
+    }, [token, isAuthenticated, t]);
 
     useEffect(() => {
         if (isAuthenticated && user?.onboarded) {
@@ -51,7 +50,7 @@ function MagicLinkVerifier() {
             setError(
                 err instanceof Error
                     ? err.message
-                    : "This magic link is invalid or has expired."
+                    : t("magicLinkExpired")
             );
             setIsVerifying(false);
         }
@@ -69,14 +68,14 @@ function MagicLinkVerifier() {
                             <p className="text-sm font-medium text-destructive">{error}</p>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                            The link may have expired or already been used by another device.
+                            {t("magicLinkExpiredDesc")}
                         </p>
                         <Button
                             className="w-full py-6 text-lg"
                             variant="outline"
                             onClick={() => router.push("/login")}
                         >
-                            Back to Login
+                            {t("backToLogin")}
                         </Button>
                     </CardContent>
                 </Card>
@@ -92,9 +91,9 @@ function MagicLinkVerifier() {
                 </CardHeader>
                 <CardContent className="space-y-8 text-center pb-12 pt-4">
                     <div className="space-y-2">
-                        <h2 className="text-xl font-semibold">Verify your sign-in</h2>
+                        <h2 className="text-xl font-semibold">{t("verifySignIn")}</h2>
                         <p className="text-sm text-muted-foreground px-8">
-                            To finish signing in, please click the button below. This extra step helps keep your account secure.
+                            {t("verifySignInDesc")}
                         </p>
                     </div>
                     
@@ -107,10 +106,10 @@ function MagicLinkVerifier() {
                         {isVerifying ? (
                             <span className="flex items-center gap-2">
                                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                Verifying...
+                                {t("verifying")}
                             </span>
                         ) : (
-                            "Confirm Sign In"
+                            t("confirmSignIn")
                         )}
                     </Button>
                 </CardContent>
@@ -120,6 +119,7 @@ function MagicLinkVerifier() {
 }
 
 export default function MagicLinkPage() {
+    const t = useTranslations("Login");
     return (
         <Suspense
             fallback={
@@ -129,7 +129,7 @@ export default function MagicLinkPage() {
                             <CardTitle className="text-2xl font-bold">WikINT</CardTitle>
                         </CardHeader>
                         <CardContent className="text-center">
-                            <p className="text-sm text-muted-foreground">Loading...</p>
+                            <p className="text-sm text-muted-foreground">{t("loading")}</p>
                         </CardContent>
                     </Card>
                 </div>

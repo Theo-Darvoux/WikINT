@@ -116,6 +116,13 @@ export interface PublicConfig {
     primary_color: string;
     footer_text: string;
     organization_url: string | null;
+    legal_name: string | null;
+    legal_address: string | null;
+    legal_siret: string | null;
+    contact_email: string | null;
+    dpo_email: string | null;
+    dpo_address: string | null;
+    data_transfers: string | null;
     totp_enabled: boolean;
     google_enabled: boolean;
     google_client_id: string | null;

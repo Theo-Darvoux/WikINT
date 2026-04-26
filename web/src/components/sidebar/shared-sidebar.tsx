@@ -3,9 +3,11 @@
 import { useUIStore, type SidebarTab } from "@/lib/stores";
 import { cn } from "@/lib/utils";
 import { useIsDesktop } from "@/hooks/use-media-query";
+import { useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import dynamic from "next/dynamic";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTranslations } from "next-intl";
 
 // --- Dynamic Tab Imports ---
 // This ensures that heavy tab components (like Chat and Annotations) are only 
@@ -36,17 +38,21 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 
-const TAB_CONFIG: { value: SidebarTab; label: string }[] = [
-  { value: "details", label: "Details" },
-  { value: "chat", label: "Chat" },
-  { value: "annotations", label: "Annots" },
-  { value: "edits", label: "Edits" },
+const TAB_CONFIG: { value: SidebarTab; labelKey: string }[] = [
+  { value: "details", labelKey: "details" },
+  { value: "chat", labelKey: "chat" },
+  { value: "annotations", labelKey: "annotations" },
+  { value: "edits", labelKey: "edits" },
 ];
 
 function SidebarContent() {
   const { sidebarTab, setSidebarTab, sidebarTarget, closeSidebar } =
     useUIStore();
   const isDesktop = useIsDesktop();
+  const t = useTranslations("Sidebar");
+  const searchParams = useSearchParams();
+
+  const isRestricted = (sidebarTarget?.id?.startsWith("$")) || !!searchParams.get("preview_pr");
 
   return (
     <div className="flex flex-1 flex-col min-h-0 bg-background">
@@ -55,14 +61,14 @@ function SidebarContent() {
         <div className="flex items-center justify-between border-b px-3 py-2 shrink-0 bg-muted/10">
           <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-2">
             <Info className="h-3 w-3" />
-            Item Inspector
+            {t("itemInspector")}
           </span>
           <Button
             variant="ghost"
             size="sm"
             className="h-7 w-7 p-0 rounded-full hover:bg-destructive/10 hover:text-destructive"
             onClick={closeSidebar}
-            title="Close sidebar"
+            title={t("closeSidebar")}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -79,15 +85,19 @@ function SidebarContent() {
           variant="line"
           className="w-full shrink-0 border-b bg-transparent px-1"
         >
-          {TAB_CONFIG.map((tab) => (
-            <TabsTrigger
-              key={tab.value}
-              value={tab.value}
-              className="px-2.5 py-2 text-xs"
-            >
-              {tab.label}
-            </TabsTrigger>
-          ))}
+          {TAB_CONFIG.map((tab) => {
+            const isTabRestricted = isRestricted && (tab.value === "chat" || tab.value === "annotations" || tab.value === "edits");
+            return (
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className={cn("px-2.5 py-2 text-xs", isTabRestricted && "opacity-40 cursor-not-allowed")}
+                disabled={isTabRestricted}
+              >
+                {t(tab.labelKey as any)}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
 
         <div className="flex-1 flex flex-col min-h-0">
@@ -104,7 +114,7 @@ function SidebarContent() {
             value="chat"
             className="flex-1 flex flex-col min-h-0 m-0 data-[state=inactive]:hidden"
           >
-            <ChatTab target={sidebarTarget} />
+            <ChatTab target={sidebarTarget} disabled={isRestricted} />
           </TabsContent>
 
           <TabsContent
@@ -112,7 +122,7 @@ function SidebarContent() {
             className="flex-1 flex flex-col min-h-0 m-0 data-[state=inactive]:hidden"
           >
             <div className="flex-1 overflow-y-auto p-4">
-              <AnnotationsTab target={sidebarTarget} />
+              <AnnotationsTab target={sidebarTarget} disabled={isRestricted} />
             </div>
           </TabsContent>
 
@@ -133,6 +143,7 @@ function SidebarContent() {
 export function SharedSidebar() {
   const { sidebarOpen, closeSidebar } = useUIStore();
   const isDesktop = useIsDesktop();
+  const t = useTranslations("Sidebar");
 
   // Desktop: render directly inside the page's bounded container with transition
   if (isDesktop) {
@@ -154,7 +165,7 @@ export function SharedSidebar() {
   return (
     <Drawer open={sidebarOpen} onOpenChange={(o) => !o && closeSidebar()}>
       <DrawerContent className="h-[90dvh] pb-0 outline-none">
-        <DrawerTitle className="sr-only">Item Inspector</DrawerTitle>
+        <DrawerTitle className="sr-only">{t("itemInspector")}</DrawerTitle>
         <div className="flex-1 overflow-hidden">
           <SidebarContent />
         </div>

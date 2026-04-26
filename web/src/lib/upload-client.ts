@@ -35,6 +35,8 @@ export interface UploadFileOptions {
     tusUrl?: string;
     /** Skip client-side image compression (useful for 4K+ scans) (U10). */
     skipCompression?: boolean;
+    /** Translation function for status messages (keys from Upload namespace). */
+    t?: (key: string) => string;
 }
 
 /**
@@ -293,7 +295,7 @@ async function _presignedMultipartUpload(
     const baseHeaders: Record<string, string> = { "X-Client-ID": getClientId() };
     if (token) baseHeaders["Authorization"] = `Bearer ${token}`;
 
-    _onStatusUpdate(onStatusUpdate, "Preparing multipart…");
+    _onStatusUpdate(onStatusUpdate, "preparingMultipart", options.t);
 
     const initResp = await apiRequest("/upload/presigned-multipart/init", {
         method: "POST",
@@ -309,7 +311,7 @@ async function _presignedMultipartUpload(
 
     const parts = initResp.parts;
 
-    _onStatusUpdate(onStatusUpdate, "Uploading chunks…");
+    _onStatusUpdate(onStatusUpdate, "uploadingChunks", options.t);
 
     const CONCURRENCY = 4;
     const etags: Array<{ PartNumber: number; ETag: string }> = [];
@@ -359,7 +361,7 @@ async function _presignedMultipartUpload(
         await Promise.all(activePromises);
         etags.sort((a, b) => a.PartNumber - b.PartNumber); // Ensure sorted for S3 Complete
 
-        _onStatusUpdate(onStatusUpdate, "Finalising multipart…");
+        _onStatusUpdate(onStatusUpdate, "finalizingMultipart", options.t);
 
         await apiRequest("/upload/presigned-multipart/complete", {
             method: "POST",
@@ -455,7 +457,7 @@ function _tusUpload(
                     reject(new Error("Server did not return X-WikINT-File-Key after tus upload"));
                     return;
                 }
-                onStatusUpdate?.("Processing…");
+                onStatusUpdate?.(options.t ? options.t("processing") : "Processing…");
                 onProgress?.(80);
                 resolve(quarantineKey);
             },
@@ -522,7 +524,7 @@ export async function uploadFile(
     if (options.tusUrl) {
         // RESUME: If we have a tusUrl, we must use TUS regardless of current size
         // (the file might have been compressed or is just being resumed).
-        _onStatusUpdate(options.onStatusUpdate, "Resuming upload…");
+        _onStatusUpdate(options.onStatusUpdate, "resumingUpload", options.t);
         quarantineKey = await _tusUpload(fileToUpload, options);
     } else if (fileToUpload.size >= PRESIGNED_MULTIPART_THRESHOLD_BYTES) {
         // Extra-large file: direct S3 multipart
@@ -538,12 +540,12 @@ export async function uploadFile(
         }
     } else if (fileToUpload.size >= TUS_THRESHOLD_BYTES) {
         // Large file: tus resumable upload
-        _onStatusUpdate(options.onStatusUpdate, "Uploading…");
+        _onStatusUpdate(options.onStatusUpdate, "uploading", options.t);
         quarantineKey = await _tusUpload(fileToUpload, options);
     } else {
 
         // Small file: presigned PUT
-        _onStatusUpdate(options.onStatusUpdate, "Uploading…");
+        _onStatusUpdate(options.onStatusUpdate, "uploading", options.t);
 
         const initResp = await apiRequest("/upload/init", {
             method: "POST",
@@ -567,7 +569,7 @@ export async function uploadFile(
         quarantineKey = initResp.quarantine_key;
 
         onProgress?.(80);
-        _onStatusUpdate(options.onStatusUpdate, "Processing…");
+        _onStatusUpdate(options.onStatusUpdate, "processing", options.t);
 
         // Notify API that the upload is complete and trigger background processing
         const completeHeaders: Record<string, string> = {
@@ -594,6 +596,7 @@ export async function uploadFile(
         onProgress: (p) => onProgress?.(80 + Math.round(p * 19)),
         onStatusUpdate: options.onStatusUpdate,
         signal,
+        t: options.t,
     });
 
     // Explicitly mark 100% complete (audit review fix: 80 + round(1.0*19) = 99)
@@ -613,8 +616,9 @@ export async function uploadFile(
 function _onStatusUpdate(
     cb: ((s: string, stageIndex?: number, stageTotal?: number) => void) | undefined,
     msg: string,
+    t?: (key: string) => string,
 ): void {
-    cb?.(msg);
+    cb?.(t ? t(msg) : msg);
 }
 
 // ── SSE stream reader ─────────────────────────────────────────────────────────
@@ -642,6 +646,7 @@ async function _waitForUploadCompletion(
         onProgress?: (p: number) => void;
         onStatusUpdate?: (s: string, stageIndex?: number, stageTotal?: number) => void;
         signal?: AbortSignal;
+        t?: (key: string) => string;
     } = {},
 ): Promise<NonNullable<UploadEventPayload["result"]>> {
     const { onStatusUpdate, signal } = options;
@@ -723,6 +728,7 @@ async function _waitForUploadCompletion(
                                     currentData,
                                     safeOnProgress,
                                     onStatusUpdate,
+                                    options.t,
                                 );
                                 if (result !== null) return result;
                             }
@@ -765,6 +771,7 @@ function _handleUploadEvent(
     rawData: string,
     onProgress?: (p: number) => void,
     onStatusUpdate?: (s: string, stageIndex?: number, stageTotal?: number) => void,
+    t?: (key: string) => string,
 ): NonNullable<UploadEventPayload["result"]> | null {
     if (eventType === "ping" || rawData === "") return null;
 
@@ -797,7 +804,7 @@ function _handleUploadEvent(
         case "malicious":
             throw new UploadTerminalError(
                 400,
-                payload.detail ?? "File was rejected: potential security threat detected",
+                payload.detail ?? (t ? t("maliciousRejection") : "File was rejected: potential security threat detected"),
             );
 
         case "failed":
@@ -835,7 +842,7 @@ export interface BatchZipResponse {
  */
 export async function trackExistingUpload(
     quarantineKey: string,
-    options: Pick<UploadFileOptions, "onProgress" | "onStatusUpdate" | "signal"> = {},
+    options: Pick<UploadFileOptions, "onProgress" | "onStatusUpdate" | "signal" | "t"> = {},
 ): Promise<UploadResult> {
     const { onProgress, signal } = options;
 
@@ -845,6 +852,7 @@ export async function trackExistingUpload(
         onProgress: (p) => onProgress?.(80 + Math.round(p * 19)),
         onStatusUpdate: options.onStatusUpdate,
         signal,
+        t: options.t,
     });
 
     onProgress?.(100);

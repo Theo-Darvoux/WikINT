@@ -52,6 +52,7 @@ import type {
   StagedOperation,
 } from "@/lib/staging-store";
 import type { SelectedItem } from "@/lib/selection-store";
+import { useTranslations } from "next-intl";
 
 /** Check if a real item has any staged edit/delete/move targeting it */
 function stagedStatus(
@@ -111,6 +112,8 @@ export function DirectoryListing({
   previewOperations = [],
   previewPrId,
 }: DirectoryListingProps) {
+  const t = useTranslations("Browse");
+  const tAutoTitle = useTranslations("AutoTitle");
   // const isMobile = useIsMobile(); // removed to fix warning
   const router = useRouter();
   const pathname = usePathname();
@@ -502,7 +505,7 @@ export function DirectoryListing({
       }
     }
     if (ops.length === 0) {
-      toast.info("All selected items are already staged for deletion");
+      toast.info(t("allSelectedAlreadyStagedForDeletion"));
       setSelectMode(false);
       return;
     }
@@ -519,15 +522,11 @@ export function DirectoryListing({
       }
     }
     if (hasConflict) {
-      toast.error(
-        "Some selected items are already staged for deletion — remove the delete first",
-      );
+      toast.error(t("someSelectedAlreadyStagedForDeletion"));
       return;
     }
     cutRaw();
-    toast.success(
-      `${selected.size} item${selected.size !== 1 ? "s" : ""} cut — navigate to target folder and paste`,
-    );
+    toast.success(t("itemsCut", { count: selected.size }));
   };
 
   // IDs of the current directory and all its ancestors — used to prevent
@@ -547,8 +546,8 @@ export function DirectoryListing({
       const allSameParent = clipboard.every((i) => i.parentId === targetParent);
       toast.error(
         allSameParent
-          ? "Items are already in this folder"
-          : "Cannot move a folder into itself or its own subfolder",
+          ? t("itemsAlreadyInFolder")
+          : t("cannotMoveFolderIntoItself"),
       );
       return;
     }
@@ -573,7 +572,20 @@ export function DirectoryListing({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex-1 space-y-1">
           {!activeGhostDir && (
-            <Breadcrumbs items={breadcrumbs} previewPrId={previewPrId} />
+            <div className="flex items-center gap-2 group/header">
+              <Breadcrumbs items={breadcrumbs} previewPrId={previewPrId} large />
+              {directory && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:bg-muted opacity-0 group-hover/header:opacity-100 transition-opacity"
+                  onClick={() => openSidebar("details", { type: "directory", id: String(directory.id), data: directory })}
+                  title={t("directoryDetails")}
+                >
+                  <Info className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           )}
 
           {/* Ghost dir breadcrumb header */}
@@ -621,28 +633,9 @@ export function DirectoryListing({
                   variant="outline"
                   className="ml-1 text-[10px] text-green-600 border-green-300 shrink-0"
                 >
-                  Staged
+                  {t("staged")}
                 </Badge>
               </div>
-            </div>
-          )}
-          {/* Directory Title and Info */}
-          {!activeGhostDir && !isAttachmentListing && (
-            <div className="flex items-center gap-2 mt-2 group">
-              <h1 className="text-2xl font-bold tracking-tight">
-                {directory ? directory.name as string : "Home"}
-              </h1>
-              {directory && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-full text-muted-foreground hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => openSidebar("details", { type: "directory", id: String(directory.id), data: directory })}
-                  title="Directory details"
-                >
-                  <Info className="h-4 w-4" />
-                </Button>
-              )}
             </div>
           )}
         </div>
@@ -664,7 +657,7 @@ export function DirectoryListing({
                     onClick={() => setSelectMode(true)}
                   >
                     <CheckSquare className="w-4 h-4 opacity-50 group-hover:opacity-100" />
-                    <span className="text-xs font-medium uppercase tracking-wider">Select</span>
+                    <span className="text-xs font-medium uppercase tracking-wider">{t("select")}</span>
                   </Button>
                 )}
               </div>
@@ -682,7 +675,7 @@ export function DirectoryListing({
                       onClick={handlePaste}
                     >
                       <ClipboardPaste className="w-4 h-4" />
-                      Paste ({clipboard.length})
+                      {t("paste")}{clipboard.length})
                     </Button>
                     <Button
                       key="cancel-paste-btn"
@@ -704,7 +697,7 @@ export function DirectoryListing({
                   onClick={() => setUploadOpen(true)}
                 >
                   <Upload className="w-4 h-4" />
-                  <span>Upload</span>
+                  <span>{t("upload")}</span>
                 </Button>
                 <Button
                   key="new-folder-btn"
@@ -714,7 +707,7 @@ export function DirectoryListing({
                 onClick={() => setNewFolderOpen(true)}
               >
                 <FolderPlus className="w-4 h-4" />
-                <span>New Folder</span>
+                <span>{t("newFolder")}</span>
               </Button>
             </div>
           </div>
@@ -738,11 +731,11 @@ export function DirectoryListing({
                 }}
               />
               <span className="text-xs font-semibold uppercase tracking-wider select-none">
-                {allSelected ? "Deselect All" : "Select All"}
+                {allSelected ? t("deselectAll") : t("selectAll")}
               </span>
             </div>
             <span className="text-sm font-medium flex-1">
-              {selectedCount > 0 && `${selectedCount} items`}
+              {selectedCount > 0 && t("selectedItemsCount", { count: selectedCount })}
             </span>
             <div className="flex items-center gap-1.5">
               <Button
@@ -753,7 +746,7 @@ export function DirectoryListing({
                 onClick={handleCut}
               >
                 <Scissors className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Cut</span>
+                <span className="hidden sm:inline">{t("cut")}</span>
               </Button>
               <Button
                 size="sm"
@@ -763,7 +756,7 @@ export function DirectoryListing({
                 onClick={handleBatchDelete}
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Delete</span>
+                <span className="hidden sm:inline">{t("delete")}</span>
               </Button>
               <Button
                 size="sm"
@@ -772,7 +765,7 @@ export function DirectoryListing({
                 onClick={() => setSelectMode(false)}
               >
                 <X className="w-4 h-4" />
-                <span className="hidden sm:inline">Exit</span>
+                <span className="hidden sm:inline">{t("exit")}</span>
               </Button>
             </div>
           </div>
@@ -787,10 +780,10 @@ export function DirectoryListing({
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-base font-semibold text-violet-900 dark:text-violet-200">
-              Attachments
+              {t("attachments")}
             </h2>
             <p className="text-xs text-muted-foreground">
-              Supplementary files linked to this material
+              {t("supplementaryFiles")}
             </p>
           </div>
           <Button
@@ -800,14 +793,14 @@ export function DirectoryListing({
               if (parentMaterial) {
                 requestUpload({
                   directoryId: String(parentMaterial.directory_id ?? ""),
-                  directoryName: String(parentMaterial.title ?? "Material"),
+                  directoryName: String(parentMaterial.title ?? t("material")),
                   parentMaterialId: String(parentMaterial.id ?? ""),
                 });
               }
             }}
           >
             <UploadCloud className="w-4 h-4" />
-            Upload Attachment
+            {t("uploadAttachment")}
           </Button>
           <Button
             size="sm"
@@ -819,7 +812,7 @@ export function DirectoryListing({
             }}
           >
             <ArrowLeft className="w-4 h-4" />
-            Back
+            {t("back")}
           </Button>
         </div>
       )}
@@ -837,11 +830,10 @@ export function DirectoryListing({
           <Folder className="h-10 w-10 text-green-400" />
           <div>
             <p className="text-sm font-medium text-green-700 dark:text-green-400">
-              This folder is staged for creation
+              {t("stagedFolderTitle")}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Upload files or create sub-folders here. Everything will be
-              submitted together when you create the pull request.
+              {t("stagedFolderDesc")}
             </p>
           </div>
           <div className="flex items-center gap-2 mt-2">
@@ -852,7 +844,7 @@ export function DirectoryListing({
               onClick={() => setUploadOpen(true)}
             >
               <Upload className="w-4 h-4" />
-              Upload Files
+              {t("uploadFiles")}
             </Button>
             <Button
               size="sm"
@@ -861,7 +853,7 @@ export function DirectoryListing({
               onClick={() => setNewFolderOpen(true)}
             >
               <FolderPlus className="w-4 h-4" />
-              New Folder
+              {t("newFolder")}
             </Button>
           </div>
         </div>
@@ -874,11 +866,10 @@ export function DirectoryListing({
               <Paperclip className="h-8 w-8 text-violet-400 opacity-60" />
             </div>
             <p className="text-lg font-medium text-muted-foreground">
-              No attachments yet
+              {t("noAttachmentsYet")}
             </p>
             <p className="text-sm text-muted-foreground/70 mt-1 max-w-xs">
-              Attachments are supplementary files linked to this material. They
-              can be added via contributions.
+              {t("attachmentsDesc")}
             </p>
           </div>
         ) : (
@@ -1113,12 +1104,10 @@ export function DirectoryListing({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
               <Trash2 className="h-5 w-5" />
-              Delete {batchDeleteOps?.length} item
-              {batchDeleteOps?.length !== 1 ? "s" : ""}
+              {t("deleteItemsTitle", { count: batchDeleteOps?.length ?? 0 })}
             </DialogTitle>
             <DialogDescription>
-              Do you want to delete these items? You can submit the deletion
-              immediately or add it to your draft.
+              {t("deleteItemsConfirm")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0 mt-4">
@@ -1128,7 +1117,7 @@ export function DirectoryListing({
               disabled={submittingBatch}
               className="sm:mr-auto"
             >
-              Cancel
+              {t("cancel")}
             </Button>
             <Button
               variant="outline"
@@ -1136,16 +1125,14 @@ export function DirectoryListing({
               onClick={() => {
                 if (batchDeleteOps) {
                   addOperations(batchDeleteOps);
-                  toast.success(
-                    `${batchDeleteOps.length} item${batchDeleteOps.length !== 1 ? "s" : ""} added to draft`,
-                  );
+                  toast.success(t("itemsAddedToDraft", { count: batchDeleteOps.length }));
                   setBatchDeleteOps(null);
                   setSelectMode(false);
                 }
               }}
               className="gap-2 border-dashed border-destructive/50 text-destructive hover:bg-destructive/10"
             >
-              <Plus className="h-4 w-4" /> Draft
+              <Plus className="h-4 w-4" /> {t("draft")}
             </Button>
             <Button
               variant="destructive"
@@ -1153,7 +1140,7 @@ export function DirectoryListing({
               onClick={async () => {
                 if (batchDeleteOps) {
                   setSubmittingBatch(true);
-                  const result = await submitDirectOperations(batchDeleteOps);
+                  const result = await submitDirectOperations(batchDeleteOps, undefined, undefined, tAutoTitle);
                   setSubmittingBatch(false);
                   setBatchDeleteOps(null);
                   setSelectMode(false);
@@ -1169,7 +1156,7 @@ export function DirectoryListing({
               ) : (
                 <Send className="h-4 w-4" />
               )}{" "}
-              Delete
+              {t("delete")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1184,12 +1171,10 @@ export function DirectoryListing({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-600">
               <ClipboardPaste className="h-5 w-5" />
-              Move {batchPasteOps?.length} item
-              {batchPasteOps?.length !== 1 ? "s" : ""}
+              {t("moveItemsTitle", { count: batchPasteOps?.length ?? 0 })}
             </DialogTitle>
             <DialogDescription>
-              Do you want to move them here? You can perform the action
-              immediately or add it to your draft.
+              {t("moveItemsConfirm")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0 mt-4">
@@ -1199,7 +1184,7 @@ export function DirectoryListing({
               disabled={submittingBatch}
               className="sm:mr-auto"
             >
-              Cancel
+              {t("cancel")}
             </Button>
             <Button
               variant="outline"
@@ -1207,16 +1192,14 @@ export function DirectoryListing({
               onClick={() => {
                 if (batchPasteOps) {
                   addOperations(batchPasteOps);
-                  toast.success(
-                    `${batchPasteOps.length} item${batchPasteOps.length !== 1 ? "s" : ""} added to draft`,
-                  );
+                  toast.success(t("itemsAddedToDraft", { count: batchPasteOps.length }));
                   setBatchPasteOps(null);
                   clearClipboard();
                 }
               }}
               className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
             >
-              <Plus className="h-4 w-4" /> Draft
+              <Plus className="h-4 w-4" /> {t("draft")}
             </Button>
             {!dirId?.startsWith("$") && (
               <Button
@@ -1224,7 +1207,7 @@ export function DirectoryListing({
                 onClick={async () => {
                   if (batchPasteOps) {
                     setSubmittingBatch(true);
-                    const result = await submitDirectOperations(batchPasteOps);
+                    const result = await submitDirectOperations(batchPasteOps, undefined, undefined, tAutoTitle);
                     setSubmittingBatch(false);
                     setBatchPasteOps(null);
                     clearClipboard();
@@ -1240,7 +1223,7 @@ export function DirectoryListing({
                 ) : (
                   <Send className="h-4 w-4" />
                 )}{" "}
-                Direct move
+                {t("directMove")}
               </Button>
             )}
           </DialogFooter>

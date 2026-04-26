@@ -23,6 +23,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getFileExtension } from "@/lib/file-utils";
+import { useTranslations } from "next-intl";
 
 // Loaded client-only: pdfjs calls Promise.withResolvers() at module-eval time,
 // which doesn't exist in the Node.js version used by Next.js SSR.
@@ -106,6 +107,7 @@ function getViewerType(mimeType: string, fileName: string): string {
 /* ── Text preview (markdown / code / csv) ──────────────────────────────────── */
 
 function TextPreview({ url, type }: { url: string; type: "markdown" | "code" | "csv" }) {
+    const t = useTranslations("Preview");
     const [content, setContent] = useState<string>("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -127,7 +129,7 @@ function TextPreview({ url, type }: { url: string; type: "markdown" | "code" | "
     );
     if (error) return (
         <div className="flex h-full items-center justify-center text-sm text-destructive">
-            Failed to load content
+            {t("failedToLoad")}
         </div>
     );
 
@@ -149,26 +151,27 @@ function TextPreview({ url, type }: { url: string; type: "markdown" | "code" | "
 /* ── Generic fallback ──────────────────────────────────────────────────────── */
 
 function GenericFallback({ url, fileName, mimeType }: { url: string; fileName: string; mimeType: string }) {
+    const t = useTranslations("Preview");
     return (
         <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
             <FileText className="h-14 w-14 text-muted-foreground/40" />
             <div>
                 <p className="text-sm font-medium">{fileName}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                    {mimeType || "Unknown type"} — preview unavailable
+                    {mimeType || t("unknownType")} {t("previewUnavailable")}
                 </p>
             </div>
             <div className="flex gap-2">
                 <Button asChild variant="outline" size="sm">
                     <a href={url} download={fileName}>
                         <Download className="mr-1.5 h-3.5 w-3.5" />
-                        Download
+                        {t("download")}
                     </a>
                 </Button>
                 <Button asChild variant="outline" size="sm">
                     <a href={url} target="_blank" rel="noreferrer">
                         <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                        Open
+                        {t("open")}
                     </a>
                 </Button>
             </div>
@@ -203,7 +206,7 @@ const VIEWER_ICON_COLORS: Record<string, string> = {
 export function PreviewDialog({
     url,
     mimeType = "",
-    fileName = "Preview",
+    fileName,
     onClose,
 }: {
     url: string;
@@ -211,7 +214,9 @@ export function PreviewDialog({
     fileName?: string;
     onClose: () => void;
 }) {
-    const viewerType = getViewerType(mimeType, fileName);
+    const t = useTranslations("Preview");
+    const displayFileName = fileName || t("titleDefault");
+    const viewerType = getViewerType(mimeType, displayFileName);
     const Icon = VIEWER_ICONS[viewerType] ?? Eye;
     const iconColor = VIEWER_ICON_COLORS[viewerType] ?? "";
 
@@ -225,7 +230,7 @@ export function PreviewDialog({
                 <DialogHeader className="shrink-0 px-4 pt-4 pb-2">
                     <DialogTitle className="flex items-center gap-2 text-sm font-medium">
                         <Icon className={`h-4 w-4 shrink-0 ${iconColor}`} />
-                        <span className="truncate">{fileName}</span>
+                        <span className="truncate">{displayFileName}</span>
                     </DialogTitle>
                 </DialogHeader>
 
@@ -236,7 +241,7 @@ export function PreviewDialog({
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                             src={url}
-                            alt={fileName}
+                            alt={displayFileName}
                             className="max-h-[70vh] w-full rounded-lg object-contain bg-muted/10"
                         />
                     )}
@@ -260,7 +265,7 @@ export function PreviewDialog({
                     )}
 
                     {viewerType === "generic" && (
-                        <GenericFallback url={url} fileName={fileName} mimeType={mimeType} />
+                        <GenericFallback url={url} fileName={displayFileName} mimeType={mimeType} />
                     )}
                 </div>
             </DialogContent>

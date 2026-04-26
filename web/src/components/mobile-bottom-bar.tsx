@@ -7,6 +7,7 @@ import { useIsMobile } from "@/hooks/use-media-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotificationStore, useUIStore } from "@/lib/stores";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 const emptySubscribe = () => () => {};
 import {
@@ -20,7 +21,7 @@ import {
 
 interface NavItem {
   href: string;
-  label: string;
+  labelKey: "home" | "browse" | "prs" | "inbox" | "profile";
   Icon: LucideIcon;
   match: (pathname: string) => boolean;
   hasBadge?: boolean;
@@ -29,38 +30,39 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   {
     href: "/",
-    label: "Home",
+    labelKey: "home",
     Icon: Home,
     match: (p) => p === "/",
   },
   {
     href: "/browse",
-    label: "Browse",
+    labelKey: "browse",
     Icon: Folder,
     match: (p) => p.startsWith("/browse"),
   },
   {
     href: "/pull-requests",
-    label: "PRs",
+    labelKey: "prs",
     Icon: Send,
     match: (p) => p.startsWith("/pull-requests"),
   },
   {
     href: "/notifications",
-    label: "Inbox",
+    labelKey: "inbox",
     Icon: Bell,
     match: (p) => p.startsWith("/notifications"),
     hasBadge: true,
   },
   {
     href: "/profile",
-    label: "Profile",
+    labelKey: "profile",
     Icon: User,
     match: (p) => p.startsWith("/profile"),
   },
 ];
 
 export function MobileBottomBar() {
+  const t = useTranslations("Navigation");
   const isMobile = useIsMobile();
   const { isAuthenticated } = useAuth();
   const { unreadCount } = useNotificationStore();
@@ -100,7 +102,7 @@ export function MobileBottomBar() {
       onTouchEnd={handleTouchEnd}
     >
       <nav
-        aria-label="Main navigation"
+        aria-label={t("mainNavigationAria")}
         className={cn(
           "flex w-full max-w-md items-center",
           "rounded-2xl px-1.5 py-1.5",
@@ -112,9 +114,10 @@ export function MobileBottomBar() {
           "ring-1 ring-inset ring-white/20 dark:ring-white/4",
         )}
       >
-        {NAV_ITEMS.map(({ href, label, Icon, match, hasBadge }) => {
+        {NAV_ITEMS.map(({ href, labelKey, Icon, match, hasBadge }) => {
           const isActive = match(pathname);
           const showBadge = !!hasBadge && unreadCount > 0;
+          const label = t(labelKey);
 
           return (
             <Link

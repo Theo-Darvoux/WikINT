@@ -12,6 +12,7 @@ import { useIsMobile } from "@/hooks/use-media-query";
 import { toast } from "sonner";
 import type { AnnotationData, ThreadData } from "@/hooks/use-annotations";
 import { API_BASE } from "@/lib/api-client";
+import { useTranslations } from "next-intl";
 
 function getInitials(name: string | null): string {
     if (!name) return "?";
@@ -49,8 +50,9 @@ function AnnotationItem({
         currentUserRole === "vieux";
     const canEdit = isAuthor;
     const canDelete = isAuthor || isModerator;
+    const t = useTranslations("Annotations");
 
-    const authorName = annotation.author?.display_name ?? "[deleted]";
+    const authorName = annotation.author?.display_name ?? t("deletedUser");
     const date = new Date(annotation.created_at);
 
     return (
@@ -80,7 +82,7 @@ function AnnotationItem({
             <div className="min-w-0 flex-1">
                 {replyToAnnotation && (
                     <p className="mb-0.5 text-[10px] text-muted-foreground italic">
-                        Replying to @{replyToAnnotation.author?.display_name ?? "[deleted]"}
+                        {t("replyingTo", { name: replyToAnnotation.author?.display_name ?? t("deletedUser") })}
                     </p>
                 )}
                 <div className="flex items-baseline gap-2">
@@ -102,7 +104,7 @@ function AnnotationItem({
                         className="flex items-center gap-1.5 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                     >
                         <Reply className="h-3 w-3" />
-                        Reply
+                        {t("reply")}
                     </button>
                     {canEdit && (
                         <button
@@ -110,15 +112,15 @@ function AnnotationItem({
                             className="flex items-center gap-1.5 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                         >
                             <Edit2 className="h-3 w-3" />
-                            Edit
+                            {t("edit")}
                         </button>
                     )}
                     {canDelete ? (
                         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
                             <ConfirmDeleteDialog
                                 onConfirm={() => onDelete(annotation.id)}
-                                title="Delete annotation"
-                                description="Are you sure you want to delete this annotation? This action cannot be undone."
+                                title={t("deleteAnnotation")}
+                                description={t("deleteAnnotationConfirm")}
                             />
                         </div>
                     ) : (
@@ -153,6 +155,7 @@ export function AnnotationThread({
     onEdit,
     onDelete,
 }: AnnotationThreadProps) {
+    const t = useTranslations("Annotations");
     const allAnnotations = [thread.root, ...thread.replies];
     const annotationMap = new Map(allAnnotations.map((a) => [a.id, a]));
 
@@ -160,7 +163,7 @@ export function AnnotationThread({
         <div className="rounded-lg border bg-muted/10 p-3 shadow-sm hover:border-primary/20 transition-colors">
             {thread.root.selection_text && (
                 <div className="mb-2.5 border-l-2 border-yellow-400 bg-yellow-400/5 px-2 py-1 rounded-r-md">
-                    <span className="block text-[9px] font-bold text-yellow-600 uppercase tracking-tight mb-0.5">Selection</span>
+                    <span className="block text-[9px] font-bold text-yellow-600 uppercase tracking-tight mb-0.5">{t("selection")}</span>
                     <ExpandableText 
                         text={thread.root.selection_text} 
                         threshold={150} 
@@ -211,12 +214,15 @@ interface AnnotationFormProps {
 export function AnnotationForm({
     onSubmit,
     maxLength = 1000,
-    placeholder = "Write an annotation...",
+    placeholder,
     submitLabel,
 }: AnnotationFormProps) {
+    const t = useTranslations("Annotations");
     const isMobile = useIsMobile();
     const [body, setBody] = useState("");
     const [submitting, setSubmitting] = useState(false);
+
+    const effectivePlaceholder = placeholder ?? t("writeAnAnnotation");
 
     const handleSubmit = async () => {
         if (!body.trim() || submitting) return;
@@ -225,7 +231,7 @@ export function AnnotationForm({
             await onSubmit(body.trim());
             setBody("");
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to submit");
+            toast.error(err instanceof Error ? err.message : t("failedToSubmit"));
         } finally {
             setSubmitting(false);
         }
@@ -236,7 +242,7 @@ export function AnnotationForm({
             <Textarea
                 value={body}
                 onChange={(e) => setBody(e.target.value.slice(0, maxLength))}
-                placeholder={placeholder}
+                placeholder={effectivePlaceholder}
                 className="min-h-[50px] text-xs bg-muted/30 focus-visible:bg-background transition-all py-2"
                 onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey && !isMobile) {
@@ -252,7 +258,7 @@ export function AnnotationForm({
                     </span>
                     {!isMobile && (
                         <span className="text-[9px] text-muted-foreground italic opacity-70">
-                            Shift+Enter for new line
+                            {t("shiftEnterForNewLine")}
                         </span>
                     )}
                 </div>

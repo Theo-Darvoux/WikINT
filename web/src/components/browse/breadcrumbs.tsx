@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { ChevronRight, Home } from "lucide-react";
-import { cn } from "@/lib/utils";
+
+import { useTranslations } from "next-intl";
 
 interface BreadcrumbItem {
     id: string;
@@ -16,13 +17,16 @@ interface BreadcrumbsProps {
     previewPrId?: string;
     /** If true, the last item in the breadcrumbs will be rendered as a link */
     linkLast?: boolean;
+    /** If true, renders with larger text for use as a primary header */
+    large?: boolean;
 }
 
 // Max items to show before collapsing to Home > … > last N
 const COLLAPSE_THRESHOLD = 3;
 const TAIL_COUNT = 2;
 
-export function Breadcrumbs({ items, previewPrId, linkLast = false }: BreadcrumbsProps) {
+export function Breadcrumbs({ items, previewPrId, linkLast = false, large = false }: BreadcrumbsProps) {
+    const t = useTranslations("Navigation");
     const buildPath = (index: number) => {
         const segments = items.slice(0, index + 1).map((item) => item.slug);
         const base = `/browse/${segments.join("/")}`;
@@ -38,14 +42,15 @@ export function Breadcrumbs({ items, previewPrId, linkLast = false }: Breadcrumb
     const visibleOffset = collapsed ? items.length - TAIL_COUNT : 0;
 
     return (
-        <nav className="flex items-center gap-1 text-sm min-w-0">
-            <Link href={rootHref} className="flex items-center shrink-0 text-muted-foreground hover:text-foreground">
-                <Home className="h-4 w-4" />
+        <nav className={`flex items-center gap-1 min-w-0 ${large ? "text-lg sm:text-xl" : "text-sm"}`}>
+            <Link href={rootHref} className="flex items-center shrink-0 text-muted-foreground hover:text-foreground gap-1.5">
+                <Home className={large ? "h-5 w-5" : "h-4 w-4"} />
+                {large && items.length === 0 && <span className="font-bold tracking-tight text-foreground">{t("home")}</span>}
             </Link>
 
             {collapsed && (
                 <span className="flex items-center gap-1 shrink-0">
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                    <ChevronRight className={large ? "h-4 w-4 text-muted-foreground" : "h-3.5 w-3.5 text-muted-foreground"} />
                     <span
                         className="text-muted-foreground select-none"
                         title={items
@@ -65,7 +70,7 @@ export function Breadcrumbs({ items, previewPrId, linkLast = false }: Breadcrumb
 
                 return (
                     <span key={item.id} className="flex items-center gap-1 min-w-0">
-                        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <ChevronRight className={large ? "h-4 w-4 shrink-0 text-muted-foreground" : "h-3.5 w-3.5 shrink-0 text-muted-foreground"} />
                         {shouldLink ? (
                             <Link
                                 href={buildPath(globalIndex)}
@@ -74,7 +79,7 @@ export function Breadcrumbs({ items, previewPrId, linkLast = false }: Breadcrumb
                                 {item.name}
                             </Link>
                         ) : (
-                            <span className="truncate font-medium">{item.name}</span>
+                            <span className="truncate font-bold tracking-tight">{item.name}</span>
                         )}
                     </span>
                 );

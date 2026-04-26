@@ -7,6 +7,7 @@ import { usePinchZoom } from "@/hooks/use-pinch-zoom";
 import { useMaterialFile } from "@/hooks/use-material-file";
 import { ViewerShell } from "./viewer-shell";
 import { ZoomControls } from "./zoom-controls";
+import { useTranslations } from "next-intl";
 
 const MIN_ZOOM = 50;
 const MAX_ZOOM = 200;
@@ -21,6 +22,7 @@ interface CsvViewerProps {
 }
 
 export function CsvViewer({ materialId, fileKey }: CsvViewerProps) {
+    const t = useTranslations("Viewers");
     const tableContainerRef = useRef<HTMLDivElement>(null);
     const [headers, setHeaders] = useState<string[]>([]);
     const [rows, setRows] = useState<string[][]>([]);
@@ -82,11 +84,11 @@ export function CsvViewer({ materialId, fileKey }: CsvViewerProps) {
             scrollRef={tableContainerRef}
             loading={loading}
             error={error}
-            truncatedMessage={truncated ? `File exceeds 10 MiB — only the first ${rows.length.toLocaleString()} rows are shown. Download to view the complete file.` : null}
+            truncatedMessage={truncated ? t("csv.truncated", { rows: rows.length.toLocaleString() }) : null}
             toolbarLeft={
                 !loading && !error && (
                     <span className="text-xs font-medium text-muted-foreground">
-                        {rows.length.toLocaleString()} rows · {headers.length} columns
+                        {t("csv.stats", { rows: rows.length.toLocaleString(), cols: headers.length })}
                     </span>
                 )
             }
@@ -114,7 +116,7 @@ export function CsvViewer({ materialId, fileKey }: CsvViewerProps) {
                                     key={i}
                                     className="border-b border-r px-3 py-1.5 text-left font-medium text-foreground whitespace-nowrap last:border-r-0"
                                 >
-                                    {h || <span className="text-muted-foreground/50 italic">col {i + 1}</span>}
+                                    {h || <span className="text-muted-foreground/50 italic">{t("csv.col", { index: i + 1 })}</span>}
                                 </th>
                             ))}
                         </tr>
@@ -145,7 +147,7 @@ export function CsvViewer({ materialId, fileKey }: CsvViewerProps) {
                         {pageRows.length === 0 && !loading && (
                             <tr>
                                 <td colSpan={headers.length + 1} className="py-8 text-center text-muted-foreground text-sm">
-                                    No data rows
+                                    {t("csv.noData")}
                                 </td>
                             </tr>
                         )}
@@ -156,7 +158,7 @@ export function CsvViewer({ materialId, fileKey }: CsvViewerProps) {
             {/* Pagination footer (fixed at bottom of viewer content area) */}
             <div className="sticky bottom-0 left-0 right-0 z-10 flex items-center justify-between border-t bg-muted/90 backdrop-blur-sm px-4 py-2 text-xs text-muted-foreground">
                 <span>
-                    Page {page + 1} of {totalPages}
+                    {t("csv.page", { current: page + 1, total: totalPages })}
                 </span>
                 {totalPages > 1 && (
                     <div className="flex items-center gap-2">
@@ -164,7 +166,7 @@ export function CsvViewer({ materialId, fileKey }: CsvViewerProps) {
                             onClick={() => goToPage(page - 1)}
                             disabled={page === 0}
                             className="rounded p-0.5 hover:bg-muted disabled:opacity-40"
-                            aria-label="Previous page"
+                            aria-label={t("csv.prevPage")}
                         >
                             <ChevronLeft className="h-4 w-4" />
                         </button>
@@ -172,7 +174,7 @@ export function CsvViewer({ materialId, fileKey }: CsvViewerProps) {
                             onClick={() => goToPage(page + 1)}
                             disabled={page >= totalPages - 1}
                             className="rounded p-0.5 hover:bg-muted disabled:opacity-40"
-                            aria-label="Next page"
+                            aria-label={t("csv.nextPage")}
                         >
                             <ChevronRight className="h-4 w-4" />
                         </button>

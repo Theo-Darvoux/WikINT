@@ -497,6 +497,7 @@ class TestScannerFailClosed:
         scanner.client.post = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
 
         with patch("app.core.scanner.settings") as mock_settings:
+            mock_settings.bazaar_async_enabled = False
             mock_settings.malwarebazaar_fail_closed = True
             mock_settings.malwarebazaar_url = "https://mb-api.abuse.ch/api/v1/"
             mock_settings.malwarebazaar_api_key = None
@@ -519,6 +520,7 @@ class TestScannerFailClosed:
         scanner.client.post = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
 
         with patch("app.core.scanner.settings") as mock_settings:
+            mock_settings.bazaar_async_enabled = False
             mock_settings.malwarebazaar_fail_closed = False
             mock_settings.malwarebazaar_url = "https://mb-api.abuse.ch/api/v1/"
             mock_settings.malwarebazaar_api_key = None

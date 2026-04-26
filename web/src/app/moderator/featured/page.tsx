@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, Star, CalendarRange, ExternalLink, Check, ChevronsUpDown, Search, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Plus, Trash2, Star, CalendarRange, ExternalLink, Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useTranslations } from "next-intl";
 import { apiFetch } from "@/lib/api-client";
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { toast } from "sonner";
@@ -71,6 +72,7 @@ function toLocalDateInput(isoString?: string | Date): string {
 }
 
 function MaterialSearch({ onSelect }: { onSelect: (id: string, title: string) => void }) {
+  const t = useTranslations("Moderator.featured");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const { results, loading } = useSearch(query);
@@ -86,7 +88,7 @@ function MaterialSearch({ onSelect }: { onSelect: (id: string, title: string) =>
           className="w-full justify-between font-normal h-10 px-3"
         >
           <span className="truncate">
-            {selectedTitle || <span className="text-muted-foreground">Search materials...</span>}
+            {selectedTitle || <span className="text-muted-foreground">{t("dialog.searchPlaceholder")}</span>}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
@@ -94,7 +96,7 @@ function MaterialSearch({ onSelect }: { onSelect: (id: string, title: string) =>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
         <Command shouldFilter={false}>
           <CommandInput
-            placeholder="Type material title..."
+            placeholder={t("dialog.searchPlaceholder")}
             value={query}
             onValueChange={setQuery}
           />
@@ -102,11 +104,11 @@ function MaterialSearch({ onSelect }: { onSelect: (id: string, title: string) =>
             {loading && (
               <div className="flex items-center justify-center py-6">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                <span className="ml-2 text-sm text-muted-foreground">Searching...</span>
+                <span className="ml-2 text-sm text-muted-foreground">{t("dialog.searchPlaceholder")}</span>
               </div>
             )}
-            {!loading && results.length === 0 && query.length > 0 && <CommandEmpty>No materials found.</CommandEmpty>}
-            {!loading && results.length === 0 && query.length === 0 && <CommandEmpty className="py-6 text-muted-foreground">Start typing to search...</CommandEmpty>}
+            {!loading && results.length === 0 && query.length > 0 && <CommandEmpty>{t("dialog.noResults")}</CommandEmpty>}
+            {!loading && results.length === 0 && query.length === 0 && <CommandEmpty className="py-6 text-muted-foreground">{t("dialog.startTyping")}</CommandEmpty>}
             <CommandGroup>
               {results.filter(r => r.search_type === "material").map((result) => {
                 const title = result.title || result.file_name || "Untitled";
@@ -148,8 +150,8 @@ interface AddFeaturedDialogProps {
 }
 
 function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogProps) {
+  const t = useTranslations("Moderator.featured");
   const [materialId, setMaterialId] = useState("");
-  const [materialTitle, setMaterialTitle] = useState("");
   const [titleOverride, setTitleOverride] = useState("");
   const [descOverride, setDescOverride] = useState("");
   const [startAt, setStartAt] = useState(toLocalDateInput());
@@ -159,7 +161,6 @@ function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogP
 
   const resetForm = () => {
     setMaterialId("");
-    setMaterialTitle("");
     setTitleOverride("");
     setDescOverride("");
     setStartAt(toLocalDateInput());
@@ -173,15 +174,13 @@ function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogP
   };
 
   const handleSubmit = async () => {
-    if (!materialId.trim()) { toast.error("Material ID is required"); return; }
-    if (!startAt) { toast.error("Start date is required"); return; }
-    if (!endAt) { toast.error("End date is required"); return; }
-    if (new Date(endAt) <= new Date(startAt)) { toast.error("End date must be after start date"); return; }
+    if (!materialId.trim()) { toast.error(t("errors.materialRequired")); return; }
+    if (!startAt) { toast.error(t("errors.startRequired")); return; }
+    if (!endAt) { toast.error(t("errors.endRequired")); return; }
+    if (new Date(endAt) <= new Date(startAt)) { toast.error(t("errors.endAfterStart")); return; }
 
     setSubmitting(true);
     try {
-      // Format dates to include default times: start of day for startAt, end of day for endAt
-      // We use local time by constructing the string carefully then converting to ISO
       const startIso = new Date(`${startAt}T00:00:00`).toISOString();
       const endIso = new Date(`${endAt}T23:59:59`).toISOString();
 
@@ -199,11 +198,11 @@ function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogP
         body: JSON.stringify(payload),
       });
 
-      toast.success("Featured item added successfully");
+      toast.success(t("success.added"));
       handleOpenChange(false);
       onSuccess();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to add featured item");
+      toast.error(err instanceof Error ? err.message : t("errors.addFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -213,42 +212,40 @@ function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogP
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add Featured Material</DialogTitle>
+          <DialogTitle>{t("dialog.addTitle")}</DialogTitle>
           <DialogDescription>
-            Feature a material on the home page for a specified time window.
-            Higher priority items appear first.
+            {t("dialog.addDesc")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="material-search">Search Material <span className="text-destructive" aria-hidden>*</span></Label>
-            <MaterialSearch onSelect={(id, title) => {
+            <Label htmlFor="material-search">{t("dialog.searchMaterial")} <span className="text-destructive" aria-hidden>*</span></Label>
+            <MaterialSearch onSelect={(id) => {
               setMaterialId(id);
-              setMaterialTitle(title);
             }} />
             {materialId && (
               <p className="text-[10px] text-muted-foreground font-mono mt-1">
-                Selected: {materialId}
+                {t("dialog.selectedId", { id: materialId })}
               </p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="title-override">Title Override</Label>
+            <Label htmlFor="title-override">{t("dialog.titleOverride")}</Label>
             <Input
               id="title-override"
-              placeholder="Leave blank to use the material's own title"
+              placeholder={t("dialog.titleOverridePlaceholder")}
               value={titleOverride}
               onChange={(e) => setTitleOverride(e.target.value)}
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="desc-override">Description Override</Label>
+            <Label htmlFor="desc-override">{t("dialog.descOverride")}</Label>
             <Textarea
               id="desc-override"
-              placeholder="Leave blank to use the material's own description"
+              placeholder={t("dialog.descOverridePlaceholder")}
               value={descOverride}
               onChange={(e) => setDescOverride(e.target.value)}
               rows={3}
@@ -257,19 +254,19 @@ function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogP
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="start-at">Start Date <span className="text-destructive" aria-hidden>*</span></Label>
+              <Label htmlFor="start-at">{t("dialog.startDate")} <span className="text-destructive" aria-hidden>*</span></Label>
               <Input id="start-at" type="date" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
-              <p className="text-[10px] text-muted-foreground italic">Starts at 00:00</p>
+              <p className="text-[10px] text-muted-foreground italic">{t("dialog.startsAt")}</p>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="end-at">End Date <span className="text-destructive" aria-hidden>*</span></Label>
+              <Label htmlFor="end-at">{t("dialog.endDate")} <span className="text-destructive" aria-hidden>*</span></Label>
               <Input id="end-at" type="date" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
-              <p className="text-[10px] text-muted-foreground italic">Ends at 23:59</p>
+              <p className="text-[10px] text-muted-foreground italic">{t("dialog.endsAt")}</p>
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="priority">Priority</Label>
+            <Label htmlFor="priority">{t("dialog.priority")}</Label>
             <Input
               id="priority"
               type="number"
@@ -279,13 +276,13 @@ function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogP
               onChange={(e) => setPriority(Math.max(0, parseInt(e.target.value) || 0))}
               className="w-32"
             />
-            <p className="text-xs text-muted-foreground">Higher numbers appear first when multiple items are active.</p>
+            <p className="text-xs text-muted-foreground">{t("dialog.priorityDesc")}</p>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={submitting}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={submitting}>{submitting ? "Adding…" : "Add Featured"}</Button>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={submitting}>{t("dialog.cancel")}</Button>
+          <Button onClick={handleSubmit} disabled={submitting}>{submitting ? t("dialog.adding") : t("addFeatured")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -293,6 +290,7 @@ function AddFeaturedDialog({ open, onOpenChange, onSuccess }: AddFeaturedDialogP
 }
 
 export default function ModeratorFeaturedPage() {
+  const t = useTranslations("Moderator.featured");
   const [items, setItems] = useState<FeaturedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -310,25 +308,25 @@ export default function ModeratorFeaturedPage() {
       });
       setItems(data);
     } catch {
-      toast.error("Failed to load featured items");
+      toast.error(t("errors.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
   const handleDelete = (item: FeaturedItem) => {
     show(
-      "Remove featured item?",
-      `"${item.title ?? item.material.title}" will be removed from the featured section immediately.`,
+      t("delete.confirmTitle"),
+      t("delete.confirmDesc", { title: item.title ?? item.material.title }),
       async () => {
         try {
           await apiFetch(`/moderator/featured/${item.id}`, { method: "DELETE" });
           setItems((prev) => prev.filter((i) => i.id !== item.id));
-          toast.success("Featured item removed");
+          toast.success(t("delete.success"));
         } catch {
-          toast.error("Failed to remove featured item");
+          toast.error(t("delete.error"));
         }
       },
     );
@@ -338,13 +336,13 @@ export default function ModeratorFeaturedPage() {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
-          Manage which materials appear in the{" "}
-          <strong className="font-medium text-foreground">Featured</strong>{" "}
-          section on the home page.
+          {t.rich("description", {
+            featured: (chunks) => <strong className="font-medium text-foreground">{chunks}</strong>
+          })}
         </p>
         <Button size="sm" className="shrink-0" onClick={() => setDialogOpen(true)}>
           <Plus className="h-4 w-4" />
-          Add Featured
+          {t("addFeatured")}
         </Button>
       </div>
 
@@ -355,35 +353,36 @@ export default function ModeratorFeaturedPage() {
           <table className="w-full text-left text-sm">
             <thead className="border-b bg-muted/50 text-muted-foreground">
               <tr>
-                <th className="p-4 font-medium">Material</th>
-                <th className="p-4 font-medium">Title Override</th>
-                <th className="p-4 font-medium">Status</th>
+                <th className="p-4 font-medium">{t("table.material")}</th>
+                <th className="p-4 font-medium">{t("table.titleOverride")}</th>
+                <th className="p-4 font-medium">{t("table.status")}</th>
                 <th className="p-4 font-medium">
                   <span className="flex items-center gap-1.5">
                     <CalendarRange className="h-3.5 w-3.5" />
-                    Period
+                    {t("table.period")}
                   </span>
                 </th>
-                <th className="p-4 font-medium text-center">Priority</th>
-                <th className="p-4 font-medium text-right">Actions</th>
+                <th className="p-4 font-medium text-center">{t("table.priority")}</th>
+                <th className="p-4 font-medium text-right">{t("table.actions")}</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {loading && items.length === 0 && (
-                <tr><td colSpan={6} className="p-10 text-center text-muted-foreground">Loading featured items…</td></tr>
+                <tr><td colSpan={6} className="p-10 text-center text-muted-foreground">{t("loading")}</td></tr>
               )}
               {!loading && items.length === 0 && (
                 <tr>
                   <td colSpan={6} className="p-10 text-center">
                     <Star className="mx-auto mb-3 h-9 w-9 text-muted-foreground/20" />
-                    <p className="text-sm font-medium text-muted-foreground">No featured items yet</p>
-                    <p className="mt-1 text-xs text-muted-foreground/70">Click &ldquo;Add Featured&rdquo; to highlight a material on the home page.</p>
+                    <p className="text-sm font-medium text-muted-foreground">{t("noItems")}</p>
+                    <p className="mt-1 text-xs text-muted-foreground/70">{t("noItemsDesc")}</p>
                   </td>
                 </tr>
               )}
               {items.map((item) => {
                 const status = getFeaturedStatus(item);
                 const materialTitle = item.material.title;
+                const statusKey = `status.${status}` as const;
                 return (
                   <tr key={item.id} className="transition-colors hover:bg-muted/30">
                     <td className="p-4">
@@ -399,7 +398,7 @@ export default function ModeratorFeaturedPage() {
                             onClick={(e) => e.stopPropagation()}
                           >
                             <ExternalLink className="h-2.5 w-2.5" />
-                            View
+                            {t("view")}
                           </Link>
                         </div>
                       </div>
@@ -408,13 +407,13 @@ export default function ModeratorFeaturedPage() {
                       {item.title ? (
                         <span className="line-clamp-1 max-w-45">{item.title}</span>
                       ) : (
-                        <span className="italic text-muted-foreground/50 text-xs">— (uses material title)</span>
+                        <span className="italic text-muted-foreground/50 text-xs">{t("dialog.usesMaterialTitle")}</span>
                       )}
                     </td>
                     <td className="p-4">
                       <span className={["inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium", STATUS_STYLES[status]].join(" ")}>
                         {status === "active" && <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />}
-                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                        {t(statusKey)}
                       </span>
                     </td>
                     <td className="p-4 text-xs text-muted-foreground">{formatDateRange(item.start_at, item.end_at)}</td>
@@ -427,8 +426,8 @@ export default function ModeratorFeaturedPage() {
                         size="icon"
                         onClick={() => handleDelete(item)}
                         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        title={`Remove "${materialTitle}" from featured`}
-                        aria-label={`Remove "${materialTitle}" from featured`}
+                        title={t("delete.confirmTitle")}
+                        aria-label={t("delete.confirmTitle")}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -443,9 +442,11 @@ export default function ModeratorFeaturedPage() {
 
       {!loading && items.length > 0 && (
         <p className="text-xs text-muted-foreground text-right">
-          {items.filter((i) => getFeaturedStatus(i) === "active").length} active
-          · {items.filter((i) => getFeaturedStatus(i) === "scheduled").length} scheduled
-          · {items.filter((i) => getFeaturedStatus(i) === "expired").length} expired
+          {t("stats", {
+            active: items.filter((i) => getFeaturedStatus(i) === "active").length,
+            scheduled: items.filter((i) => getFeaturedStatus(i) === "scheduled").length,
+            expired: items.filter((i) => getFeaturedStatus(i) === "expired").length,
+          })}
         </p>
       )}
     </div>

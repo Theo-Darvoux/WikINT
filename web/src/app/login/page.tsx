@@ -15,7 +15,10 @@ import { KeyRound, Mail } from "lucide-react";
 
 type Step = "email" | "code" | "password";
 
+import { useTranslations } from "next-intl";
+
 export default function LoginPage() {
+    const t = useTranslations("Login");
     const [step, setStep] = useState<Step>("email");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -50,10 +53,10 @@ export default function LoginPage() {
             await requestCode(email);
             setStep("code");
             setCode("");
-            toast.success("Code sent! Check your email.");
+            toast.success(t("codeSent"));
             setTimeout(() => inputRef.current?.focus(), 100);
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to send code");
+            toast.error(err instanceof Error ? err.message : t("sendFailed"));
         } finally {
             setLoading(false);
         }
@@ -70,7 +73,7 @@ export default function LoginPage() {
                 router.push("/");
             }
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Invalid code");
+            toast.error(err instanceof Error ? err.message : t("invalidCode"));
         } finally {
             setLoading(false);
         }
@@ -87,7 +90,7 @@ export default function LoginPage() {
                 router.push("/");
             }
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Invalid email or password");
+            toast.error(err instanceof Error ? err.message : t("invalidCredentials"));
         } finally {
             setLoading(false);
         }
@@ -104,7 +107,7 @@ export default function LoginPage() {
                 router.push("/");
             }
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Google login failed");
+            toast.error(err instanceof Error ? err.message : t("googleFailed"));
         } finally {
             setLoading(false);
         }
@@ -114,11 +117,11 @@ export default function LoginPage() {
         <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
             <Card className="w-full max-w-md">
                 <CardHeader className="text-center">
-                    <CardTitle className="text-2xl font-bold">{config?.site_name || "WikINT"}</CardTitle>
+                    <CardTitle className="text-2xl font-bold">{config?.site_name || t("title")}</CardTitle>
                     <CardDescription>
                         {step === "email"
-                            ? (config?.site_description || "Sign in to access course materials")
-                            : step === "code" ? "Enter the verification code" : "Enter your password"}
+                            ? (config?.site_description || t("descEmail"))
+                            : step === "code" ? t("descCode") : t("descPassword")}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -131,7 +134,7 @@ export default function LoginPage() {
                                             <GoogleOAuthProvider clientId={authMethods.google_client_id}>
                                                 <GoogleLogin
                                                     onSuccess={handleGoogleSuccess}
-                                                    onError={() => toast.error("Google login failed")}
+                                                    onError={() => toast.error(t("googleFailed"))}
                                                     theme="outline"
                                                     size="large"
                                                     width="100%"
@@ -149,7 +152,7 @@ export default function LoginPage() {
                                                 <span className="w-full border-t" />
                                             </div>
                                             <div className="relative flex justify-center text-xs uppercase">
-                                                <span className="bg-card px-2 text-muted-foreground">Or continue with email</span>
+                                                <span className="bg-card px-2 text-muted-foreground">{t("orContinue")}</span>
                                             </div>
                                         </div>
                                     )}
@@ -159,11 +162,11 @@ export default function LoginPage() {
                             {(authMethods.totp_enabled || authMethods.classic_enabled) && (
                                 <div className="space-y-4">
                                     <div className="space-y-2">
-                                        <Label htmlFor="email">Email</Label>
+                                        <Label htmlFor="email">{t("emailLabel")}</Label>
                                         <Input
                                             id="email"
                                             type="email"
-                                            placeholder="prenom.nom@telecom-sudparis.eu"
+                                            placeholder={t("emailPlaceholder")}
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
                                             required
@@ -176,20 +179,20 @@ export default function LoginPage() {
                                         <div className="grid grid-cols-2 gap-4">
                                             <Button variant="outline" onClick={handleRequestCode} disabled={loading || !email}>
                                                 <Mail className="mr-2 h-4 w-4" />
-                                                Send code
+                                                {t("sendCode")}
                                             </Button>
                                             <Button variant="outline" onClick={() => setStep("password")} disabled={loading || !email}>
                                                 <KeyRound className="mr-2 h-4 w-4" />
-                                                Password
+                                                {t("password")}
                                             </Button>
                                         </div>
                                     ) : authMethods.totp_enabled ? (
                                         <Button className="w-full" onClick={handleRequestCode} disabled={loading || !email}>
-                                            {loading ? "Sending..." : "Send verification code"}
+                                            {loading ? t("sending") : t("sendVerificationCode")}
                                         </Button>
                                     ) : (
                                         <Button className="w-full" onClick={() => setStep("password")} disabled={loading || !email}>
-                                            Continue with password
+                                            {t("continueWithPassword")}
                                         </Button>
                                     )}
                                 </div>
@@ -197,18 +200,18 @@ export default function LoginPage() {
 
                             {!authMethods.totp_enabled && !authMethods.google_enabled && !authMethods.classic_enabled && (
                                 <p className="text-sm text-center text-muted-foreground py-4">
-                                    No authentication methods are currently enabled.
+                                    {t("noMethods")}
                                 </p>
                             )}
                         </div>
                     ) : step === "password" ? (
                         <form onSubmit={handlePasswordLogin} className="space-y-4">
                             <div className="space-y-2">
-                                <Label htmlFor="password">Password</Label>
+                                <Label htmlFor="password">{t("passwordLabel")}</Label>
                                 <Input
                                     id="password"
                                     type="password"
-                                    placeholder="••••••••"
+                                    placeholder={t("passwordPlaceholder")}
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     required
@@ -217,7 +220,7 @@ export default function LoginPage() {
                                 />
                             </div>
                             <Button type="submit" className="w-full" disabled={loading}>
-                                {loading ? "Signing in..." : "Sign in"}
+                                {loading ? t("signingIn") : t("signIn")}
                             </Button>
                             <Button
                                 type="button"
@@ -226,21 +229,21 @@ export default function LoginPage() {
                                 onClick={() => setStep("email")}
                                 disabled={loading}
                             >
-                                Back
+                                {t("back")}
                             </Button>
                         </form>
                     ) : (
                         <form onSubmit={handleVerifyCode} className="space-y-6">
                             <div className="space-y-3">
                                 <div className="flex justify-between items-center px-1">
-                                    <Label htmlFor="code" className="block">Verification code</Label>
+                                    <Label htmlFor="code" className="block">{t("verificationCode")}</Label>
                                     <button 
                                         type="button" 
                                         className="text-xs text-primary hover:underline font-medium"
                                         onClick={() => handleRequestCode()}
                                         disabled={loading}
                                     >
-                                        Resend code
+                                        {t("resendCode")}
                                     </button>
                                 </div>
                                 <div className="relative cursor-text" onClick={() => inputRef.current?.focus()}>
@@ -256,7 +259,7 @@ export default function LoginPage() {
                                         autoFocus
                                         required
                                         autoComplete="one-time-code"
-                                        aria-label="Code de vérification à 8 caractères"
+                                        aria-label={t("codeAriaLabel")}
                                         disabled={loading}
                                     />
                                     {/* Visual representation - hidden from screen readers */}
@@ -276,13 +279,13 @@ export default function LoginPage() {
                                     </div>
                                 </div>
                                 <p className="text-center text-xs text-muted-foreground">
-                                    Check your email for a sign-in link or enter the 8-character code.
+                                    {t("codeHelp")}
                                     <br/>
-                                    <span className="opacity-80">Valid for 10 minutes. Maximum 5 attempts.</span>
+                                    <span className="opacity-80">{t("codeHelp2")}</span>
                                 </p>
                             </div>
                             <Button type="submit" className="w-full" disabled={loading}>
-                                {loading ? "Verifying..." : "Verify"}
+                                {loading ? t("verifying") : t("verify")}
                             </Button>
                             <Button
                                 type="button"
@@ -291,7 +294,7 @@ export default function LoginPage() {
                                 onClick={() => window.open("https://cerbere.imt.fr/zimbra", "_blank")}
                                 disabled={loading}
                             >
-                                Open email box (Zimbra)
+                                {t("openZimbra")}
                             </Button>
                             <Button
                                 type="button"
@@ -303,7 +306,7 @@ export default function LoginPage() {
                                 }}
                                 disabled={loading}
                             >
-                                Use a different email
+                                {t("useDifferentEmail")}
                             </Button>
                         </form>
                     )}

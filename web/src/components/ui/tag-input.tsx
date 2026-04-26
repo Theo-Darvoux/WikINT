@@ -4,6 +4,7 @@ import * as React from "react";
 import { X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 interface TagInputProps {
     tags: string[];
@@ -17,13 +18,15 @@ interface TagInputProps {
 export function TagInput({
     tags,
     onChange,
-    placeholder = "Add tag...",
+    placeholder,
     maxLength = 20,
     maxTags = 20,
     className,
 }: TagInputProps) {
+    const t = useTranslations("Common");
     const [inputValue, setInputValue] = React.useState("");
     const inputRef = React.useRef<HTMLInputElement>(null);
+    const displayPlaceholder = placeholder || t("addTagPlaceholder");
 
     const isLimitReached = tags.length >= maxTags;
 
@@ -77,7 +80,7 @@ export function TagInput({
                             className="rounded-full outline-none hover:bg-blue-200/50 dark:hover:bg-blue-800/50 p-0.5 transition-colors"
                         >
                             <X className="h-3 w-3" />
-                            <span className="sr-only">Remove {tag}</span>
+                            <span className="sr-only">{t("removeTag", { tag })}</span>
                         </button>
                     </Badge>
                 ))}
@@ -88,7 +91,7 @@ export function TagInput({
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder={tags.length === 0 ? placeholder : ""}
+                        placeholder={tags.length === 0 ? displayPlaceholder : ""}
                         className="flex-1 min-w-[100px] bg-transparent outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
                         maxLength={maxLength}
                     />
@@ -101,15 +104,15 @@ export function TagInput({
                     isLimitReached ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
                 )}>
                     {isLimitReached 
-                        ? "Maximum number of tags reached (20)" 
-                        : `${tags.length}/${maxTags} tags`}
+                        ? t("maxTagsReached", { max: maxTags })
+                        : t("tagsCount", { current: tags.length, max: maxTags })}
                 </span>
                 {inputValue.length > 0 && (
                     <span className={cn(
                         "text-[10px] font-medium transition-colors",
                         inputValue.length >= maxLength ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
                     )}>
-                        {inputValue.length}/{maxLength} chars
+                        {t("charsCount", { current: inputValue.length, max: maxLength })}
                     </span>
                 )}
             </div>

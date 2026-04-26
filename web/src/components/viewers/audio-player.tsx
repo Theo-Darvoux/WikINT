@@ -23,6 +23,7 @@ import { useTheme } from "next-themes";
 import { API_BASE, fetchMaterialBlob } from "@/lib/api-client";
 import { getAccessToken } from "@/lib/auth-tokens";
 import { ViewerShell } from "./viewer-shell";
+import { useTranslations } from "next-intl";
 
 interface AudioPlayerProps {
     fileKey: string;
@@ -30,6 +31,7 @@ interface AudioPlayerProps {
 }
 
 export function AudioPlayer({ materialId, fileKey }: AudioPlayerProps) {
+    const t = useTranslations("Viewers");
     const { resolvedTheme } = useTheme();
     const [isLoading, setIsLoading] = useState(true);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -212,8 +214,8 @@ export function AudioPlayer({ materialId, fileKey }: AudioPlayerProps) {
                          </div>
                     </div>
                     <div className="text-center space-y-1">
-                        <p className="text-sm font-semibold">Preparing audio engine</p>
-                        <p className="text-xs text-muted-foreground animate-pulse">Analyzing frequencies & building waveform...</p>
+                        <p className="text-sm font-semibold">{t("preparingAudio")}</p>
+                        <p className="text-xs text-muted-foreground animate-pulse">{t("analyzingFrequencies")}</p>
                     </div>
                 </div>
             ) : (
@@ -225,7 +227,7 @@ export function AudioPlayer({ materialId, fileKey }: AudioPlayerProps) {
                             <div className="flex items-center justify-between mb-4 px-1">
                                 <div className="flex items-center gap-3">
                                     <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                                    <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-muted-foreground/80">Waveform Analysis</span>
+                                    <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-muted-foreground/80">{t("waveformAnalysis")}</span>
                                 </div>
                                 <div className="flex items-center gap-4 text-xs font-mono font-medium text-muted-foreground/80 tabular-nums">
                                     <span>{formatTime(currentTime)}</span>
@@ -337,7 +339,9 @@ export function AudioPlayer({ materialId, fileKey }: AudioPlayerProps) {
                         ref={audioRef} src={streamUrl}
                         onTimeUpdate={handleTimeUpdate} onLoadedMetadata={handleLoadedMetadata}
                         onEnded={() => setIsPlaying(false)} className="hidden"
-                    />
+                    >
+                        {t("audioNotSupported")}
+                    </audio>
                 </div>
             )}
                 </div>

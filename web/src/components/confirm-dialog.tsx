@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { create } from "zustand";
+import { useTranslations } from "next-intl";
 
 interface ConfirmState {
     open: boolean;
@@ -31,6 +32,7 @@ export const useConfirmDialog = create<ConfirmState>((set) => ({
 }));
 
 export function ConfirmDialog() {
+    const t = useTranslations("Common");
     const { open, title, description, onConfirm, close } = useConfirmDialog();
 
     return (
@@ -42,7 +44,7 @@ export function ConfirmDialog() {
                 </DialogHeader>
                 <DialogFooter>
                     <Button variant="outline" onClick={close}>
-                        Cancel
+                        {t("cancel")}
                     </Button>
                     <Button
                         variant="destructive"
@@ -51,7 +53,7 @@ export function ConfirmDialog() {
                             close();
                         }}
                     >
-                        Confirm
+                        {t("confirm")}
                     </Button>
                 </DialogFooter>
             </DialogContent>

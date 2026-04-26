@@ -18,7 +18,7 @@ Aggregate home-page data endpoint. All routes require authentication (`CurrentUs
 
 ## Comments (`/api/comments`)
 Polymorphic comment system supporting threaded replies:
-- `POST /api/comments` — Create comment on any target (material, directory, etc.) [Rate Limit: 10/min]
+- `POST /api/comments` — Create comment on any target (material, directory, etc.) [Rate Limit: 10/min]. **Restriction**: Target must be a valid, persisted item (UUID). Drafts/Ghost items are not supported.
 - `GET /api/comments?target_type=...&target_id=...` — List comments for a target
 - `PUT /api/comments/{id}` — Edit own comment
 - `DELETE /api/comments/{id}` — Delete own comment
@@ -31,13 +31,13 @@ Discussion threads on pull requests:
 
 ## Annotations (`/api/annotations`)
 Document-level annotations with spatial coordinates:
-- `POST /api/materials/{id}/annotations` — Create annotation on a material [Rate Limit: 10/min]
+- `POST /api/materials/{id}/annotations` — Create annotation on a material [Rate Limit: 10/min]. **Restriction**: Material must be a valid, persisted item (UUID). Drafts/Ghost items are not supported.
 - `GET /api/materials/{id}/annotations` — List annotations for a material
 - Annotations include `page_number` and `coordinates` (JSONB) for positioning
 
 ## Flags (`/api/flags`)
 Content moderation reporting:
-- `POST /api/flags` — Flag content (material, comment, user) with a reason
+- `POST /api/flags` — Flag content (material, comment, user) with a reason. **Restriction**: Target must be a valid, persisted item (UUID). Drafts/Ghost items are not supported.
 - `GET /api/flags` — List flags (moderator only)
 - `PUT /api/flags/{id}` — Update flag status (resolve, dismiss)
 

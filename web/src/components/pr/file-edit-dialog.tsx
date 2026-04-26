@@ -38,6 +38,7 @@ import { uploadFile, logicalFileSize } from "@/lib/upload-client";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import type { Monaco } from "@monaco-editor/react";
+import { useTranslations } from "next-intl";
 
 // Monaco is lazy-loaded to keep initial bundle tight
 const MonacoEditor = dynamic(
@@ -206,9 +207,12 @@ interface BinaryReplaceTabProps {
         fileMimeType: string;
     }) => void;
     onClear: () => void;
+    t: any;
+    tCommon: any;
+    tUpload: any;
 }
 
-function BinaryReplaceTab({ onFileReady, onClear }: BinaryReplaceTabProps) {
+function BinaryReplaceTab({ onFileReady, onClear, t, tCommon, tUpload }: BinaryReplaceTabProps) {
     const [isDragging, setIsDragging] = useState(false);
     const [uploadState, setUploadState] = useState<
         "idle" | "uploading" | "done" | "error"
@@ -231,6 +235,7 @@ function BinaryReplaceTab({ onFileReady, onClear }: BinaryReplaceTabProps) {
                 const result = await uploadFile(file, {
                     signal: ctrl.signal,
                     onProgress: setProgress,
+                    t: tUpload,
                 });
                 setUploadState("done");
                 onFileReady({
@@ -268,46 +273,45 @@ function BinaryReplaceTab({ onFileReady, onClear }: BinaryReplaceTabProps) {
 
     return (
         <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-                Upload a new file to replace the current version. The previous
-                file will be kept in version history.
-            </p>
-
-            {uploadState === "idle" && (
-                <div
-                    role="button"
-                    tabIndex={0}
-                    onDragOver={(e) => {
-                        e.preventDefault();
-                        setIsDragging(true);
-                    }}
-                    onDragLeave={() => setIsDragging(false)}
-                    onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ")
-                            fileInputRef.current?.click();
-                    }}
-                    className={cn(
-                        "flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed p-8 transition-colors",
-                        isDragging
-                            ? "border-primary bg-primary/5"
-                            : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30",
-                    )}
-                >
-                    <UploadCloud
-                        className={cn(
-                            "h-8 w-8",
-                            isDragging
-                                ? "text-primary"
-                                : "text-muted-foreground",
-                        )}
-                    />
                     <p className="text-sm text-muted-foreground">
-                        {isDragging
-                            ? "Drop file here"
-                            : "Drag & drop or click to browse"}
+                        {t("replaceDesc")}
                     </p>
+
+                    {uploadState === "idle" && (
+                        <div
+                            role="button"
+                            tabIndex={0}
+                            onDragOver={(e) => {
+                                e.preventDefault();
+                                setIsDragging(true);
+                            }}
+                            onDragLeave={() => setIsDragging(false)}
+                            onDrop={handleDrop}
+                            onClick={() => fileInputRef.current?.click()}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ")
+                                    fileInputRef.current?.click();
+                            }}
+                            className={cn(
+                                "flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed p-8 transition-colors",
+                                isDragging
+                                    ? "border-primary bg-primary/5"
+                                    : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30",
+                            )}
+                        >
+                            <UploadCloud
+                                className={cn(
+                                    "h-8 w-8",
+                                    isDragging
+                                        ? "text-primary"
+                                        : "text-muted-foreground",
+                                )}
+                            />
+                            <p className="text-sm text-muted-foreground">
+                                {isDragging
+                                    ? t("dropActive")
+                                    : t("dropDefault")}
+                            </p>
                     <input
                         ref={fileInputRef}
                         type="file"
@@ -350,7 +354,7 @@ function BinaryReplaceTab({ onFileReady, onClear }: BinaryReplaceTabProps) {
                     <button
                         onClick={reset}
                         className="ml-auto rounded p-0.5 text-muted-foreground hover:text-foreground"
-                        title="Remove"
+                        title={tCommon("remove")}
                     >
                         <X className="h-3.5 w-3.5" />
                     </button>
@@ -370,7 +374,7 @@ function BinaryReplaceTab({ onFileReady, onClear }: BinaryReplaceTabProps) {
                         className="gap-1.5"
                     >
                         <RefreshCw className="h-3.5 w-3.5" />
-                        Try again
+                        {tCommon("tryAgain")}
                     </Button>
                 </div>
             )}
@@ -387,6 +391,12 @@ export function FileEditDialog({
     onOpenChange,
     target,
 }: FileEditDialogProps) {
+    const t = useTranslations("FileEdit");
+    const tCommon = useTranslations("Common");
+    const tWizard = useTranslations("PRWizard");
+    const tAuto = useTranslations("AutoTitle");
+    const tUpload = useTranslations("Upload");
+
     const addOperation = useStagingStore((s) => s.addOperation);
     const triggerBrowseRefresh = useBrowseRefreshStore(
         (s) => s.triggerBrowseRefresh,
@@ -583,18 +593,18 @@ export function FileEditDialog({
 
             if (mode === "draft") {
                 ops.forEach((op) => addOperation(op));
-                toast.success("Changes added to draft");
+                toast.success(t("saveSuccess"));
                 onOpenChange(false);
             } else {
                 setSubmitting(true);
-                const result = await submitDirectOperations(ops);
+                const result = await submitDirectOperations(ops, undefined, undefined, tAuto);
                 setSubmitting(false);
                 onOpenChange(false);
                 if (result?.status === "approved") triggerBrowseRefresh();
             }
         } catch (e) {
             toast.error(
-                (e as Error)?.message ?? "Failed to save text content",
+                (e as Error)?.message ?? t("saveError"),
             );
         } finally {
             setSavingText(false);
@@ -627,7 +637,7 @@ export function FileEditDialog({
         }
 
         ops.forEach((op) => addOperation(op));
-        toast.success("Changes added to draft");
+        toast.success(t("saveSuccess"));
         onOpenChange(false);
     };
 
@@ -653,7 +663,7 @@ export function FileEditDialog({
                 ),
             );
         }
-        const result = await submitDirectOperations(ops);
+        const result = await submitDirectOperations(ops, undefined, undefined, tAuto);
         setSubmitting(false);
         onOpenChange(false);
         if (result?.status === "approved") triggerBrowseRefresh();
@@ -676,14 +686,13 @@ export function FileEditDialog({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Icon className="h-5 w-5 text-blue-600" />
-                        Edit {isMaterial ? "document" : "folder"}
+                        {t("title", { type: isMaterial ? t("material") : t("folder") })}
                     </DialogTitle>
                     <DialogDescription>
-                        Editing{" "}
-                        <span className="font-medium text-foreground">
-                            {currentTitle}
-                        </span>
-                        . Changes can be added to your draft or submitted directly.
+                        {t.rich("description", {
+                            name: currentTitle,
+                            foreground: (chunks) => <span className="font-medium text-foreground">{chunks}</span>
+                        })}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -698,10 +707,10 @@ export function FileEditDialog({
                         {isMaterial && (
                             <TabsTrigger value="content" className="gap-1.5">
                                 <FileCode2 className="h-3.5 w-3.5" />
-                                {canEditText ? "Edit text" : "Replace file"}
+                                {canEditText ? t("editText") : t("replaceFile")}
                             </TabsTrigger>
                         )}
-                        <TabsTrigger value="metadata">Metadata</TabsTrigger>
+                        <TabsTrigger value="metadata">{t("metadata")}</TabsTrigger>
                     </TabsList>
 
                     {/* ── Metadata tab ──────────────────────────────────── */}
@@ -711,7 +720,7 @@ export function FileEditDialog({
                                 htmlFor="edit-title"
                                 className="text-sm font-medium"
                             >
-                                {isMaterial ? "Title" : "Name"}
+                                {isMaterial ? tWizard("nameTitle") : tWizard("createDirectory")}
                             </label>
                             <Input
                                 id="edit-title"
@@ -727,9 +736,9 @@ export function FileEditDialog({
                                 htmlFor="edit-desc"
                                 className="text-sm font-medium"
                             >
-                                Description{" "}
+                                {tWizard("description")}{" "}
                                 <span className="text-muted-foreground">
-                                    (optional)
+                                    {tCommon("optional")}
                                 </span>
                             </label>
                             <Textarea
@@ -748,13 +757,13 @@ export function FileEditDialog({
                                 htmlFor="edit-tags"
                                 className="text-sm font-medium"
                             >
-                                Tags
+                                {tWizard("tags")}
                             </label>
                             <TagInput
                                 key={target.id}
                                 tags={tags}
                                 onChange={setTags}
-                                placeholder="math, algebra..."
+                                placeholder={tWizard("tagsPlaceholder")}
                             />
                         </div>
                     </TabsContent>
@@ -793,7 +802,7 @@ export function FileEditDialog({
                                                     );
                                                 }}
                                             >
-                                                Retry
+                                                {tCommon("tryAgain")}
                                             </Button>
                                         </div>
                                     ) : (
@@ -833,9 +842,9 @@ export function FileEditDialog({
                                             htmlFor="edit-diff-summary"
                                             className="text-sm font-medium"
                                         >
-                                            Change description{" "}
+                                            {t("changeDesc")}{" "}
                                             <span className="text-muted-foreground">
-                                                (optional)
+                                                {tCommon("optional")}
                                             </span>
                                         </label>
                                         <Input
@@ -846,7 +855,7 @@ export function FileEditDialog({
                                             }
                                             maxLength={200}
                                             disabled={isLoading}
-                                            placeholder="e.g. Fixed typo in introduction"
+                                            placeholder={t("changeDescPlaceholderText")}
                                         />
                                     </div>
                                 </>
@@ -859,15 +868,18 @@ export function FileEditDialog({
                                         onClear={() =>
                                             setReplacementFile(null)
                                         }
+                                        t={t}
+                                        tCommon={tCommon}
+                                        tUpload={tUpload}
                                     />
                                     <div className="space-y-1.5">
                                         <label
                                             htmlFor="edit-replace-desc"
                                             className="text-sm font-medium"
                                         >
-                                            Change description{" "}
+                                            {t("changeDesc")}{" "}
                                             <span className="text-muted-foreground">
-                                                (optional)
+                                                {tCommon("optional")}
                                             </span>
                                         </label>
                                         <Input
@@ -878,7 +890,7 @@ export function FileEditDialog({
                                             }
                                             maxLength={200}
                                             disabled={isLoading}
-                                            placeholder="e.g. Updated to 2024 edition"
+                                            placeholder={t("changeDescPlaceholderBinary")}
                                         />
                                     </div>
                                 </>
@@ -894,7 +906,7 @@ export function FileEditDialog({
                         disabled={isLoading}
                         className="sm:mr-auto"
                     >
-                        Cancel
+                        {tCommon("cancel")}
                     </Button>
                     <Button
                         variant="outline"
@@ -907,7 +919,7 @@ export function FileEditDialog({
                         ) : (
                             <Plus className="h-4 w-4" />
                         )}
-                        Add to draft
+                        {t("addToDraft")}
                     </Button>
                     {!isDraftTarget && (
                         <Button
@@ -920,7 +932,7 @@ export function FileEditDialog({
                             ) : (
                                 <Send className="h-4 w-4" />
                             )}
-                            Submit directly
+                            {t("submitDirectly")}
                         </Button>
                     )}
                 </DialogFooter>

@@ -14,6 +14,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 interface FlagData {
     id: string;
@@ -47,15 +48,12 @@ const STATUS_COLORS: Record<string, string> = {
     dismissed: "bg-gray-500/10 text-gray-500",
 };
 
-const TARGET_LABELS: Record<string, string> = {
-    material: "Material",
-    annotation: "Annotation",
-    pull_request: "Contribution",
-    comment: "Comment",
-    pr_comment: "Contribution Comment",
-};
+// TARGET_LABELS removed as it was replaced by i18n t() calls
 
 export default function ModeratorFlagsPage() {
+    const t = useTranslations("Moderator.flags");
+    const tFlags = useTranslations("Flags");
+    const tCommon = useTranslations("Common");
     const [flags, setFlags] = useState<FlagData[]>([]);
     const [page, setPage] = useState(1);
     const [pages, setPages] = useState(1);
@@ -75,11 +73,11 @@ export default function ModeratorFlagsPage() {
             setPage(data.page);
             setPages(data.pages);
         } catch {
-            toast.error("Failed to load flags");
+            toast.error(t("loadError"));
         } finally {
             setLoading(false);
         }
-    }, [statusFilter, targetTypeFilter]);
+    }, [statusFilter, targetTypeFilter, t]);
 
     useEffect(() => {
         fetchFlags(1);
@@ -91,10 +89,10 @@ export default function ModeratorFlagsPage() {
                 method: "PATCH",
                 body: JSON.stringify({ status }),
             });
-            toast.success(`Flag ${status}`);
+            toast.success(status === "resolved" ? t("resolved") : t("dismissed"));
             fetchFlags(page);
         } catch {
-            toast.error("Failed to update flag");
+            toast.error(t("updateError"));
         }
     };
 
@@ -103,41 +101,41 @@ export default function ModeratorFlagsPage() {
             <div className="flex gap-3">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger className="w-40">
-                        <SelectValue placeholder="Status" />
+                        <SelectValue placeholder={t("placeholderStatus")} />
                     </SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="all">All statuses</SelectItem>
-                        <SelectItem value="open">Open</SelectItem>
-                        <SelectItem value="reviewing">Reviewing</SelectItem>
-                        <SelectItem value="resolved">Resolved</SelectItem>
-                        <SelectItem value="dismissed">Dismissed</SelectItem>
+                        <SelectItem value="all">{t("status.all")}</SelectItem>
+                        <SelectItem value="open">{t("status.open")}</SelectItem>
+                        <SelectItem value="reviewing">{t("status.reviewing")}</SelectItem>
+                        <SelectItem value="resolved">{t("status.resolved")}</SelectItem>
+                        <SelectItem value="dismissed">{t("status.dismissed")}</SelectItem>
                     </SelectContent>
                 </Select>
 
                 <Select value={targetTypeFilter} onValueChange={setTargetTypeFilter}>
                     <SelectTrigger className="w-40">
-                        <SelectValue placeholder="Type" />
+                        <SelectValue placeholder={t("placeholderType")} />
                     </SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="all">All types</SelectItem>
-                        <SelectItem value="material">Material</SelectItem>
-                        <SelectItem value="annotation">Annotation</SelectItem>
-                        <SelectItem value="pull_request">Contribution</SelectItem>
-                        <SelectItem value="comment">Comment</SelectItem>
-                        <SelectItem value="pr_comment">Contribution Comment</SelectItem>
+                        <SelectItem value="all">{t("types.all")}</SelectItem>
+                        <SelectItem value="material">{t("types.material")}</SelectItem>
+                        <SelectItem value="annotation">{t("types.annotation")}</SelectItem>
+                        <SelectItem value="pull_request">{t("types.pull_request")}</SelectItem>
+                        <SelectItem value="comment">{t("types.comment")}</SelectItem>
+                        <SelectItem value="pr_comment">{t("types.pr_comment")}</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
 
             {loading && flags.length === 0 && (
-                <p className="text-sm text-muted-foreground">Loading...</p>
+                <p className="text-sm text-muted-foreground">{tCommon("loading")}</p>
             )}
 
             {!loading && flags.length === 0 && (
                 <Card>
                     <CardContent className="py-12 text-center">
                         <Shield className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" />
-                        <p className="text-sm text-muted-foreground">No flags to review.</p>
+                        <p className="text-sm text-muted-foreground">{t("noFlags")}</p>
                     </CardContent>
                 </Card>
             )}
@@ -149,15 +147,17 @@ export default function ModeratorFlagsPage() {
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                     <CardTitle className="text-sm font-medium">
-                                        {TARGET_LABELS[flag.target_type] ?? flag.target_type}
+                                        {t(`types.${flag.target_type}` as Parameters<typeof t>[0])}
                                     </CardTitle>
                                     <Badge
                                         variant="outline"
                                         className={STATUS_COLORS[flag.status] ?? ""}
                                     >
-                                        {flag.status}
+                                        {t(`status.${flag.status}` as Parameters<typeof t>[0])}
                                     </Badge>
-                                    <Badge variant="outline">{flag.reason}</Badge>
+                                    <Badge variant="outline">
+                                        {tFlags.has(`reasons.${flag.reason}`) ? tFlags(`reasons.${flag.reason}` as any) : flag.reason}
+                                    </Badge>
                                 </div>
                                 <span className="text-xs text-muted-foreground">
                                     {new Date(flag.created_at).toLocaleDateString()}
@@ -167,13 +167,10 @@ export default function ModeratorFlagsPage() {
                         <CardContent>
                             <div className="space-y-2">
                                 <p className="text-xs text-muted-foreground">
-                                    Reported by:{" "}
-                                    <span className="font-medium text-foreground">
-                                        {flag.reporter?.display_name ?? flag.reporter?.email ?? "Unknown"}
-                                    </span>
+                                    {t("reportedBy", { name: flag.reporter?.display_name ?? flag.reporter?.email ?? "Unknown" })}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                    Target ID: <code className="text-xs">{flag.target_id}</code>
+                                    {t("targetId", { id: flag.target_id })}
                                 </p>
                                 {flag.description && (
                                     <p className="rounded-md bg-muted/50 p-2 text-sm">
@@ -188,7 +185,7 @@ export default function ModeratorFlagsPage() {
                                             onClick={() => handleAction(flag.id, "resolved")}
                                         >
                                             <Check className="mr-1 h-3.5 w-3.5" />
-                                            Resolve
+                                            {t("resolve")}
                                         </Button>
                                         <Button
                                             size="sm"
@@ -196,7 +193,7 @@ export default function ModeratorFlagsPage() {
                                             onClick={() => handleAction(flag.id, "dismissed")}
                                         >
                                             <X className="mr-1 h-3.5 w-3.5" />
-                                            Dismiss
+                                            {t("dismiss")}
                                         </Button>
                                     </div>
                                 )}
@@ -215,10 +212,10 @@ export default function ModeratorFlagsPage() {
                         onClick={() => fetchFlags(page - 1)}
                     >
                         <ChevronLeft className="h-4 w-4" />
-                        Previous
+                        {tCommon("previous")}
                     </Button>
                     <span className="text-sm text-muted-foreground">
-                        Page {page} of {pages}
+                        {tCommon("page", { page, total: pages })}
                     </span>
                     <Button
                         variant="outline"
@@ -226,7 +223,7 @@ export default function ModeratorFlagsPage() {
                         disabled={page >= pages}
                         onClick={() => fetchFlags(page + 1)}
                     >
-                        Next
+                        {tCommon("next")}
                         <ChevronRight className="h-4 w-4" />
                     </Button>
                 </div>

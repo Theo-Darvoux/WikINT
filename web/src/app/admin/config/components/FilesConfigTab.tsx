@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { 
-    Settings2, HardDrive, Cloud, FileCode, Sliders, Shield, 
+    Settings2, HardDrive, FileCode, Sliders, Shield, 
     Loader2, Save, Info, Image as ImageIcon, FileText, Code2, RefreshCw,
     Search, CheckSquare, Square
 } from "lucide-react";
@@ -16,6 +16,7 @@ import { TagInput } from "@/components/ui/tag-input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { useTranslations } from "next-intl";
 
 interface AuthConfig {
     max_file_size_mb: number;
@@ -174,6 +175,7 @@ function SliderInput({
 }
 
 export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabProps) {
+    const t = useTranslations("Admin.Config.Files");
     const [filesForm, setFilesForm] = useState<Partial<AuthConfig>>({});
     const [isFilesModified, setIsFilesModified] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
@@ -185,7 +187,7 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
 
     const handleSave = async () => {
         await patchConfig(filesForm);
-        toast.success("File configuration updated");
+        toast.success(t("success"));
         setIsFilesModified(false);
     };
 
@@ -279,9 +281,9 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                             <Settings2 className="h-5 w-5 text-primary" />
                         </div>
                         <div>
-                            <CardTitle className="text-xl">File Upload Limits</CardTitle>
+                            <CardTitle className="text-xl">{t("limits.title")}</CardTitle>
                             <CardDescription>
-                                Set maximum file sizes (MB) for different content types.
+                                {t("limits.description")}
                             </CardDescription>
                         </div>
                     </div>
@@ -289,13 +291,13 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                 <CardContent className="p-8">
                     <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
                         {[
-                            { id: "max_file_size_mb", label: "Global Max Limit", icon: HardDrive, color: "text-blue-500" },
-                            { id: "max_image_size_mb", label: "Image Files", icon: ImageIcon, color: "text-purple-500" },
-                            { id: "max_video_size_mb", label: "Video Files", icon: FileCode, color: "text-red-500" },
-                            { id: "max_audio_size_mb", label: "Audio Files", icon: RefreshCw, color: "text-amber-500" },
-                            { id: "max_document_size_mb", label: "PDF / ePUB", icon: FileText, color: "text-emerald-500" },
-                            { id: "max_office_size_mb", label: "Office Docs", icon: FileText, color: "text-orange-500" },
-                            { id: "max_text_size_mb", label: "Text / Code", icon: Code2, color: "text-indigo-500" },
+                            { id: "max_file_size_mb", label: t("limits.global"), icon: HardDrive, color: "text-blue-500" },
+                            { id: "max_image_size_mb", label: t("limits.images"), icon: ImageIcon, color: "text-purple-500" },
+                            { id: "max_video_size_mb", label: t("limits.video"), icon: FileCode, color: "text-red-500" },
+                            { id: "max_audio_size_mb", label: t("limits.audio"), icon: RefreshCw, color: "text-amber-500" },
+                            { id: "max_document_size_mb", label: t("limits.document"), icon: FileText, color: "text-emerald-500" },
+                            { id: "max_office_size_mb", label: t("limits.office"), icon: FileText, color: "text-orange-500" },
+                            { id: "max_text_size_mb", label: t("limits.text"), icon: Code2, color: "text-indigo-500" },
                         ].map((item) => (
                             <div key={item.id} className="group space-y-3 p-4 rounded-xl bg-muted/20 border border-transparent hover:border-primary/20 hover:bg-muted/30 transition-all duration-200">
                                 <Label htmlFor={item.id} className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
@@ -330,9 +332,9 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                             <Sliders className="h-5 w-5 text-primary" />
                         </div>
                         <div>
-                            <CardTitle className="text-xl">Processing & Compression</CardTitle>
+                            <CardTitle className="text-xl">{t("processing.title")}</CardTitle>
                             <CardDescription>
-                                Optimize quality and performance for file conversions.
+                                {t("processing.description")}
                             </CardDescription>
                         </div>
                     </div>
@@ -340,20 +342,20 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                 <CardContent className="p-8 space-y-10">
                     <div className="grid gap-8 md:grid-cols-2">
                         <SliderInput 
-                            label="PDF Thumbnail Quality" 
+                            label={t("processing.pdfQuality")} 
                             value={filesForm.pdf_quality ?? 80}
                             onChange={(val) => {
                                 setFilesForm(prev => ({ ...prev, pdf_quality: val }));
                                 setIsFilesModified(true);
                             }}
-                            tooltip="Higher quality results in sharper PDF previews but increases storage usage and processing time."
+                            tooltip={t("processing.pdfQualityTooltip")}
                             suffix="%"
                         />
                         
                         <div className="space-y-3 p-4 rounded-xl bg-muted/30 border border-muted/50">
                             <div className="flex items-center gap-2">
                                 <Label htmlFor="video_compression" className="text-sm font-semibold">
-                                    Video Compression Profile
+                                    {t("processing.videoProfile")}
                                 </Label>
                                 <TooltipProvider>
                                     <Tooltip>
@@ -361,7 +363,7 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                                             <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
                                         </TooltipTrigger>
                                         <TooltipContent className="max-w-[250px]">
-                                            Determines the trade-off between encoding speed and final file size.
+                                            {t("processing.videoProfileTooltip")}
                                         </TooltipContent>
                                     </Tooltip>
                                 </TooltipProvider>
@@ -375,25 +377,25 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                                     setIsFilesModified(true);
                                 }}
                             >
-                                <option value="fast">Fast & Light (Lower quality, fastest)</option>
-                                <option value="balanced">Balanced (Recommended)</option>
-                                <option value="thorough">High Quality (Best compression, slowest)</option>
+                                <option value="fast">{t("processing.videoProfiles.fast")}</option>
+                                <option value="balanced">{t("processing.videoProfiles.balanced")}</option>
+                                <option value="thorough">{t("processing.videoProfiles.thorough")}</option>
                             </select>
                         </div>
 
                         <SliderInput 
-                            label="Image Thumbnail Quality" 
+                            label={t("processing.thumbnailQuality")} 
                             value={filesForm.thumbnail_quality ?? 80}
                             onChange={(val) => {
                                 setFilesForm(prev => ({ ...prev, thumbnail_quality: val }));
                                 setIsFilesModified(true);
                             }}
-                            tooltip="Controls the JPEG/WebP compression of generated thumbnails."
+                            tooltip={t("processing.thumbnailQualityTooltip")}
                             suffix="%"
                         />
 
                         <SliderInput 
-                            label="Thumbnail Max Edge" 
+                            label={t("processing.thumbnailSize")} 
                             min={100}
                             max={1280}
                             step={20}
@@ -402,7 +404,7 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                                 setFilesForm(prev => ({ ...prev, thumbnail_size_px: val }));
                                 setIsFilesModified(true);
                             }}
-                            tooltip="Maximum resolution (px) for either width or height of thumbnails."
+                            tooltip={t("processing.thumbnailSizeTooltip")}
                             suffix="px"
                         />
                     </div>
@@ -418,16 +420,16 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                                 <Shield className="h-5 w-5 text-primary" />
                             </div>
                             <div>
-                                <CardTitle className="text-xl">Format Whitelisting</CardTitle>
+                                <CardTitle className="text-xl">{t("whitelist.title")}</CardTitle>
                                 <CardDescription>
-                                    Select which file formats are allowed for upload.
+                                    {t("whitelist.description")}
                                 </CardDescription>
                             </div>
                         </div>
                         <div className="relative w-64">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input 
-                                placeholder="Search extensions..." 
+                                placeholder={t("whitelist.search")}
                                 className="pl-9 h-10 bg-background/50 border-muted-foreground/20"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -443,7 +445,7 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                             className="h-8 text-xs font-bold gap-2 rounded-full"
                             onClick={() => FILE_GROUPS.forEach(g => toggleGroup(g, true))}
                         >
-                            <CheckSquare className="h-3.5 w-3.5" /> Select All
+                            <CheckSquare className="h-3.5 w-3.5" /> {t("whitelist.selectAll")}
                         </Button>
                         <Button 
                             variant="outline" 
@@ -451,7 +453,7 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                             className="h-8 text-xs font-bold gap-2 rounded-full"
                             onClick={() => FILE_GROUPS.forEach(g => toggleGroup(g, false))}
                         >
-                            <Square className="h-3.5 w-3.5" /> Deselect All
+                            <Square className="h-3.5 w-3.5" /> {t("whitelist.deselectAll")}
                         </Button>
                     </div>
                     
@@ -463,7 +465,7 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                                         <div className="p-2 bg-muted rounded-lg">
                                             <group.icon className="h-4 w-4 text-muted-foreground" />
                                         </div>
-                                        <span className="font-bold text-base">{group.name}</span>
+                                        <span className="font-bold text-base">{t(`whitelist.groups.${group.name}` as any)}</span>
                                         <div className="ml-auto mr-4">
                                             <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                                                 {group.formats.filter(f => isFormatActive(f)).length} / {group.formats.length}
@@ -479,7 +481,7 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                                             className="h-8 text-[10px] font-bold uppercase tracking-wider px-3 rounded-full hover:bg-primary/10 hover:text-primary"
                                             onClick={() => toggleGroup(group)}
                                         >
-                                            {isGroupFullyActive(group) ? "Deselect Category" : "Select Category"}
+                                            {isGroupFullyActive(group) ? t("whitelist.deselectCategory") : t("whitelist.selectCategory")}
                                         </Button>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-4 pt-2 px-1">
@@ -511,14 +513,14 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
 
                     <div className="p-8 border-t border-muted/50 bg-muted/10 space-y-4">
                         <div className="flex items-center gap-2">
-                            <Label className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Manual Overrides / Custom Formats</Label>
+                            <Label className="text-sm font-bold uppercase tracking-wider text-muted-foreground">{t("whitelist.overrides")}</Label>
                             <TooltipProvider>
                                 <Tooltip>
                                     <TooltipTrigger asChild>
                                         <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
                                     </TooltipTrigger>
                                     <TooltipContent>
-                                        Use this for exotic formats not listed above. Changes here sync with the toggles.
+                                        {t("whitelist.overridesTooltip")}
                                     </TooltipContent>
                                 </Tooltip>
                             </TooltipProvider>
@@ -526,26 +528,26 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                         
                         <div className="grid gap-6 md:grid-cols-2">
                             <div className="space-y-2">
-                                <Label className="text-[10px] font-bold uppercase text-muted-foreground/60">Extensions</Label>
+                                <Label className="text-[10px] font-bold uppercase text-muted-foreground/60">{t("whitelist.extensions")}</Label>
                                 <TagInput 
                                     tags={filesForm.allowed_extensions ? filesForm.allowed_extensions.split(",").map(s => s.trim()).filter(Boolean) : []}
                                     onChange={(tags) => {
                                         setFilesForm(prev => ({ ...prev, allowed_extensions: tags.join(", ") }));
                                         setIsFilesModified(true);
                                     }}
-                                    placeholder="Add custom extensions..."
+                                    placeholder={t("whitelist.extensionsPlaceholder")}
                                     maxTags={1000}
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label className="text-[10px] font-bold uppercase text-muted-foreground/60">MIME Types</Label>
+                                <Label className="text-[10px] font-bold uppercase text-muted-foreground/60">{t("whitelist.mimes")}</Label>
                                 <TagInput 
                                     tags={filesForm.allowed_mime_types ? filesForm.allowed_mime_types.split(",").map(s => s.trim()).filter(Boolean) : []}
                                     onChange={(tags) => {
                                         setFilesForm(prev => ({ ...prev, allowed_mime_types: tags.join(", ") }));
                                         setIsFilesModified(true);
                                     }}
-                                    placeholder="Add custom MIME types..."
+                                    placeholder={t("whitelist.mimesPlaceholder")}
                                     maxTags={1000}
                                 />
                             </div>
@@ -559,7 +561,7 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                                 onClick={handleDiscard}
                                 className="text-muted-foreground hover:text-foreground"
                             >
-                                Discard Changes
+                                {t("discard")}
                             </Button>
                         )}
                         <Button 
@@ -572,7 +574,7 @@ export function FilesConfigTab({ config, saving, patchConfig }: FilesConfigTabPr
                             ) : (
                                 <Save className="h-4 w-4" />
                             )}
-                            Save File Settings
+                            {t("save")}
                         </Button>
                     </div>
                 </CardContent>

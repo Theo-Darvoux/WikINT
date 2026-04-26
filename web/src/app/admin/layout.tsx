@@ -5,16 +5,19 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Activity,
+  Archive,
   Users,
   AlertTriangle,
   Settings,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const t = useTranslations("Admin.Layout");
   const { user, isAuthenticated } = useAuth();
   const pathname = usePathname();
 
@@ -22,21 +25,22 @@ export default function AdminLayout({
   if (user?.role !== "bureau" && user?.role !== "vieux") {
     return (
       <div className="flex items-center justify-center p-12 text-muted-foreground">
-        You do not have permission to access the admin area.
+        {t("noPermission")}
       </div>
     );
   }
 
   const navItems = [
-    { href: "/admin", label: "System Health", icon: Activity },
-    { href: "/admin/users", label: "Users", icon: Users },
-    { href: "/admin/dlq", label: "Dead Letter Queue", icon: AlertTriangle },
-    { href: "/admin/config", label: "Configuration", icon: Settings },
+    { href: "/admin", label: t("nav.health"), icon: Activity },
+    { href: "/admin/users", label: t("nav.users"), icon: Users },
+    { href: "/admin/dlq", label: t("nav.dlq"), icon: AlertTriangle },
+    { href: "/admin/config", label: t("nav.config"), icon: Settings },
+    { href: "/admin/backup", label: t("nav.backup"), icon: Archive },
   ];
 
   return (
     <div className="w-full mx-auto max-w-6xl space-y-6 p-4 sm:p-6 pb-20 sm:pb-6">
-      <h1 className="text-3xl font-bold">Admin Area</h1>
+      <h1 className="text-3xl font-bold">{t("title")}</h1>
       <div className="flex overflow-x-auto border-b pb-px">
         {navItems.map((item) => {
           const isActive =

@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ItemActionsMenu, ItemActionsDropdownTrigger } from "./item-actions-menu";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useUIStore } from "@/lib/stores";
+import { useTranslations } from "next-intl";
 
 interface DirectoryLineItemProps {
     directory: Record<string, unknown>;
@@ -39,6 +40,7 @@ export function DirectoryLineItem({
     const { openSidebar } = useUIStore();
     const pathname = usePathname();
     const router = useRouter();
+    const t = useTranslations("Browse");
 
     const name = String(directory.name ?? "");
     const slug = String(directory.slug ?? "");
@@ -112,7 +114,9 @@ export function DirectoryLineItem({
                     ? `text-${themeColor}-700 dark:text-${themeColor}-400`
                     : "";
 
-    return (
+        const isRestricted = !!staged || !!previewPrId;
+
+        return (
         <ItemActionsMenu item={{ id, type: "directory", data: directory, staged, isExternal }}>
             <div
                 onClick={handleCardClick}
@@ -150,38 +154,38 @@ export function DirectoryLineItem({
                                 }`}
                             >
                                 {staged === "deleted"
-                                    ? "Deleting"
+                                    ? t("deleting")
                                     : staged === "moved"
-                                        ? "Moving"
+                                        ? t("moving")
                                         : staged === "created"
                                             ? isExternal
-                                                ? "Contribution"
-                                                : "Draft"
-                                            : "Edited"}
+                                                ? t("contribution")
+                                                : t("draft")
+                                            : t("edited")}
                             </span>
                         )}
                     </div>
                     <span className={`text-sm ${staged ? `text-${themeColor}-600/70` : "text-muted-foreground"}`}>
-                        {totalCount} {totalCount === 1 ? "item" : "items"}
+                        {t("itemsCount", { count: totalCount })}
                     </span>
                 </div>
 
                 {!isMobile && likeCount > 0 && (
                     <div className="flex flex-col items-end justify-center px-2 text-[11px] leading-tight text-muted-foreground opacity-80">
-                        <span className="flex items-center gap-1" title="Likes">
+                        <span className="flex items-center gap-1" title={t("likes")}>
                             {likeCount}
                             <ThumbsUp className={`h-3 w-3 ${isLiked ? "fill-primary text-primary" : ""}`} />
                         </span>
                     </div>
                 )}
                     <div className="flex shrink-0 items-center gap-1">
-                        {!staged ? (
+                        {!isRestricted ? (
                             <>
                                 <button
                                     onClick={handleChat}
                                     className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                                    title="Chat"
-                                    aria-label={`Chat about ${name}`}
+                                    title={t("chat")}
+                                    aria-label={t("chatAbout", { title: name })}
                                 >
                                     <MessageSquare className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
                                 </button>
@@ -190,8 +194,8 @@ export function DirectoryLineItem({
                         <button
                             onClick={handleDetails}
                             className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                            title="Details"
-                            aria-label={`View details for ${name}`}
+                            title={t("details")}
+                            aria-label={t("viewDetailsFor", { title: name })}
                         >
                             <Info className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
                         </button>
@@ -199,7 +203,7 @@ export function DirectoryLineItem({
                     <Link
                         href={buildPath()}
                         className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                        title="Open"
+                        title={t("openItem")}
                         onClick={(e) => {
                             if (onNavigate) {
                                 e.preventDefault();
@@ -209,7 +213,7 @@ export function DirectoryLineItem({
                                 e.stopPropagation();
                             }
                         }}
-                        aria-label={`Open ${name}`}
+                        aria-label={t("openItemFor", { title: name })}
                     >
                         <ChevronRight className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
                     </Link>

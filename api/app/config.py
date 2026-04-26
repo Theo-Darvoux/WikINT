@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     primary_color: str = "#3b82f6"
     footer_text: str = "© 2024 WikINT"
     organization_url: str | None = "https://www.telecom-sudparis.eu"
+    legal_name: str | None = None
+    legal_address: str | None = None
+    legal_siret: str | None = None
+    contact_email: str | None = None
+    dpo_email: str | None = None
+    dpo_address: str | None = None
+    data_transfers: str | None = "Vos données sont hébergées et traitées exclusivement au sein de l'Union européenne. Aucun transfert vers un pays tiers n'est effectué."
 
 
     database_url: str = "postgresql+asyncpg://wikint:wikint@localhost:5432/wikint"
@@ -93,6 +100,8 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_use_tls: bool = True
+
+    backup_dir: str = "/var/lib/wikint/backups"
 
     # Observability — Prometheus /metrics endpoint
     # When set, callers must pass ?token=<value> or Authorization: Bearer <value> to scrape.

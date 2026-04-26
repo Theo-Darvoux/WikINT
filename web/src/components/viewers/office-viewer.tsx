@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { registerViewerPrint, unregisterViewerPrint } from "@/lib/viewer-print-registry";
 import { ViewerShell } from "./viewer-shell";
+import { useTranslations } from "next-intl";
 
 interface OfficeViewerProps {
     fileKey: string;
@@ -16,6 +17,7 @@ const BASE_ONLYOFFICE_URL = process.env.NEXT_PUBLIC_ONLYOFFICE_URL || "http://lo
 const ONLYOFFICE_URL = BASE_ONLYOFFICE_URL.endsWith("/") ? BASE_ONLYOFFICE_URL : `${BASE_ONLYOFFICE_URL}/`;
 
 export function OfficeViewer({ materialId, fileName, fileKey }: OfficeViewerProps) {
+    const t = useTranslations("Viewers.office");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const scriptRef = useRef<HTMLScriptElement | null>(null);
@@ -27,7 +29,7 @@ export function OfficeViewer({ materialId, fileName, fileKey }: OfficeViewerProp
 
         const loadEditor = (config: any) => {
             if (!(window as any).DocsAPI) {
-                setError("Office API script failed to load");
+                setError(t("scriptError"));
                 setLoading(false);
                 return;
             }
@@ -70,7 +72,7 @@ export function OfficeViewer({ materialId, fileName, fileKey }: OfficeViewerProp
                             console.error("OnlyOffice Editor Error:", { code, desc, raw: e });
                             if (isMounted) {
                                 const detail = code != null ? ` (Code: ${code}${desc ? ` — ${desc}` : ""})` : "";
-                                setError(`Office Engine Error${detail}`);
+                                setError(`${t("engineError")}${detail}`);
                                 setLoading(false);
                             }
                         },
@@ -82,7 +84,7 @@ export function OfficeViewer({ materialId, fileName, fileKey }: OfficeViewerProp
             } catch (err: any) {
                 console.error("Exception during editor init:", err);
                 if (isMounted) {
-                    setError(`Initialization failed: ${err.message || "Unknown error"}`);
+                    setError(t("initFailed", { message: err.message || "Unknown error" }));
                     setLoading(false);
                 }
             }
@@ -110,7 +112,7 @@ export function OfficeViewer({ materialId, fileName, fileKey }: OfficeViewerProp
                     script.onerror = (e) => {
                         console.error("Script load error:", e);
                         if (isMounted) {
-                            setError("Failed to load Office API script");
+                            setError(t("loadScriptError"));
                             setLoading(false);
                         }
                     };
@@ -122,7 +124,7 @@ export function OfficeViewer({ materialId, fileName, fileKey }: OfficeViewerProp
             } catch (err: any) {
                 console.error("Config fetch error:", err);
                 if (isMounted) {
-                    setError(`Failed to fetch editor configuration: ${err.message || "Unknown error"}`);
+                    setError(t("configError", { message: err.message || "Unknown error" }));
                     setLoading(false);
                 }
             }
@@ -158,10 +160,10 @@ export function OfficeViewer({ materialId, fileName, fileKey }: OfficeViewerProp
                             <Loader2 className="w-12 h-12 animate-spin text-primary" />
                             <div className="flex flex-col items-center">
                                 <p className="text-lg font-semibold bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
-                                    Initializing Euro-Office
+                                    {t("initializing")}
                                 </p>
                                 <p className="text-xs text-muted-foreground animate-pulse mt-1">
-                                    Preparing secure document environment...
+                                    {t("preparing")}
                                 </p>
                             </div>
                         </div>

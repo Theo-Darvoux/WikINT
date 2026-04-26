@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api-client";
 import { useNotificationStore } from "@/lib/stores";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 interface NotificationItem {
   id: string;
@@ -44,6 +45,8 @@ const TYPE_ICONS: Record<string, React.ElementType> = {
 };
 
 export default function NotificationsPage() {
+  const t = useTranslations("Notifications");
+  const tCommon = useTranslations("Common");
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const { setUnreadCount } = useNotificationStore();
@@ -57,11 +60,11 @@ export default function NotificationsPage() {
       const unread = data.items.filter((n) => !n.read).length;
       setUnreadCount(unread);
     } catch {
-      toast.error("Failed to load notifications");
+      toast.error(t("loadError"));
     } finally {
       setLoading(false);
     }
-  }, [setUnreadCount]);
+  }, [setUnreadCount, t]);
 
   useEffect(() => {
     fetchNotifications();
@@ -77,7 +80,7 @@ export default function NotificationsPage() {
         notifications.filter((n) => !n.read && n.id !== id).length,
       );
     } catch {
-      toast.error("Failed to mark as read");
+      toast.error(t("markReadError"));
     }
   };
 
@@ -87,31 +90,31 @@ export default function NotificationsPage() {
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       setUnreadCount(0);
     } catch {
-      toast.error("Failed to mark all as read");
+      toast.error(t("markAllReadError"));
     }
   };
 
   if (loading) {
     return (
-      <div className="p-6 text-center text-muted-foreground">Loading...</div>
+      <div className="p-6 text-center text-muted-foreground">{tCommon("loading")}</div>
     );
   }
 
   return (
     <div className="w-full mx-auto max-w-3xl space-y-4 p-4 sm:p-6 pb-20 sm:pb-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Notifications</h1>
+        <h1 className="text-2xl font-bold">{t("title")}</h1>
         {notifications.some((n) => !n.read) && (
           <Button variant="outline" size="sm" onClick={markAllRead}>
             <Check className="mr-2 h-4 w-4" />
-            Mark all as read
+            {t("markAllRead")}
           </Button>
         )}
       </div>
 
       {notifications.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-          <p>No notifications yet.</p>
+          <p>{t("noNotifications")}</p>
         </div>
       ) : (
         <div className="divide-y rounded-lg border">
@@ -156,7 +159,7 @@ export default function NotificationsPage() {
                         href={n.link}
                         className="text-xs text-primary hover:underline"
                       >
-                        View details
+                        {t("viewDetails")}
                       </Link>
                     )}
                   </div>

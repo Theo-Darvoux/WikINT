@@ -62,6 +62,8 @@ import { ExpandableText } from "@/components/ui/expandable-text";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/stores";
 import { toast } from "sonner";
+import { useTranslations, useLocale } from "next-intl";
+import { fr, enUS } from "date-fns/locale";
 import { type Operation } from "@/lib/staging-store";
 
 /* ── Types ──────────────────────────────────────────── */
@@ -130,58 +132,48 @@ const OP_COLORS: Record<string, string> = {
     move_item: "text-amber-600 bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800",
 };
 
-const OP_LABELS: Record<string, string> = {
-    create_material: "Added document",
-    edit_material: "Edited document",
-    delete_material: "Deleted document",
-    create_directory: "Created folder",
-    edit_directory: "Renamed folder",
-    delete_directory: "Deleted folder",
-    move_item: "Moved item",
+const OP_LABELS_KEYS: Record<string, string> = {
+    create_material: "labels.create_material",
+    edit_material: "labels.edit_material",
+    delete_material: "labels.delete_material",
+    create_directory: "labels.create_directory",
+    edit_directory: "labels.edit_directory",
+    delete_directory: "labels.delete_directory",
+    move_item: "labels.move_item",
 };
 
 /** Fields worth displaying in the detail view (everything else is noise). */
 const VISIBLE_FIELDS = new Set(["type", "tags", "description"]);
 
-const FRIENDLY_TYPES: Record<string, string> = {
-    document: "Document",
-    polycopie: "Handout",
-    annal: "Past exam",
-    cheatsheet: "Cheatsheet",
-    tip: "Tip",
-    review: "Review",
-    discussion: "Discussion",
-    video: "Video",
-    other: "Other",
-};
+// FRIENDLY_TYPES is now handled by mt() translation hook
 
-const STATUS_CONFIG: Record<
+const STATUS_CONFIG_KEYS: Record<
     string,
-    { Icon: React.ElementType; color: string; bg: string; label: string }
+    { Icon: React.ElementType; color: string; bg: string; labelKey: string }
 > = {
     open: {
         Icon: Inbox,
         color: "text-blue-600",
         bg: "bg-blue-500/10",
-        label: "Pending",
+        labelKey: "status.open",
     },
     approved: {
         Icon: CheckCircle2,
         color: "text-green-600",
         bg: "bg-green-500/10",
-        label: "Published",
+        labelKey: "status.approved",
     },
     rejected: {
         Icon: XCircle,
         color: "text-red-600",
         bg: "bg-red-500/10",
-        label: "Rejected",
+        labelKey: "status.rejected",
     },
     cancelled: {
         Icon: XCircle,
         color: "text-muted-foreground",
         bg: "bg-muted",
-        label: "Cancelled",
+        labelKey: "status.cancelled",
     },
 };
 
@@ -208,33 +200,34 @@ interface ResolvedItemDetails {
 
 /* ── Helpers ─────────────────────────────────────────── */
 
-function opSummary(op: PullRequestOperation): string {
+function opSummary(op: PullRequestOperation, t: (key: any, values?: any) => string): string {
     const rawOp = op as unknown as Record<string, unknown>;
     const opType = String(rawOp.op || rawOp.pr_type || "unknown");
     const name = (rawOp.title || rawOp.name) as string | undefined;
+    const finalName = name || (opType.includes("directory") ? t("labels.create_directory") : t("labels.create_material")); // fallbacks
 
     switch (opType) {
         case "create_material":
-            return `Added « ${name || "document"} »`;
+            return t("summary.create_material", { name: finalName });
         case "edit_material":
-            return `Edited « ${name || "document"} »`;
+            return t("summary.edit_material", { name: finalName });
         case "delete_material":
-            return `Deleted « ${name || "document"} »`;
+            return t("summary.delete_material", { name: finalName });
         case "create_directory":
-            return `Created folder « ${name || "folder"} »`;
+            return t("summary.create_directory", { name: finalName });
         case "edit_directory":
-            return `Renamed folder « ${name || "folder"} »`;
+            return t("summary.edit_directory", { name: finalName });
         case "delete_directory":
-            return `Deleted folder « ${name || "folder"} »`;
+            return t("summary.delete_directory", { name: finalName });
         case "move_item":
-            const target_type = rawOp.target_type as string | undefined;
-            return `Moved ${target_type === "directory" ? "folder" : "document"}${name ? ` « ${name} »` : ""}`;
+            const isDir = rawOp.target_type === "directory";
+            return t("summary.move_item", { isDir, name: finalName });
         default:
-            return opType;
+            return t("summary.fallback", { op: opType, name: finalName });
     }
 }
 
-function formatValue(value: unknown): React.ReactNode {
+function formatValue(value: unknown, mt: (key: any) => string): React.ReactNode {
     if (Array.isArray(value)) {
         if (value.length === 0) return <span className="text-muted-foreground">—</span>;
         return (
@@ -253,21 +246,21 @@ function formatValue(value: unknown): React.ReactNode {
     }
     // Translate known type values
     const str = String(value);
-    return FRIENDLY_TYPES[str] ?? str;
+    return mt(str as any) !== str ? mt(str as any) : str;
 }
 
 /** Resolve the browse URL and label for a directory ID via the /path endpoint. */
-async function resolveTargetPath(directoryId: string): Promise<{ url: string; label: string }> {
+async function resolveTargetPath(directoryId: string, tRoot: string): Promise<{ url: string; label: string }> {
     try {
         const path = await apiFetch<{ name: string; slug: string }[]>(
             `/directories/${directoryId}/path`,
         );
-        if (path.length === 0) return { url: "/browse", label: "Root" };
+        if (path.length === 0) return { url: "/browse", label: tRoot };
         const slugs = path.map((p) => p.slug).join("/");
         const label = path.map((p) => p.name).join(" › ");
         return { url: `/browse/${slugs}`, label };
     } catch {
-        return { url: "/browse", label: "Root" };
+        return { url: "/browse", label: tRoot };
     }
 }
 
@@ -282,74 +275,6 @@ function getInitials(name: string): string {
 
 /* ── Inline preview dialog ───────────────────────────── */
 
-export function PreviewDialog_OMIT({
-    url,
-    mimeType,
-    fileName,
-    onClose,
-}: {
-    url: string;
-    mimeType?: string;
-    fileName?: string;
-    onClose: () => void;
-}) {
-    const isImage = mimeType?.startsWith("image/");
-    const isVideo = mimeType?.startsWith("video/");
-    const isPdf = mimeType === "application/pdf";
-
-    return (
-        <Dialog open onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-w-4xl w-full p-0 overflow-hidden">
-                <DialogHeader className="px-4 pt-4 pb-2">
-                    <DialogTitle className="flex items-center gap-2 text-sm font-medium">
-                        {isPdf && <FileText className="h-4 w-4 text-red-500" />}
-                        {isImage && <ImageIcon className="h-4 w-4 text-blue-500" />}
-                        {isVideo && <Video className="h-4 w-4 text-purple-500" />}
-                        {!isPdf && !isImage && !isVideo && <Eye className="h-4 w-4 text-muted-foreground" />}
-                        {fileName ?? "Preview"}
-                    </DialogTitle>
-                </DialogHeader>
-                <div className="px-4 pb-4">
-                    {isImage && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                            src={url}
-                            alt={fileName ?? "Preview"}
-                            className="max-h-[70vh] w-full rounded-lg object-contain bg-muted/30"
-                        />
-                    )}
-                    {isVideo && (
-                        <video
-                            src={url}
-                            controls
-                            className="w-full max-h-[70vh] rounded-lg bg-black"
-                        />
-                    )}
-                    {isPdf && (
-                        <iframe
-                            src={url}
-                            className="w-full rounded-lg border"
-                            style={{ height: "70vh" }}
-                            title={fileName ?? "PDF"}
-                        />
-                    )}
-                    {!isImage && !isVideo && !isPdf && (
-                        <div className="flex flex-col items-center gap-3 py-8 text-muted-foreground">
-                            <Eye className="h-10 w-10 opacity-30" />
-                            <p className="text-sm">Preview unavailable for this file type.</p>
-                            <Button asChild variant="outline" size="sm">
-                                <a href={url} target="_blank" rel="noreferrer">
-                                    <ExternalLink className="mr-2 h-3.5 w-3.5" />
-                                    Open in new tab
-                                </a>
-                            </Button>
-                        </div>
-                    )}
-                </div>
-            </DialogContent>
-        </Dialog>
-    );
-}
 
 /* ── OperationRow ────────────────────────────────────── */
 
@@ -364,6 +289,8 @@ function OperationRow({
     prStatus: string;
     index: number;
 }) {
+    const t = useTranslations("PRDetails");
+    const mt = useTranslations("MaterialTypes");
     const rawOp = op as unknown as Record<string, unknown>;
     const [targetInfo, setTargetInfo] = useState<{ url: string; label: string } | null>(null);
     const [itemDetails, setItemDetails] = useState<ResolvedItemDetails | null>(null);
@@ -421,14 +348,14 @@ function OperationRow({
             }
 
             if (dirId && !dirId.startsWith("$") && !cancelled) {
-                const info = await resolveTargetPath(dirId);
+                const info = await resolveTargetPath(dirId, t("root"));
                 if (!cancelled) setTargetInfo(info);
             }
         }
 
         fetchInfo();
         return () => { cancelled = true; };
-    }, [rawOp.directory_id, rawOp.parent_id, rawOp.material_id, isApproved, needsItemResolution]);
+    }, [rawOp.directory_id, rawOp.parent_id, rawOp.material_id, isApproved, needsItemResolution, t]);
 
     // Resolve item name + paths for delete/move ops
     useEffect(() => {
@@ -456,10 +383,10 @@ function OperationRow({
                     let sourcePath: string | undefined;
                     let sourceUrl: string | undefined;
                     if (mat.directory_id) {
-                        const info = await resolveTargetPath(mat.directory_id);
+                        const info = await resolveTargetPath(mat.directory_id, t("root"));
                         if (!cancelled) { sourcePath = info.label; sourceUrl = info.url; }
                     } else {
-                        sourcePath = "Root";
+                        sourcePath = t("root");
                         sourceUrl = "/browse";
                     }
                     if (!cancelled) setItemDetails({
@@ -475,7 +402,7 @@ function OperationRow({
                     if (!dirId) return;
                     const path = await apiFetch<{ name: string; slug: string }[]>(`/directories/${dirId}/path`);
                     if (cancelled) return;
-                    if (path.length === 0) { setItemDetails({ itemName: "Root" }); return; }
+                    if (path.length === 0) { setItemDetails({ itemName: t("root") }); return; }
                     const itemName = path[path.length - 1].name;
                     const parentSegs = path.slice(0, -1);
                     const sourcePath = parentSegs.length > 0
@@ -510,10 +437,10 @@ function OperationRow({
                         mimeType = mat.current_version_info?.file_mime_type ?? undefined;
                         fileName = mat.current_version_info?.file_name ?? undefined;
                         if (mat.directory_id) {
-                            const info = await resolveTargetPath(mat.directory_id);
+                            const info = await resolveTargetPath(mat.directory_id, t("root"));
                             if (!cancelled) { sourcePath = info.label; sourceUrl = info.url; }
                         } else {
-                            sourcePath = "Root";
+                            sourcePath = t("root");
                             sourceUrl = "/browse";
                         }
                     } else {
@@ -525,7 +452,7 @@ function OperationRow({
                             const parentSegs = path.slice(0, -1);
                             sourcePath = parentSegs.length > 0
                                 ? parentSegs.map((p) => p.name).join(" › ")
-                                : "Root";
+                                : t("root");
                             const parentSlugs = parentSegs.map((p) => p.slug).join("/");
                             sourceUrl = parentSlugs ? `/browse/${parentSlugs}` : "/browse";
                         }
@@ -533,10 +460,10 @@ function OperationRow({
 
                     // Resolve destination
                     const newParentId = rawOp.new_parent_id ? String(rawOp.new_parent_id) : null;
-                    let destPath = "Root";
+                    let destPath = t("root");
                     let destUrl = "/browse";
                     if (newParentId && !newParentId.startsWith("$")) {
-                        const info = await resolveTargetPath(newParentId);
+                        const info = await resolveTargetPath(newParentId, t("root"));
                         if (!cancelled) { destPath = info.label; destUrl = info.url; }
                     }
 
@@ -552,10 +479,10 @@ function OperationRow({
                     let sourcePath: string | undefined;
                     let sourceUrl: string | undefined;
                     if (mat.directory_id) {
-                        const info = await resolveTargetPath(mat.directory_id);
+                        const info = await resolveTargetPath(mat.directory_id, t("root"));
                         if (!cancelled) { sourcePath = info.label; sourceUrl = info.url; }
                     } else {
-                        sourcePath = "Root";
+                        sourcePath = t("root");
                         sourceUrl = "/browse";
                     }
                     if (!cancelled) setItemDetails({
@@ -570,11 +497,11 @@ function OperationRow({
                     if (!dirId) return;
                     const path = await apiFetch<{ name: string; slug: string }[]>(`/directories/${dirId}/path`);
                     if (cancelled) return;
-                    const itemName = path.length > 0 ? path[path.length - 1].name : "Root";
+                    const itemName = path.length > 0 ? path[path.length - 1].name : t("root");
                     const parentSegs = path.slice(0, -1);
                     const sourcePath = parentSegs.length > 0
                         ? parentSegs.map((p) => p.name).join(" › ")
-                        : "Root";
+                        : t("root");
                     const parentSlugs = parentSegs.map((p) => p.slug).join("/");
                     if (!cancelled) setItemDetails({
                         itemName,
@@ -612,17 +539,17 @@ function OperationRow({
     const displaySummary = (() => {
         const name = itemDetails?.itemName;
         const opName = (rawOp.title || rawOp.name) as string | undefined;
-        const finalName = name || opName;
+        const finalName = name || opName || (opType.includes("directory") ? t("labels.create_directory") : t("labels.create_material"));
 
         switch (opType) {
-            case "delete_material": return `Deleted « ${finalName || "document"} »`;
-            case "delete_directory": return `Deleted folder « ${finalName || "folder"} »`;
-            case "edit_material":   return `Edited « ${finalName || "document"} »`;
-            case "edit_directory":   return `Renamed folder « ${finalName || "folder"} »`;
+            case "delete_material": return t("summary.delete_material", { name: finalName });
+            case "delete_directory": return t("summary.delete_directory", { name: finalName });
+            case "edit_material":   return t("summary.edit_material", { name: finalName });
+            case "edit_directory":   return t("summary.edit_directory", { name: finalName });
             case "move_item":
                 const isDir = rawOp.target_type === "directory";
-                return `Moved ${isDir ? "folder " : ""}« ${finalName || (isDir ? "folder" : "document")} »`;
-            default: return opSummary(op);
+                return t("summary.move_item", { isDir: String(isDir), name: finalName });
+            default: return opSummary(op, t);
         }
     })();
 
@@ -668,7 +595,7 @@ function OperationRow({
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 flex-wrap">
                                 {/* Hide operation label if it's already in the summary (most cases now) */}
                                 {(opType === "move_item" || opType.includes("delete")) ? null : (
-                                    <span className={colorClass.split(" ")[0]}>{OP_LABELS[opType] ?? opType}</span>
+                                    <span className={colorClass.split(" ")[0]}>{t(OP_LABELS_KEYS[opType] as any) ?? opType}</span>
                                 )}
 
                                 {/* Create: show target directory */}
@@ -706,7 +633,7 @@ function OperationRow({
                                         <div className="flex items-center gap-1 shrink-0">
                                             <MapPin className="h-3 w-3 shrink-0 opacity-60" />
                                             <span className="truncate max-w-[120px]">
-                                                {itemDetails.destPath ?? "Root"}
+                                                {itemDetails.destPath ?? t("root")}
                                             </span>
                                         </div>
                                     </>
@@ -731,7 +658,7 @@ function OperationRow({
                             >
                                 <Link href={resultBrowsePath}>
                                     <Eye className="h-3.5 w-3.5" />
-                                    Preview
+                                    {t("preview")}
                                 </Link>
                             </Button>
                         )}
@@ -748,7 +675,7 @@ function OperationRow({
                                 {previewLoading
                                     ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                     : <Eye className="h-3.5 w-3.5" />}
-                                Preview
+                                {t("preview")}
                             </Button>
                         )}
 
@@ -765,7 +692,7 @@ function OperationRow({
                                     >
                                         <Link href={`/pull-requests/${prId}/preview/${index}`}>
                                             <Eye className="h-3.5 w-3.5" />
-                                            Preview
+                                            {t("preview")}
                                         </Link>
                                     </Button>
                                 ) : canPreviewExisting ? (
@@ -780,7 +707,7 @@ function OperationRow({
                                         {previewLoading
                                             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                             : <Eye className="h-3.5 w-3.5" />}
-                                        Preview
+                                        {t("preview")}
                                     </Button>
                                 ) : null}
                             </>
@@ -796,7 +723,7 @@ function OperationRow({
                                 {entries.map(([k, v]) => (
                                     <div key={k} className="contents">
                                         <dt className="py-0.5 capitalize text-muted-foreground">
-                                            {k === "type" ? "Type" : k === "tags" ? "Tags" : k === "description" ? "Description" : k}
+                                            {t(`fields.${k}` as any)}
                                         </dt>
                                         <dd className="py-0.5 min-w-0">
                                             {k === "description" ? (
@@ -806,7 +733,7 @@ function OperationRow({
                                                     className="text-sm"
                                                 />
                                             ) : (
-                                                formatValue(v)
+                                                formatValue(v, mt)
                                             )}
                                         </dd>
                                     </div>
@@ -817,7 +744,7 @@ function OperationRow({
                             <div className={entries.length > 0 ? "mt-4 pt-4 border-t" : ""}>
                                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
                                     <Clock className="h-3 w-3" />
-                                    Changes
+                                    {t("changes")}
                                 </div>
                                 <MarkdownRenderer 
                                     content={String(diffSummary)} 
@@ -842,6 +769,11 @@ interface PRDetailPageProps {
 
 export default function PRDetailPage({ params }: PRDetailPageProps) {
     const { id } = use(params);
+    const t = useTranslations("PRDetails");
+    const tPRs = useTranslations("PRs");
+    const tCommon = useTranslations("Common");
+    const locale = useLocale();
+    const dateLocale = locale === "fr" ? fr : enUS;
     const { user } = useAuthStore();
     const [pr, setPr] = useState<PullRequestDetail | null>(null);
     const [loading, setLoading] = useState(true);
@@ -884,9 +816,9 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
 
     useEffect(() => {
         if (previewDirId) {
-            resolveTargetPath(previewDirId).then(info => setPreviewPath(info.url));
+            resolveTargetPath(previewDirId, t("root")).then(info => setPreviewPath(info.url));
         }
-    }, [previewDirId]);
+    }, [previewDirId, t]);
 
     const allItemValues = useMemo(() => operations.map((_, i) => `op-${i}`), [operations]);
     const allExpanded = useMemo(() => expandedItems.length === allItemValues.length, [expandedItems, allItemValues]);
@@ -912,9 +844,9 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
         try {
             await apiFetch(`/pull-requests/${id}/approve`, { method: "POST" });
             setPr((prev) => prev ? { ...prev, status: "approved" } : prev);
-            toast.success("Contribution published");
+            toast.success(t("publishedToast"));
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Failed to publish");
+            toast.error(e instanceof Error ? e.message : t("publishFailed"));
         } finally {
             setActing(null);
         }
@@ -931,9 +863,9 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             });
             setPr((prev) => prev ? { ...prev, status: "rejected", rejection_reason: rejectReason.trim() } : prev);
             setRejectReason("");
-            toast("Contribution rejected");
+            toast(t("rejectedToast"));
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Failed to reject");
+            toast.error(e instanceof Error ? e.message : t("rejectFailed"));
         } finally {
             setActing(null);
         }
@@ -945,9 +877,9 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
         try {
             await apiFetch(`/pull-requests/${id}/cancel`, { method: "POST" });
             setPr((prev) => prev ? { ...prev, status: "cancelled" } : prev);
-            toast.success("Contribution cancelled");
+            toast.success(t("cancelledToast"));
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Failed to cancel");
+            toast.error(e instanceof Error ? e.message : t("cancelFailed"));
         } finally {
             setActing(null);
         }
@@ -961,9 +893,9 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             setPr((prev) => prev ? { ...prev, reverted_by_pr_id: revertPr.id, can_revert: false } : prev);
             setRevertConfirmText("");
             setRevertUnderstood(false);
-            toast.success("Contribution reverted successfully");
+            toast.success(t("revertedToast"));
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Failed to revert");
+            toast.error(e instanceof Error ? e.message : t("revertFailed"));
         } finally {
             setActing(null);
         }
@@ -983,9 +915,9 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
         return (
             <div className="flex flex-col items-center gap-3 py-20 text-muted-foreground">
                 <XCircle className="h-10 w-10" />
-                <p className="text-sm">Contribution introuvable.</p>
+                <p className="text-sm">{t("notFound")}</p>
                 <Button variant="ghost" size="sm" asChild>
-                    <Link href="/pull-requests">← Back to list</Link>
+                    <Link href="/pull-requests">← {t("backToList")}</Link>
                 </Button>
             </div>
         );
@@ -1006,7 +938,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
     const isAuthor = !!user && !!pr.author?.id && pr.author.id === user.id;
     const canCancel = pr.status === "open" && isAuthor;
     const canRevert = isAdmin && pr.can_revert === true && !pr.reverted_by_pr_id;
-    const status = STATUS_CONFIG[pr.status] ?? STATUS_CONFIG.open;
+    const status = STATUS_CONFIG_KEYS[pr.status] ?? STATUS_CONFIG_KEYS.open;
     const StatusIcon = status.Icon;
 
     const initials = pr.author?.display_name
@@ -1031,7 +963,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                 className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
                 <ArrowLeft className="h-3.5 w-3.5" />
-                Contributions
+                {tPRs("contributions")}
             </Link>
 
             {/* ─── Reverted banner ──────────────────────── */}
@@ -1040,15 +972,15 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                     <Undo2 className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                     <div>
                         <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
-                            This contribution has been reverted
+                            {t("revertedBanner")}
                         </p>
                         <p className="mt-1 text-sm text-amber-600/90 dark:text-amber-400/80">
-                            All changes from this contribution have been undone.{" "}
+                            {t("revertedBannerDesc")}{" "}
                             <Link
                                 href={`/pull-requests/${pr.reverted_by_pr_id}`}
                                 className="underline hover:text-amber-700 dark:hover:text-amber-300"
                             >
-                                View revert PR
+                                {t("viewRevertPR")}
                             </Link>
                         </p>
                     </div>
@@ -1061,17 +993,19 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                     <Undo2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
                     <div>
                         <p className="text-sm font-medium text-blue-700 dark:text-blue-400">
-                            This is a revert contribution
+                            {t("revertOfBanner")}
                         </p>
                         <p className="mt-1 text-sm text-blue-600/90 dark:text-blue-400/80">
-                            This contribution undoes the changes from{" "}
-                            <Link
-                                href={`/pull-requests/${pr.reverts_pr_id}`}
-                                className="underline hover:text-blue-700 dark:hover:text-blue-300"
-                            >
-                                the original PR
-                            </Link>
-                            .
+                            {t.rich("revertOfBannerDesc", {
+                                link: (chunks) => (
+                                    <Link
+                                        href={`/pull-requests/${pr.reverts_pr_id}`}
+                                        className="underline hover:text-blue-700 dark:hover:text-blue-300"
+                                    >
+                                        {t("originalPR")}
+                                    </Link>
+                                ),
+                            })}
                         </p>
                     </div>
                 </div>
@@ -1083,7 +1017,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
                     <div>
                         <p className="text-sm font-medium text-red-700 dark:text-red-400">
-                            Rejection reason
+                            {t("rejectionReasonBanner")}
                         </p>
                         <p className="mt-1 text-sm text-red-600/90 dark:text-red-400/80">
                             {pr.rejection_reason}
@@ -1103,7 +1037,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                     className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${status.color} ${status.bg}`}
                                 >
                                     <StatusIcon className="h-3.5 w-3.5" />
-                                    {status.label}
+                                    {t(status.labelKey as any)}
                                 </span>
                             </div>
 
@@ -1118,10 +1052,10 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                 <Link href={previewUrl}>
                                     <Eye className="h-4 w-4" />
                                     <span className="hidden sm:inline">
-                                        {isApproved ? "View in library" : "Browse preview"}
+                                        {isApproved ? t("viewInLibrary") : t("browsePreview")}
                                     </span>
                                     <span className="sm:hidden">
-                                        {isApproved ? "View" : "Preview"}
+                                        {isApproved ? t("view") : t("preview")}
                                     </span>
                                 </Link>
                             </Button>
@@ -1136,12 +1070,14 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             </AvatarFallback>
                         </Avatar>
                         <span className="font-medium">
-                            {pr.author?.display_name || "[deleted account]"}
+                            {pr.author?.display_name || tCommon("deletedAccount")}
                         </span>
                         <span className="text-muted-foreground">
-                            submitted{" "}
-                            {formatDistanceToNow(new Date(pr.created_at), {
-                                addSuffix: true,
+                            {t("submitted", {
+                                time: formatDistanceToNow(new Date(pr.created_at), {
+                                    addSuffix: true,
+                                    locale: dateLocale,
+                                }),
                             })}
                         </span>
                         {pr.status === "open" && (
@@ -1150,8 +1086,13 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                 <span className={`flex items-center gap-1 text-xs ${isExpiringSoon ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
                                     <Clock className="h-3 w-3" />
                                     {isExpiringSoon
-                                        ? `Expires ${formatDistanceToNow(expiresDate, { addSuffix: true })}`
-                                        : "Expires in 7 days if not reviewed"}
+                                        ? t("expiresSoon", {
+                                              time: formatDistanceToNow(expiresDate, {
+                                                  addSuffix: true,
+                                                  locale: dateLocale,
+                                              }),
+                                          })
+                                        : t("expiresDefault")}
                                 </span>
                             </>
                         )}
@@ -1177,7 +1118,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                     className="gap-1 text-xs font-normal"
                                 >
                                     <Icon className="h-3 w-3" />
-                                    {count} {OP_LABELS[type] ?? type}
+                                    {count} {t(OP_LABELS_KEYS[type] as any) ?? type}
                                 </Badge>
                             );
                         })}
@@ -1191,7 +1132,11 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                         <div className="flex items-center justify-between gap-2 px-6 py-3">
                             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                 <Clock className="h-3 w-3" />
-                                Revertable for {formatDistanceToNow(new Date(pr.revert_grace_expires_at))}
+                                {t("revertGrace", {
+                                    time: formatDistanceToNow(new Date(pr.revert_grace_expires_at), {
+                                        locale: dateLocale,
+                                    }),
+                                })}
                             </span>
                             <Button
                                 size="sm"
@@ -1205,7 +1150,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                 ) : (
                                     <Undo2 className="h-3.5 w-3.5" />
                                 )}
-                                Revert contribution
+                                {t("revertContribution")}
                             </Button>
                         </div>
                     </>
@@ -1218,7 +1163,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                         <div className="flex items-center justify-end gap-2 px-6 py-3">
                             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                 <Clock className="h-3 w-3" />
-                                Revert grace period expired
+                                {t("revertExpired")}
                             </span>
                         </div>
                     </>
@@ -1242,7 +1187,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                     ) : (
                                         <X className="h-3.5 w-3.5" />
                                     )}
-                                    Cancel contribution
+                                    {t("cancelContribution")}
                                 </Button>
                             )}
                             {isModerator && (
@@ -1258,7 +1203,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                         ) : (
                                             <Check className="h-3.5 w-3.5" />
                                         )}
-                                        Publish
+                                        {t("publish")}
                                     </Button>
                                     <Button
                                         size="sm"
@@ -1272,7 +1217,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                         ) : (
                                             <X className="h-3.5 w-3.5" />
                                         )}
-                                        Reject
+                                        {t("reject")}
                                     </Button>
                                 </>
                             )}
@@ -1285,10 +1230,9 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             <div className="overflow-hidden rounded-lg border bg-card">
                 <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-2.5">
                     <span className="text-sm font-medium text-muted-foreground">
-                        Proposed changes
+                        {t("proposedChanges")}
                         <span className="ml-1.5 text-foreground/60">
-                            · {operations.length} change
-                            {operations.length !== 1 ? "s" : ""}
+                            · {t("changeCount", { count: operations.length })}
                         </span>
                     </span>
                     {operations.length > 1 && (
@@ -1303,12 +1247,12 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             {allExpanded ? (
                                 <>
                                     <ChevronsDownUp className="h-3.5 w-3.5" />
-                                    Collapse all
+                                    {t("collapseAll")}
                                 </>
                             ) : (
                                 <>
                                     <ChevronsUpDown className="h-3.5 w-3.5" />
-                                    Expand all
+                                    {t("expandAll")}
                                 </>
                             )}
                         </Button>
@@ -1335,7 +1279,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             {/* ─── Comments ───────────────────────────── */}
             <div className="overflow-hidden rounded-lg border bg-card">
                 <div className="border-b bg-muted/50 px-4 py-2.5 text-sm font-medium text-muted-foreground">
-                    Discussion
+                    {t("discussion")}
                 </div>
                 <div className="p-4">
                     <PRComments prId={pr.id} />
@@ -1346,15 +1290,14 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             <Dialog open={showRejectDialog} onOpenChange={(open) => { setShowRejectDialog(open); if (!open) setRejectReason(""); }}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Reject this contribution</DialogTitle>
+                        <DialogTitle>{t("rejectTitle")}</DialogTitle>
                         <DialogDescription>
-                            Explain why this contribution is being rejected.
-                            This reason will be visible to the author.
+                            {t("rejectDesc")}
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-2">
                         <Textarea
-                            placeholder="E.g. The document is a duplicate, the title is not descriptive enough…"
+                            placeholder={t("rejectPlaceholder")}
                             value={rejectReason}
                             onChange={(e) => setRejectReason(e.target.value)}
                             rows={4}
@@ -1362,13 +1305,13 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             autoFocus
                         />
                         <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>{rejectReason.trim().length < 10 ? `${10 - rejectReason.trim().length} chars min.` : ""}</span>
+                            <span>{rejectReason.trim().length < 10 ? t("charsMin", { count: 10 - rejectReason.trim().length }) : ""}</span>
                             <span>{rejectReason.length}/1000</span>
                         </div>
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => { setShowRejectDialog(false); setRejectReason(""); }}>
-                            Cancel
+                            {t("cancel", { ns: "PRWizard" })}
                         </Button>
                         <Button
                             variant="destructive"
@@ -1376,7 +1319,7 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             onClick={handleReject}
                         >
                             <X className="mr-2 h-4 w-4" />
-                            Reject
+                            {t("reject")}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -1386,11 +1329,9 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
             <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Cancel this contribution?</DialogTitle>
+                        <DialogTitle>{t("cancelTitle")}</DialogTitle>
                         <DialogDescription>
-                            The contribution will be withdrawn and no longer
-                            visible to reviewers. Any staged files you uploaded
-                            for it will be discarded. This cannot be undone.
+                            {t("cancelDesc")}
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
@@ -1398,14 +1339,14 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                             variant="outline"
                             onClick={() => setShowCancelDialog(false)}
                         >
-                            Keep it open
+                            {t("keepItOpen")}
                         </Button>
                         <Button
                             variant="destructive"
                             onClick={handleCancel}
                         >
                             <X className="mr-2 h-4 w-4" />
-                            Cancel contribution
+                            {t("cancelContribution")}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -1426,20 +1367,17 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-red-600">
                             <ShieldAlert className="h-5 w-5" />
-                            Revert this contribution
+                            {t("revertTitle")}
                         </DialogTitle>
                         <DialogDescription>
-                            This will reverse all operations in this contribution.
-                            Created items will be deleted, deleted items will be
-                            restored, and edits will be rolled back to their state
-                            before this PR was applied.
+                            {t("revertDesc")}
                         </DialogDescription>
                     </DialogHeader>
 
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
-                        <strong>Warning:</strong> Any edits made to affected items
-                        after this PR was approved will also be lost. This action
-                        cannot be undone.
+                        {t.rich("revertWarning", {
+                            strong: (chunks) => <strong>{chunks}</strong>,
+                        })}
                     </div>
 
                     <div className="space-y-4">
@@ -1450,20 +1388,21 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                 onCheckedChange={(checked) => setRevertUnderstood(checked === true)}
                             />
                             <Label htmlFor="revert-understood" className="text-sm leading-tight cursor-pointer">
-                                I understand that this reversal is permanent and may
-                                affect changes made after this contribution
+                                {t("revertUnderstood")}
                             </Label>
                         </div>
 
                         <div className="space-y-2">
                             <Label htmlFor="revert-confirm" className="text-sm text-muted-foreground">
-                                Type <span className="font-mono font-semibold text-foreground">REVERT</span> to confirm
+                                {t.rich("revertConfirmLabel", {
+                                    text: (chunks) => <span className="font-mono font-semibold text-foreground">{t("revertConfirmText")}</span>,
+                                })}
                             </Label>
                             <Input
                                 id="revert-confirm"
                                 value={revertConfirmText}
                                 onChange={(e) => setRevertConfirmText(e.target.value)}
-                                placeholder="REVERT"
+                                placeholder={t("revertConfirmText")}
                                 className="font-mono"
                                 autoComplete="off"
                             />
@@ -1479,15 +1418,15 @@ export default function PRDetailPage({ params }: PRDetailPageProps) {
                                 setRevertUnderstood(false);
                             }}
                         >
-                            Cancel
+                            {t("cancel", { ns: "PRWizard" })}
                         </Button>
                         <Button
                             variant="destructive"
-                            disabled={!revertUnderstood || revertConfirmText !== "REVERT"}
+                            disabled={!revertUnderstood || revertConfirmText !== t("revertConfirmText")}
                             onClick={handleRevert}
                         >
                             <Undo2 className="mr-2 h-4 w-4" />
-                            Revert contribution
+                            {t("revertContribution")}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

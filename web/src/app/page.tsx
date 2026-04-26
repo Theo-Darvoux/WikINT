@@ -12,11 +12,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle } from "lucide-react";
 import type { HomeData } from "@/components/home/types";
 
-function getGreeting(): string {
+import { useTranslations } from "next-intl";
+
+function getGreetingKey(): "morning" | "afternoon" | "evening" {
   const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
+  if (hour < 12) return "morning";
+  if (hour < 18) return "afternoon";
+  return "evening";
 }
 
 function WelcomeHeaderSkeleton() {
@@ -29,6 +31,7 @@ function WelcomeHeaderSkeleton() {
 }
 
 export default function HomePage() {
+  const t = useTranslations("Home");
   const { user } = useAuth();
   const { config } = useConfigStore();
   const [data, setData] = useState<HomeData | null>(null);
@@ -40,15 +43,15 @@ export default function HomePage() {
       .then(setData)
       .catch((err: unknown) => {
         setError(
-          err instanceof Error ? err.message : "Failed to load home data",
+          err instanceof Error ? err.message : t("loadError"),
         );
       })
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [t]);
 
-  const greeting = getGreeting();
+  const greeting = t(`greetings.${getGreetingKey()}` as Parameters<typeof t>[0]);
   const displayName =
-    user?.display_name ?? user?.email?.split("@")[0] ?? "there";
+    user?.display_name ?? user?.email?.split("@")[0] ?? t("guest");
 
   return (
     <div className="w-full mx-auto max-w-7xl px-4 py-8 pb-24 sm:px-6 sm:pb-10 lg:px-8">
@@ -65,7 +68,7 @@ export default function HomePage() {
               </span>
             </h1>
             <p className="mt-1 text-muted-foreground">
-              Here&apos;s what&apos;s happening on {config?.site_name || "WikINT"}
+              {t("whatsHappening", { siteName: config?.site_name || "WikINT" })}
             </p>
           </>
         )}
@@ -76,7 +79,7 @@ export default function HomePage() {
         <div className="mb-8 flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="font-medium">Could not load home data</p>
+            <p className="font-medium">{t("errorTitle")}</p>
             <p className="mt-0.5 text-destructive/80">{error}</p>
           </div>
         </div>
@@ -100,8 +103,8 @@ export default function HomePage() {
       {/* ── Popular today ────────────────────────────────── */}
       <div className="mb-10">
         <PopularSection
-          title="Popular Today"
-          subtitle="Most viewed materials in the last 24 hours"
+          title={t("popularTodayTitle")}
+          subtitle={t("popularTodaySubtitle")}
           materials={data?.popular_today ?? []}
           seeAllHref="/popular?period=today"
           isLoading={isLoading}
@@ -111,8 +114,8 @@ export default function HomePage() {
       {/* ── Popular last 14 days ─────────────────────────── */}
       <div className="mb-10">
         <PopularSection
-          title="Trending This Fortnight"
-          subtitle="Most viewed materials over the last 14 days"
+          title={t("trendingFortnightTitle")}
+          subtitle={t("trendingFortnightSubtitle")}
           materials={data?.popular_14d ?? []}
           seeAllHref="/popular?period=14d"
           isLoading={isLoading}

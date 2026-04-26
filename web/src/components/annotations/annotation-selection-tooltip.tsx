@@ -5,6 +5,7 @@ import { useIsMobile } from "@/hooks/use-media-query";
 import { MessageSquarePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useTranslations } from "next-intl";
 
 interface SelectionPosition {
     x: number;
@@ -28,12 +29,15 @@ interface AnnotationSelectionTooltipProps {
         selectionText: string,
         positionData: Record<string, unknown>
     ) => Promise<void>;
+    disabled?: boolean;
 }
 
 export function AnnotationSelectionTooltip({
     containerRef,
     onSubmit,
+    disabled = false,
 }: AnnotationSelectionTooltipProps) {
+    const t = useTranslations("Annotations");
     const isMobile = useIsMobile();
     const [selection, setSelection] = useState<SelectionPosition | null>(null);
     const [showForm, setShowForm] = useState(false);
@@ -48,6 +52,7 @@ export function AnnotationSelectionTooltip({
     const tooltipRef = useRef<HTMLDivElement>(null);
 
     const handleMouseUp = useCallback(() => {
+        if (disabled) return;
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed || !sel.rangeCount) {
             if (!showForm) setSelection(null);
@@ -190,7 +195,7 @@ export function AnnotationSelectionTooltip({
                     <Textarea
                         value={body}
                         onChange={(e) => setBody(e.target.value.slice(0, 1000))}
-                        placeholder="Add your annotation..."
+                        placeholder={t("addAnnotation")}
                         className="min-h-[60px] text-sm focus-visible:ring-1"
                         autoFocus
                         onKeyDown={(e) => {
@@ -206,7 +211,7 @@ export function AnnotationSelectionTooltip({
                             </span>
                             {!isMobile && (
                                 <span className="text-[9px] text-muted-foreground italic opacity-70">
-                                    Shift+Enter for newline
+                                    {t("shiftEnterForNewline")}
                                 </span>
                             )}
                         </div>
@@ -216,7 +221,7 @@ export function AnnotationSelectionTooltip({
                             onClick={handleSubmit}
                             disabled={submitting || !body.trim()}
                         >
-                            Annotate
+                            {t("annotate")}
                         </Button>
                         <Button
                             variant="ghost"
@@ -226,7 +231,7 @@ export function AnnotationSelectionTooltip({
                                 setBody("");
                             }}
                         >
-                            Cancel
+                            {t("cancel")}
                         </Button>
                     </div>
                 </div>
@@ -238,7 +243,7 @@ export function AnnotationSelectionTooltip({
                     onClick={() => setShowForm(true)}
                 >
                     <MessageSquarePlus className="h-3.5 w-3.5" />
-                    Annotate
+                    {t("annotate")}
                 </Button>
             )}
         </div>

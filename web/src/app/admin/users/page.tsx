@@ -17,6 +17,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 interface AdminUser {
     id: string;
@@ -43,6 +44,7 @@ const ROLE_BADGE: Record<string, string> = {
 };
 
 export default function AdminUsersPage() {
+    const t = useTranslations("Admin.Users");
     const { user } = useAuth();
     const canManageRoles = user?.role === "bureau" || user?.role === "vieux";
     const { show } = useConfirmDialog();
@@ -66,7 +68,7 @@ export default function AdminUsersPage() {
             setPage(data.page);
             setPages(data.pages);
         } catch {
-            toast.error("Failed to load users");
+            toast.error(t("state.loadError"));
         } finally {
             setLoading(false);
         }
@@ -85,25 +87,25 @@ export default function AdminUsersPage() {
             setUsers((prev) =>
                 prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
             );
-            toast.success("Role updated");
+            toast.success(t("actions.roleUpdate.success"));
         } catch {
-            toast.error("Failed to update role");
+            toast.error(t("actions.roleUpdate.error"));
         }
     };
 
     const handleApprove = async (userId: string, email: string) => {
         show(
-            "Approve user?",
-            `Grant ${email} full student access?`,
+            t("actions.approve.title"),
+            t("actions.approve.description", { email }),
             async () => {
                 try {
                     const updated = await apiFetch<AdminUser>(`/admin/users/${userId}/approve`, { method: "POST" });
                     setUsers((prev) =>
                         prev.map((u) => (u.id === userId ? { ...u, role: updated.role } : u))
                     );
-                    toast.success("User approved");
+                    toast.success(t("actions.approve.success"));
                 } catch {
-                    toast.error("Failed to approve user");
+                    toast.error(t("actions.approve.error"));
                 }
             }
         );
@@ -111,15 +113,15 @@ export default function AdminUsersPage() {
 
     const handleReject = async (userId: string, email: string) => {
         show(
-            "Reject and delete user?",
-            `This will permanently delete ${email}'s account. They will need to re-register if they want access.`,
+            t("actions.reject.title"),
+            t("actions.reject.description", { email }),
             async () => {
                 try {
                     await apiFetch(`/admin/users/${userId}/reject`, { method: "POST" });
                     setUsers((prev) => prev.filter((u) => u.id !== userId));
-                    toast.success("User rejected and deleted");
+                    toast.success(t("actions.reject.success"));
                 } catch {
-                    toast.error("Failed to reject user");
+                    toast.error(t("actions.reject.error"));
                 }
             }
         );
@@ -127,15 +129,15 @@ export default function AdminUsersPage() {
 
     const handleDelete = (userId: string, email: string) => {
         show(
-            "Soft-delete user?",
-            `Are you sure you want to delete ${email}? This action prevents login and initiates the 30-day GDPR cleanup period.`,
+            t("actions.delete.title"),
+            t("actions.delete.description", { email }),
             async () => {
                 try {
                     await apiFetch(`/admin/users/${userId}`, { method: "DELETE" });
                     setUsers((prev) => prev.filter((u) => u.id !== userId));
-                    toast.success("User deleted");
+                    toast.success(t("actions.delete.success"));
                 } catch {
-                    toast.error("Failed to delete user");
+                    toast.error(t("actions.delete.error"));
                 }
             }
         );
@@ -155,14 +157,14 @@ export default function AdminUsersPage() {
                     )}
                 >
                     <span className="font-medium">
-                        {pendingCount} pending {pendingCount === 1 ? "user" : "users"} awaiting approval
+                        {t("pendingBanner", { count: pendingCount })}
                     </span>
                     {roleFilter !== "pending" && (
                         <button
                             onClick={() => setRoleFilter("pending")}
                             className="ml-auto text-xs underline underline-offset-2 hover:no-underline"
                         >
-                            Show only pending
+                            {t("showOnlyPending")}
                         </button>
                     )}
                 </div>
@@ -172,7 +174,7 @@ export default function AdminUsersPage() {
                 <div className="relative flex-1">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
-                        placeholder="Search by name or email..."
+                        placeholder={t("searchPlaceholder")}
                         className="pl-9"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
@@ -180,15 +182,15 @@ export default function AdminUsersPage() {
                 </div>
                 <Select value={roleFilter} onValueChange={setRoleFilter}>
                     <SelectTrigger className="w-full sm:w-[180px]">
-                        <SelectValue placeholder="All roles" />
+                        <SelectValue placeholder={t("allRoles")} />
                     </SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="all">All roles</SelectItem>
-                        <SelectItem value="pending">⏳ Pending</SelectItem>
-                        <SelectItem value="student">Student</SelectItem>
-                        <SelectItem value="moderator">Moderator</SelectItem>
-                        <SelectItem value="bureau">Bureau</SelectItem>
-                        <SelectItem value="vieux">Vieux</SelectItem>
+                        <SelectItem value="all">{t("allRoles")}</SelectItem>
+                        <SelectItem value="pending">⏳ {t("roleLabels.pending")}</SelectItem>
+                        <SelectItem value="student">{t("roleLabels.student")}</SelectItem>
+                        <SelectItem value="moderator">{t("roleLabels.moderator")}</SelectItem>
+                        <SelectItem value="bureau">{t("roleLabels.bureau")}</SelectItem>
+                        <SelectItem value="vieux">{t("roleLabels.vieux")}</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
@@ -198,10 +200,10 @@ export default function AdminUsersPage() {
                     <table className="w-full text-left text-sm">
                         <thead className="border-b bg-muted/50 text-muted-foreground">
                             <tr>
-                                <th className="p-4 font-medium">Email</th>
-                                <th className="p-4 font-medium">Name</th>
-                                <th className="p-4 font-medium">Role</th>
-                                <th className="p-4 font-medium text-right">Actions</th>
+                                <th className="p-4 font-medium">{t("table.email")}</th>
+                                <th className="p-4 font-medium">{t("table.name")}</th>
+                                <th className="p-4 font-medium">{t("table.role")}</th>
+                                <th className="p-4 font-medium text-right">{t("table.actions")}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y">
@@ -227,10 +229,10 @@ export default function AdminUsersPage() {
                                                     <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="student">Student</SelectItem>
-                                                    <SelectItem value="moderator">Moderator</SelectItem>
-                                                    <SelectItem value="bureau">Bureau</SelectItem>
-                                                    <SelectItem value="vieux">Vieux</SelectItem>
+                                                    <SelectItem value="student">{t("roleLabels.student")}</SelectItem>
+                                                    <SelectItem value="moderator">{t("roleLabels.moderator")}</SelectItem>
+                                                    <SelectItem value="bureau">{t("roleLabels.bureau")}</SelectItem>
+                                                    <SelectItem value="vieux">{t("roleLabels.vieux")}</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         ) : (
@@ -240,7 +242,7 @@ export default function AdminUsersPage() {
                                                     ROLE_BADGE[u.role ?? "student"] ?? ROLE_BADGE.student
                                                 )}
                                             >
-                                                {u.role === "pending" ? "⏳ Pending" : u.role}
+                                                {u.role === "pending" ? `⏳ ${t("roleLabels.pending")}` : (u.role ? t(`roleLabels.${u.role}` as any) : t("roleLabels.student"))}
                                             </Badge>
                                         )}
                                     </td>
@@ -254,7 +256,7 @@ export default function AdminUsersPage() {
                                                         size="icon"
                                                         onClick={() => handleApprove(u.id, u.email)}
                                                         className="text-green-600 hover:bg-green-50 hover:text-green-700 dark:hover:bg-green-900/20"
-                                                        title="Approve user"
+                                                        title={t("actions.approve.label")}
                                                     >
                                                         <CheckCircle className="h-4 w-4" />
                                                     </Button>
@@ -263,7 +265,7 @@ export default function AdminUsersPage() {
                                                         size="icon"
                                                         onClick={() => handleReject(u.id, u.email)}
                                                         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                                        title="Reject and delete user"
+                                                        title={t("actions.reject.label")}
                                                     >
                                                         <XCircle className="h-4 w-4" />
                                                     </Button>
@@ -276,7 +278,7 @@ export default function AdminUsersPage() {
                                                     size="icon"
                                                     onClick={() => handleDelete(u.id, u.email)}
                                                     className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                                    title="Delete user"
+                                                    title={t("actions.delete.label")}
                                                 >
                                                     <Trash2 className="h-4 w-4" />
                                                 </Button>
@@ -288,14 +290,14 @@ export default function AdminUsersPage() {
                             {loading && users.length === 0 && (
                                 <tr>
                                     <td colSpan={4} className="p-8 text-center text-muted-foreground">
-                                        Loading users...
+                                        {t("state.loading")}
                                     </td>
                                 </tr>
                             )}
                             {!loading && users.length === 0 && (
                                 <tr>
                                     <td colSpan={4} className="p-8 text-center text-muted-foreground">
-                                        No users found.
+                                        {t("state.empty")}
                                     </td>
                                 </tr>
                             )}
@@ -312,10 +314,10 @@ export default function AdminUsersPage() {
                         disabled={page <= 1}
                         onClick={() => fetchUsers(page - 1)}
                     >
-                        Previous
+                        {t("pagination.previous")}
                     </Button>
                     <span className="text-sm text-muted-foreground">
-                        {page} of {pages}
+                        {page} {t("pagination.of")} {pages}
                     </span>
                     <Button
                         variant="ghost"
@@ -323,7 +325,7 @@ export default function AdminUsersPage() {
                         disabled={page >= pages}
                         onClick={() => fetchUsers(page + 1)}
                     >
-                        Next
+                        {t("pagination.next")}
                     </Button>
                 </div>
             )}

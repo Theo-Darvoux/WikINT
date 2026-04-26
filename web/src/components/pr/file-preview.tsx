@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from "react";
 import { FileText, Music, Video, Code } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 interface FilePreviewProps {
     file: File;
@@ -57,6 +58,7 @@ export function FilePreviewThumbnail({
     file: File;
     size?: number;
 }) {
+    const t = useTranslations("Preview");
     const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
     const [prevFile, setPrevFile] = useState<File | null>(null);
@@ -93,7 +95,7 @@ export function FilePreviewThumbnail({
             <div
                 className="rounded border bg-muted/50 flex flex-col items-center justify-center gap-0.5"
                 style={style}
-                aria-label="PDF file"
+                aria-label={t("pdfFile")}
             >
                 <FileText className="text-red-500" style={{ width: size * 0.44, height: size * 0.44 }} />
                 <span className="text-[8px] font-bold text-red-500">PDF</span>
@@ -106,7 +108,7 @@ export function FilePreviewThumbnail({
             <div
                 className="rounded border bg-muted/50 flex flex-col items-center justify-center gap-0.5"
                 style={style}
-                aria-label="Video file"
+                aria-label={t("videoFile")}
             >
                 <Video className="text-blue-500" style={{ width: size * 0.44, height: size * 0.44 }} />
                 <span className="text-[8px] font-bold text-blue-500">{ext}</span>
@@ -119,7 +121,7 @@ export function FilePreviewThumbnail({
             <div
                 className="rounded border bg-muted/50 flex flex-col items-center justify-center gap-0.5"
                 style={style}
-                aria-label="Audio file"
+                aria-label={t("audioFile")}
             >
                 <Music className="text-purple-500" style={{ width: size * 0.44, height: size * 0.44 }} />
                 <span className="text-[8px] font-bold text-purple-500">{ext}</span>
@@ -132,7 +134,7 @@ export function FilePreviewThumbnail({
             <div
                 className="rounded border bg-muted/50 flex flex-col items-center justify-center gap-0.5"
                 style={style}
-                aria-label="Text file"
+                aria-label={t("textFile")}
             >
                 <Code className="text-muted-foreground/60" style={{ width: size * 0.44, height: size * 0.44 }} />
                 <span className="text-[8px] font-medium text-muted-foreground/60">{ext || "TXT"}</span>
@@ -145,10 +147,10 @@ export function FilePreviewThumbnail({
         <div
             className="rounded border bg-muted/50 flex flex-col items-center justify-center gap-0.5"
             style={style}
-            aria-label={`${ext || "Unknown"} file`}
+            aria-label={t("genericFile", { ext: ext || t("unknown") })}
         >
             <FileText className="text-muted-foreground/60" style={{ width: size * 0.44, height: size * 0.44 }} />
-            <span className="text-[8px] font-medium text-muted-foreground/60">{ext || "FILE"}</span>
+            <span className="text-[8px] font-medium text-muted-foreground/60">{ext || t("unknown").toUpperCase()}</span>
         </div>
     );
 }
@@ -156,6 +158,7 @@ export function FilePreviewThumbnail({
 // ── Expanded preview (shown in modal/detail view) ─────────────────────────────
 
 export function FilePreviewExpanded({ file }: { file: File }) {
+    const t = useTranslations("Preview");
     const [objectUrl, setObjectUrl] = useState<string | null>(null);
     const [textContent, setTextContent] = useState<string | null>(null);
 
@@ -224,7 +227,7 @@ export function FilePreviewExpanded({ file }: { file: File }) {
         return (
             <pre
                 className="max-h-[300px] overflow-auto rounded-lg bg-muted/30 p-3 text-xs font-mono whitespace-pre-wrap break-words"
-                aria-label={`Text preview of ${file.name}`}
+                aria-label={t("textPreview", { file: file.name })}
             >
                 {textContent}
             </pre>
@@ -238,7 +241,7 @@ export function FilePreviewExpanded({ file }: { file: File }) {
             <div>
                 <p className="text-sm font-medium">{file.name}</p>
                 <p className="text-xs text-muted-foreground">
-                    {file.type || "Unknown type"} · {(file.size / 1024).toFixed(0)} KB
+                    {file.type || t("unknownType")} · {(file.size / 1024).toFixed(0)} KB
                 </p>
             </div>
         </div>

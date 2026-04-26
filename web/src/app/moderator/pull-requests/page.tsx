@@ -21,7 +21,10 @@ interface PRItem {
     } | null;
 }
 
+import { useTranslations } from "next-intl";
+
 export default function ModeratorPRQueuePage() {
+    const t = useTranslations("Moderator.pullRequests");
     const [prs, setPrs] = useState<PRItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -32,7 +35,7 @@ export default function ModeratorPRQueuePage() {
             const data = await apiFetch<PRItem[]>("/pull-requests?status=open&limit=50");
             setPrs(data ?? []);
         } catch {
-            toast.error("Failed to load contribution moderation queue");
+            toast.error(t("loadError"));
         } finally {
             setLoading(false);
         }
@@ -51,7 +54,7 @@ export default function ModeratorPRQueuePage() {
             <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                    placeholder="Search contribution queue..."
+                    placeholder={t("searchPlaceholder")}
                     className="max-w-md pl-9"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -62,24 +65,24 @@ export default function ModeratorPRQueuePage() {
                 <table className="w-full text-left text-sm">
                     <thead className="border-b bg-muted/50 text-muted-foreground">
                         <tr>
-                            <th className="p-4 font-medium min-w-[300px]">Title</th>
-                            <th className="p-4 font-medium hidden sm:table-cell">Type</th>
-                            <th className="p-4 font-medium hidden sm:table-cell">Submitted</th>
-                            <th className="p-4 font-medium text-right">Action</th>
+                            <th className="p-4 font-medium min-w-[300px]">{t("columnTitle")}</th>
+                            <th className="p-4 font-medium hidden sm:table-cell">{t("columnType")}</th>
+                            <th className="p-4 font-medium hidden sm:table-cell">{t("columnSubmitted")}</th>
+                            <th className="p-4 font-medium text-right">{t("columnAction")}</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y relative">
                         {loading && prs.length === 0 && (
                             <tr>
                                 <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                                    Loading open contributions...
+                                    {t("loading")}
                                 </td>
                             </tr>
                         )}
                         {!loading && filtered.length === 0 && (
                             <tr>
                                 <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                                    Queue is empty.
+                                    {t("empty")}
                                 </td>
                             </tr>
                         )}
@@ -89,13 +92,13 @@ export default function ModeratorPRQueuePage() {
                                     <div className="flex flex-col gap-1">
                                         <div className="line-clamp-1">{pr.title}</div>
                                         <div className="text-xs font-normal text-muted-foreground sm:hidden">
-                                            {pr.type} • {pr.author?.display_name || "[deleted]"}
+                                            {t("types." + pr.type as Parameters<typeof t>[0])} • {pr.author?.display_name || "[deleted]"}
                                         </div>
                                     </div>
                                 </td>
                                 <td className="p-4 capitalize text-muted-foreground hidden sm:table-cell">
                                     <span className="bg-muted px-2 py-0.5 rounded text-xs font-medium">
-                                        {pr.type}
+                                        {t("types." + pr.type as Parameters<typeof t>[0])}
                                     </span>
                                 </td>
                                 <td className="p-4 text-muted-foreground hidden sm:table-cell">
@@ -108,7 +111,7 @@ export default function ModeratorPRQueuePage() {
                                             size="sm"
                                             className="h-8 gap-2 text-primary hover:text-primary hover:bg-primary/10"
                                         >
-                                            Review
+                                            {t("review")}
                                             <ExternalLink className="h-3.5 w-3.5" />
                                         </Button>
                                     </Link>

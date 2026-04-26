@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { getFileTypeStyle, getMaterialBrowsePath } from "./file-type-display";
 import { SectionHeader } from "./section-header";
 import type { FeaturedItem } from "./types";
+import { useTranslations } from "next-intl";
 
 interface FeaturedSectionProps {
   items: FeaturedItem[];
@@ -17,6 +18,7 @@ interface FeaturedSectionProps {
 // Single item — full-width hero card
 // ─────────────────────────────────────────────
 function FeaturedHeroCard({ item }: { item: FeaturedItem }) {
+  const t = useTranslations("Home");
   const material = item.material;
   const versionInfo = material.current_version_info;
   const fileName = versionInfo?.file_name ?? null;
@@ -51,7 +53,7 @@ function FeaturedHeroCard({ item }: { item: FeaturedItem }) {
           {/* Featured pill */}
           <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/20 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
             <Star className="h-3 w-3 fill-white" />
-            Featured
+            {t("featured")}
           </span>
         </div>
 
@@ -83,7 +85,7 @@ function FeaturedHeroCard({ item }: { item: FeaturedItem }) {
           <div className="mt-5">
             <Button asChild>
               <Link href={browsePath}>
-                View material
+                {t("viewMaterial")}
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
@@ -98,6 +100,7 @@ function FeaturedHeroCard({ item }: { item: FeaturedItem }) {
 // Multiple items — card in horizontal scroll row
 // ─────────────────────────────────────────────
 function FeaturedScrollCard({ item }: { item: FeaturedItem }) {
+  const t = useTranslations("Home");
   const material = item.material;
   const versionInfo = material.current_version_info;
   const fileName = versionInfo?.file_name ?? null;
@@ -134,7 +137,7 @@ function FeaturedScrollCard({ item }: { item: FeaturedItem }) {
           {/* Featured pill */}
           <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/20 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
             <Star className="h-2.5 w-2.5 fill-white" />
-            Featured
+            {t("featured")}
           </span>
         </div>
 
@@ -171,7 +174,7 @@ function FeaturedScrollCard({ item }: { item: FeaturedItem }) {
 
           <div className="mt-auto pt-2">
             <span className="inline-flex items-center gap-1 text-xs font-medium text-primary group-hover:underline">
-              View material
+              {t("viewMaterial")}
               <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
             </span>
           </div>
@@ -185,13 +188,14 @@ function FeaturedScrollCard({ item }: { item: FeaturedItem }) {
 // Public export
 // ─────────────────────────────────────────────
 export function FeaturedSection({ items }: FeaturedSectionProps) {
+  const t = useTranslations("Home");
   if (items.length === 0) return null;
 
   return (
-    <section aria-label="Featured materials">
+    <section aria-label={t("featuredMaterials")}>
       <SectionHeader
-        title="Featured"
-        subtitle="Highlighted materials curated for you"
+        title={t("featured")}
+        subtitle={t("highlightedMaterials")}
       />
 
       <div className="mt-4">

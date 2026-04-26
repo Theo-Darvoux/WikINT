@@ -468,11 +468,11 @@ export function opIcon(op: Operation): string {
 }
 
 /** Human-readable time remaining, e.g. "5h 23m" or "12m". */
-export function formatTimeRemaining(ms: number): string {
-    if (ms <= 0) return "expired";
+export function formatTimeRemaining(ms: number, t: any): string {
+    if (ms <= 0) return t("expired");
     const totalMin = Math.floor(ms / 60_000);
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
+    if (h > 0) return `${h}${t("hours")} ${m}${t("minutes")}`;
+    return `${m}${t("minutes")}`;
 }

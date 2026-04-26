@@ -20,6 +20,7 @@ import {
     getFileExtension 
 } from "@/lib/file-utils";
 import { TYPE_ICONS, EXT_ICONS } from "@/components/browse/material-line-item";
+import { useTranslations } from "next-intl";
 
 export function SearchList({ 
     query, 
@@ -32,21 +33,22 @@ export function SearchList({
     loading: boolean;
     results: SearchResult[];
 }) {
+    const t = useTranslations("Search");
     return (
         <CommandList>
             <CommandEmpty>
                 {loading ? (
                     <div className="flex items-center justify-center p-4">
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        <span>Searching...</span>
+                        <span>{t("searching")}</span>
                     </div>
                 ) : (
-                    query.trim() === "" ? "Type a command or search..." : "No results found."
+                    query.trim() === "" ? t("typeCommandOrSearch") : t("noResults")
                 )}
             </CommandEmpty>
 
             {results.length > 0 && (
-                <CommandGroup heading="Results">
+                <CommandGroup heading={t("results")}>
                     {results.map((result) => {
                         const isDir = result.search_type === "directory";
                         const title = result.title || result.name || "";
@@ -107,6 +109,7 @@ export function SearchModal({
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
+    const t = useTranslations("Search");
     const router = useRouter();
     const [query, setQuery] = React.useState("");
     const { results, loading } = useSearch(query);
@@ -127,7 +130,7 @@ export function SearchModal({
     return (
         <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
             <CommandInput
-                placeholder="Search materials, directories..."
+                placeholder={t("searchMaterialsDirs")}
                 value={query}
                 onValueChange={setQuery}
             />

@@ -68,6 +68,13 @@ async def get_auth_methods(
         "primary_color": auth_config.get("primary_color"),
         "footer_text": auth_config.get("footer_text"),
         "organization_url": auth_config.get("organization_url"),
+        "legal_name": auth_config.get("legal_name"),
+        "legal_address": auth_config.get("legal_address"),
+        "legal_siret": auth_config.get("legal_siret"),
+        "contact_email": auth_config.get("contact_email"),
+        "dpo_email": auth_config.get("dpo_email"),
+        "dpo_address": auth_config.get("dpo_address"),
+        "data_transfers": auth_config.get("data_transfers"),
     }
 
 

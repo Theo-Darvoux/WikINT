@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { AuthGuard } from "@/components/auth-guard";
 import { ProfileView, ProfileSkeleton, type UserProfile } from "@/components/profile/profile-view";
+import { useTranslations } from "next-intl";
 import { API_BASE, apiFetch, getClientId } from "@/lib/api-client";
 import { getAccessToken } from "@/lib/auth-tokens";
 import { useAuthStore } from "@/lib/stores";
 import { toast } from "sonner";
 
 function OwnProfileContent() {
+    const t = useTranslations("Profile");
     const { setUser } = useAuthStore();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -20,10 +22,10 @@ function OwnProfileContent() {
             setUser(data);
         } catch {
             queueMicrotask(() => {
-                toast.error("Failed to load profile");
+                toast.error(t("loadProfileError"));
             });
         }
-    }, [setUser]);
+    }, [setUser, t]);
 
     useEffect(() => {
         setTimeout(fetchProfile, 0);
@@ -34,7 +36,7 @@ function OwnProfileContent() {
         if (!file) return;
 
         setIsUploading(true);
-        const toastId = toast.loading("Uploading avatar...");
+        const toastId = toast.loading(t("uploadingAvatar"));
         try {
             const formData = new FormData();
             formData.append("file", file);
@@ -48,19 +50,19 @@ function OwnProfileContent() {
                 },
             });
             if (!res.ok) {
-                const body = await res.json().catch(() => ({ detail: "Upload failed" }));
-                throw new Error(body.detail ?? "Upload failed");
+                const body = await res.json().catch(() => ({ detail: t("uploadFailed") }));
+                throw new Error(body.detail ?? t("uploadFailed"));
             }
             const upload = await res.json() as { file_key: string };
 
-            toast.loading("Processing and compressing...", { id: toastId });
+            toast.loading(t("processingAndCompressing"), { id: toastId });
             
             const updatedUser = await apiFetch<UserProfile>("/users/me", {
                 method: "PATCH",
                 body: JSON.stringify({ avatar_url: upload.file_key }),
             });
 
-            toast.success("Avatar updated", { id: toastId });
+            toast.success(t("avatarUpdated"), { id: toastId });
             
             // Immediately update state with returned user data while keeping old stats if necessary
             setProfile(prev => prev ? { ...prev, ...updatedUser } : updatedUser);
@@ -69,7 +71,7 @@ function OwnProfileContent() {
             // Still fetch full profile to ensure stats are perfectly synced if they changed (unlikely for avatar)
             fetchProfile();
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Failed to upload avatar", { id: toastId });
+            toast.error(error instanceof Error ? error.message : t("uploadAvatarError"), { id: toastId });
         } finally {
             setIsUploading(false);
         }

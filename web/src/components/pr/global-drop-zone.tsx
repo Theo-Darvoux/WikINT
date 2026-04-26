@@ -7,6 +7,7 @@ import { UploadDrawer } from "@/components/pr/upload-drawer";
 import { usePathname } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
 import { collectDroppedItems, type ScannedFile, type DroppedItems } from "@/lib/drop-utils";
+import { useTranslations } from "next-intl";
 
 
 // ---------------------------------------------------------------------------
@@ -61,7 +62,7 @@ interface BrowseContext {
     directoryName: string;
 }
 
-async function resolveBrowseContext(pathname: string): Promise<BrowseContext | null> {
+async function resolveBrowseContext(pathname: string, t: (key: string) => string): Promise<BrowseContext | null> {
     // Only works on /browse pages
     if (!pathname.startsWith("/browse")) return null;
 
@@ -82,7 +83,7 @@ async function resolveBrowseContext(pathname: string): Promise<BrowseContext | n
         }
         // Root directory
         if (data.type === "directory_listing" && !data.directory) {
-            return { directoryId: "", directoryName: "Root" };
+            return { directoryId: "", directoryName: t("root") };
         }
     } catch {
         // Can't resolve — fall back to root
@@ -95,6 +96,7 @@ async function resolveBrowseContext(pathname: string): Promise<BrowseContext | n
 // ---------------------------------------------------------------------------
 
 export function GlobalDropZone() {
+    const t = useTranslations("GlobalDropZone");
     const pathname = usePathname();
     const [isDragOver, setIsDragOver] = useState(false);
     const [localDrawerOpen, setLocalDrawerOpen] = useState(false);
@@ -149,7 +151,7 @@ export function GlobalDropZone() {
             if (browseContext) {
                 setTarget(browseContext);
             } else {
-                const ctx = await resolveBrowseContext(pathname);
+                const ctx = await resolveBrowseContext(pathname, t);
                 if (ctx) {
                     setTarget({
                         directoryId: ctx.directoryId,
@@ -158,13 +160,13 @@ export function GlobalDropZone() {
                 } else {
                     setTarget({
                         directoryId: "",
-                        directoryName: "Root",
+                        directoryName: t("root"),
                     });
                 }
             }
             setLocalDrawerOpen(true);
         },
-        [browseContext, pathname],
+        [browseContext, pathname, t],
     );
 
     // Listen for drag events on the document (show/hide overlay)
@@ -259,10 +261,10 @@ export function GlobalDropZone() {
                         <UploadCloud className="h-16 w-16 text-primary animate-bounce" />
                         <div className="text-center">
                             <p className="text-lg font-semibold text-primary">
-                                Drop files to upload
+                                {t("dropToUpload")}
                             </p>
                             <p className="text-sm text-muted-foreground mt-1">
-                                Files will be added to your staged changes
+                                {t("stagedChangesHint")}
                             </p>
                         </div>
                     </div>

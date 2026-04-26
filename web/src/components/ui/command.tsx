@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { useTranslations } from "next-intl"
 
 function Command({
   className,
@@ -30,8 +31,8 @@ function Command({
 }
 
 function CommandDialog({
-  title = "Command Palette",
-  description = "Search for a command to run...",
+  title,
+  description,
   children,
   className,
   showCloseButton = true,
@@ -44,11 +45,15 @@ function CommandDialog({
   showCloseButton?: boolean
   shouldFilter?: boolean
 }) {
+  const t = useTranslations("Common");
+  const displayTitle = title || t("commandPalette");
+  const displayDescription = description || t("commandSearchPlaceholder");
+
   return (
     <Dialog {...props}>
       <DialogHeader className="sr-only">
-        <DialogTitle>{title}</DialogTitle>
-        <DialogDescription>{description}</DialogDescription>
+        <DialogTitle>{displayTitle}</DialogTitle>
+        <DialogDescription>{displayDescription}</DialogDescription>
       </DialogHeader>
       <DialogContent
         className={cn(

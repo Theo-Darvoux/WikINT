@@ -13,6 +13,7 @@ import { apiFetch, API_BASE } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/stores";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 interface CommentAuthor {
   id: string;
@@ -76,8 +77,9 @@ function CommentItem({
     currentUserRole === "vieux";
   const canEdit = isAuthor;
   const canDelete = isAuthor || isModerator;
+  const t = useTranslations("Sidebar");
 
-  const authorName = comment.author?.display_name ?? "[deleted]";
+  const authorName = comment.author?.display_name ?? t("deletedUser");
   const date = new Date(comment.created_at);
 
   return (
@@ -131,14 +133,14 @@ function CommentItem({
               className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               <Edit2 className="h-3 w-3" />
-              Edit
+              {t("edit")}
             </button>
           )}
           {canDelete ? (
             <ConfirmDeleteDialog
               onConfirm={() => onDelete(comment.id)}
-              title="Delete comment"
-              description="Are you sure you want to delete this comment? This action cannot be undone."
+              title={t("deleteComment")}
+              description={t("deleteCommentConfirm")}
             />
           ) : (
             <FlagButton
@@ -159,11 +161,13 @@ const MAX_COMMENT_LENGTH = 1000;
 
 interface ChatTabProps {
   target: SidebarTarget | null;
+  disabled?: boolean;
 }
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-export function ChatTab({ target }: ChatTabProps) {
+export function ChatTab({ target, disabled = false }: ChatTabProps) {
+  const t = useTranslations("Sidebar");
   const isMobile = useIsMobile();
   const { user } = useAuthStore();
   const [comments, setComments] = useState<Comment[]>([]);
@@ -197,10 +201,10 @@ export function ChatTab({ target }: ChatTabProps) {
   }, [target, fetchComments]);
 
   const handleSubmit = async () => {
-    if (!target || !body.trim()) return;
+    if (!target || !body.trim() || disabled) return;
     if (body.length > MAX_COMMENT_LENGTH) {
       toast.error(
-        `Comment exceeds ${MAX_COMMENT_LENGTH.toLocaleString()} character limit`,
+        t("commentExceedsLimit", { max: MAX_COMMENT_LENGTH.toLocaleString() })
       );
       return;
     }
@@ -218,7 +222,7 @@ export function ChatTab({ target }: ChatTabProps) {
       setComments((prev) => [...prev, newComment]);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to post comment",
+        err instanceof Error ? err.message : t("failedToPostComment"),
       );
     } finally {
       setSubmitting(false);
@@ -226,10 +230,10 @@ export function ChatTab({ target }: ChatTabProps) {
   };
 
   const handleEdit = async (id: string) => {
-    if (!editBody.trim()) return;
+    if (!editBody.trim() || disabled) return;
     if (editBody.length > MAX_COMMENT_LENGTH) {
       toast.error(
-        `Comment exceeds ${MAX_COMMENT_LENGTH.toLocaleString()} character limit`,
+        t("commentExceedsLimit", { max: MAX_COMMENT_LENGTH.toLocaleString() })
       );
       return;
     }
@@ -245,12 +249,13 @@ export function ChatTab({ target }: ChatTabProps) {
       );
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to edit comment",
+        err instanceof Error ? err.message : t("failedToEditComment"),
       );
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (disabled) return;
     try {
       await apiFetch<void>(`/comments/${id}`, { method: "DELETE" });
       setComments((prev) => prev.filter((c) => c.id !== id));
@@ -260,6 +265,7 @@ export function ChatTab({ target }: ChatTabProps) {
   };
 
   const startEdit = (id: string, currentBody: string) => {
+    if (disabled) return;
     setEditingId(id);
     setEditBody(currentBody);
   };
@@ -268,7 +274,7 @@ export function ChatTab({ target }: ChatTabProps) {
     return (
       <div className="p-4">
         <p className="text-sm text-muted-foreground">
-          Select an item to view chat.
+          {t("selectItemToViewChat")}
         </p>
       </div>
     );
@@ -294,7 +300,7 @@ export function ChatTab({ target }: ChatTabProps) {
 
           {!loading && comments.length === 0 && (
             <p className="py-12 text-center text-sm text-muted-foreground italic px-4">
-              No comments yet. Be the first to comment on this {target.type}!
+              {t("noCommentsYet", { type: t(target.type) })}
             </p>
           )}
 
@@ -310,6 +316,7 @@ export function ChatTab({ target }: ChatTabProps) {
                     onChange={(e) => setEditBody(e.target.value)}
                     className="min-h-[120px] text-sm focus-visible:ring-1"
                     autoFocus
+                    disabled={disabled}
                   />
                 </div>
                 <div className="flex items-center justify-between">
@@ -324,17 +331,18 @@ export function ChatTab({ target }: ChatTabProps) {
                       size="sm"
                       onClick={() => handleEdit(c.id)}
                       disabled={
-                        !editBody.trim() || editBody.length > MAX_COMMENT_LENGTH
+                        disabled || !editBody.trim() || editBody.length > MAX_COMMENT_LENGTH
                       }
                     >
-                      Save Changes
+                      {t("saveChanges")}
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => setEditingId(null)}
+                      disabled={disabled}
                     >
-                      Cancel
+                      {t("cancel")}
                     </Button>
                   </div>
                 </div>
@@ -354,12 +362,18 @@ export function ChatTab({ target }: ChatTabProps) {
       </ScrollArea>
 
       <div className="shrink-0 border-t bg-background p-3 pt-3 pb-3 md:pb-4 space-y-1.5 shadow-[0_-8px_20px_-10px_rgba(0,0,0,0.1)]">
+        {disabled && (
+          <p className="text-[10px] text-center text-muted-foreground bg-muted/30 py-1 rounded-sm mb-1">
+            {t("chattingDisabledForPreview")}
+          </p>
+        )}
         <div className="flex gap-2 min-w-0">
           <Textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Write a comment..."
+            placeholder={disabled ? t("chattingDisabled") : t("writeAComment")}
             className="min-h-[40px] flex-1 text-xs bg-muted/40 focus-visible:bg-background transition-all resize-none overflow-hidden py-2"
+            disabled={disabled}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !isMobile) {
                 e.preventDefault();
@@ -377,7 +391,7 @@ export function ChatTab({ target }: ChatTabProps) {
             size="icon"
             onClick={handleSubmit}
             disabled={
-              submitting || !body.trim() || body.length > MAX_COMMENT_LENGTH
+              disabled || submitting || !body.trim() || body.length > MAX_COMMENT_LENGTH
             }
             className="shrink-0 self-end h-10 w-10 shadow-sm transition-transform active:scale-95"
           >
@@ -393,7 +407,7 @@ export function ChatTab({ target }: ChatTabProps) {
           </span>
           {!isMobile && (
             <span className="text-[9px] text-muted-foreground italic opacity-70">
-              Shift+Enter for new line
+              {t("shiftEnterForNewLine")}
             </span>
           )}
         </div>

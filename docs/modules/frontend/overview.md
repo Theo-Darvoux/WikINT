@@ -12,6 +12,46 @@
 | Zustand | Client-side state management |
 | shadcn/ui | UI component library |
 
+## Internationalization (i18n)
+
+WikINT uses **`next-intl`** for internationalization. Locale messages are stored in `web/messages/{locale}.json` (currently `en.json` and `fr.json`).
+
+### Dynamic Language Switching (no page reload)
+
+Language changes are applied **instantly client-side** without a full-page refresh via a custom `LocaleProvider`:
+
+| File | Role |
+|------|------|
+| `src/components/locale-provider.tsx` | Client component holding `locale` + `messages` in React state. Wraps `NextIntlClientProvider` with live state. Exposes `changeLocale(newLocale)` via `LocaleContext`. |
+| `src/hooks/use-change-locale.ts` | Thin hook: `const { locale, changeLocale, isPending } = useChangeLocale()` |
+| `src/app/intl/[locale]/route.ts` | API route serving the message JSON for a given locale. Used by `changeLocale()` to fetch the new bundle client-side. **Placed under `/intl/` (not `/api/`) to avoid the `/api/:path*` backend proxy rewrite.** Responses are cached (`Cache-Control: public, max-age=3600`). |
+| `src/i18n/request.ts` | Server-side locale resolution from the `NEXT_LOCALE` cookie (used on SSR / first load). |
+
+### Tooling & Maintenance
+
+To maintain translation quality and coverage, several scripts are available in the `web/` directory:
+
+| Script | Command | Purpose |
+|--------|---------|---------|
+| `scripts/check-i18n.ts` | `pnpm i18n:check` | Compares `en.json` vs `fr.json` for missing/extra keys and scans for unused keys in the codebase. Handles namespaces and dynamic usages. |
+| `scripts/scan-i18n.ts` | `pnpm i18n:scan` | Scans all `.tsx` files for hardcoded strings that are not yet translated. Outputs a detailed report. |
+
+#### Flow on language change
+
+1. User picks a new locale in `Settings → Language`.
+2. `changeLocale(newLocale)` (from `useChangeLocale`) is called.
+3. Cookie `NEXT_LOCALE` is updated so the next SSR request also picks up the new locale.
+4. `fetch('/api/messages/{newLocale}')` retrieves the message bundle (served from the static import map in the API route; Turbopack-friendly).
+5. `startTransition` swaps `locale` + `messages` state inside `LocaleProvider`.
+6. `NextIntlClientProvider` re-renders with the new messages. All `useTranslations()` calls across the entire tree update atomically.
+7. `document.documentElement.lang` is updated to keep the `<html lang>` attribute in sync.
+
+#### Adding a new locale
+
+1. Add `web/messages/{locale}.json` with all translation keys.
+2. Import it in `src/app/api/messages/[locale]/route.ts` and add it to the `MESSAGES` map.
+3. Add a `<SelectItem value="{locale}">` in `src/app/settings/page.tsx`.
+
 ## Theme Handling
 
 The application supports Light, Dark, and System themes using `next-themes`.

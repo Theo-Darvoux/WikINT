@@ -10,6 +10,7 @@ import { MaterialCard } from "@/components/home/material-card";
 import { SectionHeader } from "@/components/home/section-header";
 import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 import type { MaterialDetail } from "@/components/home/types";
 
 type Period = "today" | "14d";
@@ -47,6 +48,7 @@ function SkeletonGrid() {
 // Inner page — uses useSearchParams (needs Suspense)
 // ─────────────────────────────────────────────
 function PopularContent() {
+  const t = useTranslations("Popular");
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -81,7 +83,7 @@ function PopularContent() {
         setHasMore(data.length === LIMIT);
         setOffset(off + data.length);
       } catch {
-        toast.error("Failed to load popular materials");
+        toast.error(t("loadError"));
       } finally {
         setIsLoading(false);
         setIsLoadingMore(false);
@@ -110,16 +112,16 @@ function PopularContent() {
 
   const subtitle =
     period === "today"
-      ? "Most viewed materials in the last 24 hours"
-      : "Most viewed materials over the last 14 days";
+      ? t("todaySubtitle")
+      : t("last14DaysSubtitle");
 
   return (
     <div className="w-full mx-auto max-w-7xl px-4 py-8 pb-24 sm:px-6 sm:pb-10 lg:px-8">
       {/* ── Page header ─────────────────────────────── */}
       <div className="mb-6">
         <SectionHeader
-          title="Popular Materials"
-          subtitle="Discover the most viewed materials on WikINT"
+          title={t("title")}
+          subtitle={t("subtitle")}
         />
       </div>
 
@@ -128,11 +130,11 @@ function PopularContent() {
         <TabsList>
           <TabsTrigger value="today" className="gap-1.5">
             <TrendingUp className="h-3.5 w-3.5" />
-            Today
+            {t("today")}
           </TabsTrigger>
           <TabsTrigger value="14d" className="gap-1.5">
             <LayoutGrid className="h-3.5 w-3.5" />
-            Last 14 Days
+            {t("last14Days")}
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -148,10 +150,10 @@ function PopularContent() {
           <TrendingUp className="h-10 w-10 text-muted-foreground/30" />
           <div>
             <p className="font-medium text-muted-foreground">
-              No popular materials found
+              {t("noResults")}
             </p>
             <p className="mt-1 text-sm text-muted-foreground/70">
-              Check back later — stats are updated regularly.
+              {t("noResultsDesc")}
             </p>
           </div>
         </div>
@@ -180,10 +182,10 @@ function PopularContent() {
                 {isLoadingMore ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading…
+                    {t("loadingMore")}
                   </>
                 ) : (
-                  "Load more"
+                  t("loadMore")
                 )}
               </Button>
             </div>
@@ -192,7 +194,7 @@ function PopularContent() {
           {/* ── End of results ─────────────────────── */}
           {!hasMore && materials.length > 0 && (
             <p className="mt-10 text-center text-sm text-muted-foreground">
-              You&apos;ve seen all {materials.length} results.
+              {t("allResultsSeen", { count: materials.length })}
             </p>
           )}
         </>

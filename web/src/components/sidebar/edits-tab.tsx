@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2, Inbox } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { PRCard } from "@/components/pr/pr-card";
+import { useTranslations } from "next-intl";
 import { type PullRequestOut } from "@/components/home/types";
 
 interface SidebarTarget {
@@ -17,6 +18,7 @@ interface EditsTabProps {
 }
 
 export function EditsTab({ target }: EditsTabProps) {
+    const t = useTranslations("Sidebar");
     const [prs, setPrs] = useState<PullRequestOut[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -38,7 +40,7 @@ export function EditsTab({ target }: EditsTabProps) {
     }, [target]);
 
     if (!target) {
-        return <p className="text-sm text-muted-foreground p-4">Select an item to view edits.</p>;
+        return <p className="text-sm text-muted-foreground p-4">{t("selectItemToViewEdits")}</p>;
     }
 
     if (loading) {
@@ -54,7 +56,7 @@ export function EditsTab({ target }: EditsTabProps) {
             <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Inbox className="mb-3 h-8 w-8 text-muted-foreground/50" />
                 <p className="text-sm text-muted-foreground">
-                    No active contributions for this {target.type}.
+                    {t("noActiveContributions", { type: t(target.type) })}
                 </p>
             </div>
         );
@@ -62,7 +64,7 @@ export function EditsTab({ target }: EditsTabProps) {
 
     return (
         <div className="space-y-4 px-1 pb-4">
-            <h3 className="font-semibold px-2">Open Edits</h3>
+            <h3 className="font-semibold px-2">{t("openEdits")}</h3>
             <div className="flex flex-col gap-3">
                 {prs.map((pr) => (
                     <PRCard key={pr.id} pr={pr} />

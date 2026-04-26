@@ -14,15 +14,16 @@ export function useDownload() {
                 ? `/materials/${materialId}/versions/${versionNumber}/download-url`
                 : `/materials/${materialId}/download-url`;
 
-            const { url } = await apiFetch<{ url: string }>(endpoint);
+            const { url, filename } = await apiFetch<{ url: string; filename?: string }>(endpoint);
 
             // Trigger the download in-place by creating a hidden anchor element.
             // Since the backend returns a URL with ResponseContentDisposition set to attachment, 
             // the browser will stay on the current page and initiate the download.
             const link = document.createElement("a");
             link.href = url;
-            // The download attribute helps hint to the browser that this should be a download.
-            link.setAttribute("download", "");
+            // Explicitly setting the download attribute with the filename ensures 
+            // browsers prioritize the human-readable name over the obfuscated S3 hash.
+            link.setAttribute("download", filename || "");
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);

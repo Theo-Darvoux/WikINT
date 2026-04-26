@@ -1,6 +1,7 @@
 "use client";
 
 import { ZoomIn, ZoomOut } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 interface ZoomControlsProps {
     zoom: number;
@@ -25,14 +26,15 @@ export function ZoomControls({
     max = 300,
     disabled = false,
 }: ZoomControlsProps) {
+    const t = useTranslations("Viewers");
     return (
         <>
             <button
                 onClick={onZoomOut}
                 disabled={disabled || zoom <= min}
                 className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
-                title="Zoom out (Ctrl+-)"
-                aria-label="Zoom out"
+                title={t("pdf.zoomOut")}
+                aria-label={t("zoomControls.out")}
             >
                 <ZoomOut className="h-4 w-4" />
             </button>
@@ -40,8 +42,8 @@ export function ZoomControls({
                 onClick={onReset}
                 disabled={disabled}
                 className="min-w-12 rounded-md px-2 py-1 text-center text-xs font-medium tabular-nums transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-40"
-                title="Reset zoom (Ctrl+0)"
-                aria-label={`Zoom level ${zoom}%, click to reset`}
+                title={t("pdf.resetZoom")}
+                aria-label={t("zoomControls.reset")}
             >
                 {zoom}%
             </button>
@@ -49,8 +51,8 @@ export function ZoomControls({
                 onClick={onZoomIn}
                 disabled={disabled || zoom >= max}
                 className="rounded-md p-2 transition-colors text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-foreground disabled:opacity-40"
-                title="Zoom in (Ctrl++)"
-                aria-label="Zoom in"
+                title={t("pdf.zoomIn")}
+                aria-label={t("zoomControls.in")}
             >
                 <ZoomIn className="h-4 w-4" />
             </button>

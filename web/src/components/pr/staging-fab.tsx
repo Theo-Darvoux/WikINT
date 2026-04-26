@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { useStagingStore, isExpired } from "@/lib/staging-store";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 export function StagingFab() {
+  const t = useTranslations("Staging");
   const operations = useStagingStore((s) => s.operations) ?? [];
   const setReviewOpen = useStagingStore((s) => s.setReviewOpen);
   const count = operations.length;
@@ -30,7 +32,7 @@ export function StagingFab() {
       ) : (
         <ClipboardList className="h-5 w-5" />
       )}
-      <span>{expiredCount > 0 ? "Expired files" : "Draft"}</span>
+      <span>{expiredCount > 0 ? t("fabExpired") : t("fabDraft")}</span>
       <Badge
         variant="secondary"
         className="ml-1 h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-bold"

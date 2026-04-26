@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Mail, Loader2, Save } from "lucide-react";
+import { Mail, Loader2, Save, Send } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { TabsContent } from "@/components/ui/tabs";
 import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 interface AuthConfig {
     smtp_host: string | null;
@@ -27,11 +28,45 @@ interface EmailConfigTabProps {
     patchConfig: (patch: Partial<AuthConfig>) => Promise<void>;
 }
 
+function ToggleRow({
+    label,
+    description,
+    checked,
+    disabled,
+    onToggle,
+    icon: Icon,
+}: {
+    label: string;
+    description: string;
+    checked: boolean;
+    disabled?: boolean;
+    onToggle: () => void;
+    icon: React.ElementType;
+}) {
+    return (
+        <div className="flex items-start justify-between gap-4 py-4">
+            <div className="flex gap-3">
+                <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                <div>
+                    <p className="font-medium text-sm leading-none">{label}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+                </div>
+            </div>
+            <Switch
+                checked={checked}
+                disabled={disabled}
+                onCheckedChange={onToggle}
+            />
+        </div>
+    );
+}
+
 export function EmailConfigTab({ config, saving, patchConfig }: EmailConfigTabProps) {
+    const t = useTranslations("Admin.Config.Email");
     const [emailForm, setEmailForm] = useState<Partial<AuthConfig>>({});
     const [isEmailModified, setIsEmailModified] = useState(false);
     const [testEmail, setTestEmail] = useState("");
-    const [sendingTest, setSendingTest] = useState(false);
+    const [testingEmail, setTestingEmail] = useState(false);
 
     useEffect(() => {
         setEmailForm({
@@ -48,7 +83,7 @@ export function EmailConfigTab({ config, saving, patchConfig }: EmailConfigTabPr
 
     const handleSave = async () => {
         await patchConfig(emailForm);
-        toast.success("Email configuration updated");
+        toast.success(t("success"));
         setIsEmailModified(false);
     };
 
@@ -65,180 +100,176 @@ export function EmailConfigTab({ config, saving, patchConfig }: EmailConfigTabPr
         setIsEmailModified(false);
     };
 
-    const handleSendTestEmail = async () => {
-        if (!testEmail) return;
-        setSendingTest(true);
+    const handleTestEmail = async () => {
+        if (!testEmail.trim()) return;
+        setTestingEmail(true);
         try {
             await apiFetch("/admin/auth-config/test-email", {
                 method: "POST",
                 body: JSON.stringify({ email: testEmail }),
             });
-            toast.success(`Test email sent to ${testEmail}`);
-        } catch (err: any) {
-            const message = err?.message || "Failed to send test email. Check your SMTP settings.";
-            toast.error(message);
+            toast.success(t("test.success", { email: testEmail }));
+        } catch {
+            toast.error(t("test.error"));
         } finally {
-            setSendingTest(false);
+            setTestingEmail(false);
         }
     };
 
     return (
-        <TabsContent value="email" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <p className="text-sm text-muted-foreground">
-                Configure SMTP settings to enable email notifications and verification codes.
-            </p>
-
+        <TabsContent value="email" className="mt-6 space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <Card>
                 <CardHeader>
-                    <div className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2">
                         <Mail className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-base">SMTP Configuration</CardTitle>
-                    </div>
+                        {t("title")}
+                    </CardTitle>
                     <CardDescription>
-                        These settings are used for all outgoing emails. If left empty, the platform defaults to environment variables.
+                        {t("descriptionCard")}
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
-                            <Label htmlFor="smtp-host">SMTP Host</Label>
+                            <Label htmlFor="smtp_host">{t("host")}</Label>
                             <Input
-                                id="smtp-host"
-                                placeholder="smtp.gmail.com"
-                                value={emailForm.smtp_host ?? config.smtp_host ?? ""}
+                                id="smtp_host"
+                                placeholder={t("placeholders.host")}
+                                value={emailForm.smtp_host || ""}
                                 onChange={(e) => {
-                                    setEmailForm(prev => ({ ...prev, smtp_host: e.target.value }));
+                                    setEmailForm((prev) => ({ ...prev, smtp_host: e.target.value }));
                                     setIsEmailModified(true);
                                 }}
-                                className="h-9"
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="smtp-ip">SMTP IP Address (Optional Override)</Label>
+                            <Label htmlFor="smtp_ip">{t("ip")}</Label>
                             <Input
-                                id="smtp-ip"
-                                placeholder="10.0.0.5"
-                                value={emailForm.smtp_ip ?? config.smtp_ip ?? ""}
+                                id="smtp_ip"
+                                placeholder={t("placeholders.ip", { defaultValue: "1.2.3.4" })}
+                                value={emailForm.smtp_ip || ""}
                                 onChange={(e) => {
-                                    setEmailForm(prev => ({ ...prev, smtp_ip: e.target.value }));
+                                    setEmailForm((prev) => ({ ...prev, smtp_ip: e.target.value }));
                                     setIsEmailModified(true);
                                 }}
-                                className="h-9"
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="smtp-port">SMTP Port</Label>
+                            <Label htmlFor="smtp_port">{t("port")}</Label>
                             <Input
-                                id="smtp-port"
+                                id="smtp_port"
                                 type="number"
-                                placeholder="587"
-                                value={emailForm.smtp_port ?? config.smtp_port ?? ""}
+                                placeholder={t("placeholders.port")}
+                                value={emailForm.smtp_port ?? ""}
                                 onChange={(e) => {
-                                    setEmailForm(prev => ({ ...prev, smtp_port: parseInt(e.target.value) || null }));
+                                    setEmailForm((prev) => ({ ...prev, smtp_port: parseInt(e.target.value) || 0 }));
                                     setIsEmailModified(true);
                                 }}
-                                className="h-9"
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="smtp-user">SMTP User</Label>
+                            <Label htmlFor="smtp_user">{t("user")}</Label>
                             <Input
-                                id="smtp-user"
-                                placeholder="user@example.com"
-                                value={emailForm.smtp_user ?? config.smtp_user ?? ""}
+                                id="smtp_user"
+                                placeholder={t("placeholders.user")}
+                                value={emailForm.smtp_user || ""}
                                 onChange={(e) => {
-                                    setEmailForm(prev => ({ ...prev, smtp_user: e.target.value }));
+                                    setEmailForm((prev) => ({ ...prev, smtp_user: e.target.value }));
                                     setIsEmailModified(true);
                                 }}
-                                className="h-9"
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="smtp-password">SMTP Password</Label>
+                            <Label htmlFor="smtp_password">{t("password")}</Label>
                             <Input
-                                id="smtp-password"
+                                id="smtp_password"
                                 type="password"
-                                placeholder="••••••••••••"
-                                value={emailForm.smtp_password ?? config.smtp_password ?? ""}
+                                placeholder={t("placeholders.password")}
+                                autoComplete="off"
+                                value={emailForm.smtp_password || ""}
                                 onChange={(e) => {
-                                    setEmailForm(prev => ({ ...prev, smtp_password: e.target.value }));
+                                    setEmailForm((prev) => ({ ...prev, smtp_password: e.target.value }));
                                     setIsEmailModified(true);
                                 }}
-                                className="h-9"
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="smtp-from">From Email Address</Label>
+                            <Label htmlFor="smtp_from">{t("from")}</Label>
                             <Input
-                                id="smtp-from"
-                                placeholder="WikINT <noreply@wikint.com>"
-                                value={emailForm.smtp_from ?? config.smtp_from ?? ""}
+                                id="smtp_from"
+                                placeholder={t("placeholders.from")}
+                                value={emailForm.smtp_from || ""}
                                 onChange={(e) => {
-                                    setEmailForm(prev => ({ ...prev, smtp_from: e.target.value }));
+                                    setEmailForm((prev) => ({ ...prev, smtp_from: e.target.value }));
                                     setIsEmailModified(true);
                                 }}
-                                className="h-9"
                             />
-                        </div>
-                        <div className="space-y-2 flex flex-col justify-end">
-                            <div className="flex items-center gap-2 pb-2">
-                                <Switch
-                                    id="smtp-tls"
-                                    checked={emailForm.smtp_use_tls ?? config.smtp_use_tls}
-                                    onCheckedChange={(val) => {
-                                        setEmailForm(prev => ({ ...prev, smtp_use_tls: val }));
-                                        setIsEmailModified(true);
-                                    }}
-                                />
-                                <Label htmlFor="smtp-tls">Use TLS / STARTTLS</Label>
-                            </div>
                         </div>
                     </div>
 
-                    <div className="flex justify-end pt-4 border-t gap-3">
+                    <ToggleRow
+                        icon={Mail}
+                        label={t("tls")}
+                        description={t("description")}
+                        checked={emailForm.smtp_use_tls ?? config.smtp_use_tls}
+                        onToggle={() => {
+                            setEmailForm((prev) => ({
+                                ...prev,
+                                smtp_use_tls: !prev.smtp_use_tls,
+                            }));
+                            setIsEmailModified(true);
+                        }}
+                    />
+                    
+                    <div className="flex justify-end gap-3 pt-4 border-t">
                         {isEmailModified && (
                             <Button variant="outline" onClick={handleDiscard}>
-                                Discard Changes
+                                {t("discard")}
                             </Button>
                         )}
-                        <Button
-                            disabled={saving || !isEmailModified}
+                        <Button 
                             onClick={handleSave}
+                            disabled={saving || (!isEmailModified && !!config)}
+                            className="gap-2"
                         >
-                            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Save Email Settings
+                            {saving ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Save className="h-4 w-4" />
+                            )}
+                            {t("save")}
                         </Button>
                     </div>
                 </CardContent>
             </Card>
 
-            <Card className="border-primary/20 bg-primary/5">
+            <Card>
                 <CardHeader>
-                    <CardTitle className="text-base">Test Connection</CardTitle>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <Send className="h-4 w-4 text-muted-foreground" />
+                        {t("test.title")}
+                    </CardTitle>
                     <CardDescription>
-                        Send a test email to verify your SMTP settings. Save your changes before testing.
+                        {t("test.description")}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 max-w-md">
                         <Input
-                            placeholder="your-email@example.com"
+                            placeholder={t("test.placeholder")}
                             value={testEmail}
                             onChange={(e) => setTestEmail(e.target.value)}
-                            className="max-w-[300px] h-9"
                         />
                         <Button
-                            variant="secondary"
-                            disabled={sendingTest || !testEmail}
-                            onClick={handleSendTestEmail}
-                            className="h-9"
+                            variant="outline"
+                            onClick={handleTestEmail}
+                            disabled={!testEmail || testingEmail}
                         >
-                            {sendingTest ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            {testingEmail ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
-                                <Mail className="h-4 w-4 mr-2" />
+                                t("test.button")
                             )}
-                            Send Test Email
                         </Button>
                     </div>
                 </CardContent>

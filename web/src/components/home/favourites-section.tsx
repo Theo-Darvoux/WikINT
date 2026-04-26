@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Heart, ChevronRight } from "lucide-react";
+import { ChevronRight, Bookmark } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MaterialCard } from "./material-card";
+import { useTranslations } from "next-intl";
 import { SectionHeader } from "./section-header";
+import { Button } from "@/components/ui/button";
 import type { MaterialDetail } from "./types";
 
 const MAX_CARDS = 6;
@@ -33,20 +35,21 @@ function SkeletonCard() {
 }
 
 function SeeAllFavouritesCard() {
+  const t = useTranslations("Home");
   return (
     <Link
       href="/profile"
       className="block w-[180px] flex-none sm:w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-xl"
-      aria-label="See all favourites"
+      aria-label={t("seeAllFavourites")}
     >
       <div className="flex h-full min-h-[200px] sm:min-h-[150px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 p-4 text-center transition-colors hover:bg-muted/60">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
           <ChevronRight className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <p className="text-sm font-semibold text-foreground">See all</p>
+          <p className="text-sm font-semibold text-foreground">{t("seeAll")}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            View your profile
+            {t("viewYourProfile")}
           </p>
         </div>
       </div>
@@ -58,6 +61,7 @@ export function FavouritesSection({
   materials,
   isLoading = false,
 }: FavouritesSectionProps) {
+  const t = useTranslations("Home");
   // Don't render if not loading and there's nothing to show
   if (!isLoading && materials.length === 0) return null;
 
@@ -65,12 +69,12 @@ export function FavouritesSection({
   const hasMore = materials.length >= MAX_CARDS;
 
   return (
-    <section aria-label="Recently favourited materials">
+    <section aria-label={t("recentlyFavourited")}>
       <SectionHeader
-        title="Your Favourites"
-        subtitle="Materials you've recently saved"
+        title={t("yourFavourites")}
+        subtitle={t("recentlySaved")}
         seeAllHref="/profile"
-        seeAllLabel="View profile"
+        seeAllLabel={t("viewAll")}
       />
 
       {/* Horizontal scroll container */}
@@ -83,8 +87,8 @@ export function FavouritesSection({
           ) : visibleMaterials.length === 0 ? (
             /* Shouldn't normally render (guarded above), but just in case */
             <div className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
-              <Heart className="h-4 w-4 opacity-40" />
-              No favourites yet — browse and save materials you like!
+              <Bookmark className="h-4 w-4 opacity-40" />
+              {t("noFavouritesYet")}
             </div>
           ) : (
             <>

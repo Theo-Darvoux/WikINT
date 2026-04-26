@@ -4,12 +4,14 @@ import { useEffect, useState, useId } from "react";
 import mermaid from "mermaid";
 import { useTheme } from "next-themes";
 import { Loader2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 interface MermaidProps {
     chart: string;
 }
 
 export function Mermaid({ chart }: MermaidProps) {
+    const t = useTranslations("Viewers.mermaid");
     const { resolvedTheme } = useTheme();
     const [svg, setSvg] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -22,7 +24,7 @@ export function Mermaid({ chart }: MermaidProps) {
         const renderChart = async () => {
             if (!chart || chart.trim() === "") {
                 if (isMounted) {
-                    setError("Diagram is empty");
+                    setError(t("empty"));
                     setSvg(null);
                 }
                 return;
@@ -30,7 +32,7 @@ export function Mermaid({ chart }: MermaidProps) {
 
             if (chart.length > MAX_CHART_LENGTH) {
                 if (isMounted) {
-                    setError(`Diagram source is too large (${chart.length} characters, max ${MAX_CHART_LENGTH}) to prevent performance issues.`);
+                    setError(t("tooLarge", { length: chart.length, max: MAX_CHART_LENGTH }));
                     setSvg(null);
                 }
                 return;
@@ -58,7 +60,7 @@ export function Mermaid({ chart }: MermaidProps) {
                 console.error("Mermaid render error:", err);
                 if (isMounted) {
                     const message = err instanceof Error ? err.message : String(err);
-                    setError(message || "Failed to render diagram");
+                    setError(message || t("errorGeneric"));
                     setSvg(null);
                 }
             }
@@ -74,7 +76,7 @@ export function Mermaid({ chart }: MermaidProps) {
     if (error) {
         return (
             <div className="my-4 rounded-md border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
-                <span className="font-semibold text-base block mb-1">Mermaid Rendering Error</span>
+                <span className="font-semibold text-base block mb-1">{t("title")}</span>
                 <p className="font-mono text-xs opacity-90 break-words">{error}</p>
             </div>
         );
@@ -84,7 +86,7 @@ export function Mermaid({ chart }: MermaidProps) {
         return (
             <div className="my-4 flex items-center justify-center rounded-md bg-muted p-8 animate-pulse border border-border">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Rendering diagram...</span>
+                <span className="text-sm text-muted-foreground">{t("rendering")}</span>
             </div>
         );
     }

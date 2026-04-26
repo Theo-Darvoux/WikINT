@@ -4,15 +4,17 @@ import React, { createContext, useContext, useState } from "react";
 import {
   MoreVertical,
   Download,
+  Edit2,
+  Link as LinkIcon,
+  Paperclip,
   Printer,
-  Edit,
   Trash2,
   Plus,
   Send,
   Loader2,
-  Share2,
-  Paperclip,
+  ShieldAlert,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,8 +71,15 @@ const ActionsContext = createContext<ActionsContextValue | null>(null);
 // ─── Logic Hook ───────────────────────────────────────────────────────────────
 
 function useItemActions(item: ItemData) {
+  const t = useTranslations("Browse");
+  const tAuto = useTranslations("AutoTitle");
   const triggerBrowseRefresh = useBrowseRefreshStore((s) => s.triggerBrowseRefresh);
   const { addOperation, operations, removeOperation } = useStagingStore();
+  const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const isPreview = searchParams?.has("preview_pr");
+  const isDraft = item.id.startsWith("$");
+  const isRestricted = isPreview || isDraft || !!item.staged;
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -112,7 +121,7 @@ function useItemActions(item: ItemData) {
       });
       if (idx !== -1) {
         removeOperation(idx);
-        toast.success("Creation cancelled and removed from draft");
+        toast.success(t("creationCancelled"));
       }
     } else {
       if (isMaterial) {
@@ -126,7 +135,7 @@ function useItemActions(item: ItemData) {
           directory_id: item.id,
         });
       }
-      toast.success("Added deletion to current draft");
+      toast.success(t("addedDeletionToDraft"));
     }
     setDeleteDialogOpen(false);
   };
@@ -142,12 +151,12 @@ function useItemActions(item: ItemData) {
           op: "delete_directory",
           directory_id: item.id,
         },
-      ]);
-      toast.success(`${isMaterial ? "Material" : "Folder"} deleted successfully`);
+      ], undefined, undefined, tAuto);
+      toast.success(t("itemDeletedSuccessfully", { type: isMaterial ? t("material") : t("folder") }));
       setDeleteDialogOpen(false);
       triggerBrowseRefresh();
     } catch {
-      toast.error("Failed to delete item");
+      toast.error(t("failedToDeleteItem"));
     } finally {
       setDeleting(false);
     }
@@ -164,10 +173,11 @@ function useItemActions(item: ItemData) {
   const handleShare = () => {
     const url = window.location.href; // In real app, we might want a specific item link
     navigator.clipboard.writeText(url);
-    toast.success("Link copied to clipboard");
+    toast.success(t("linkCopied"));
   };
 
   return {
+    t,
     title,
     isMaterial,
     viewerType,
@@ -185,6 +195,7 @@ function useItemActions(item: ItemData) {
     print,
     isPrinting,
     canPrint,
+    isRestricted,
   };
 }
 
@@ -194,6 +205,7 @@ function MenuItemsList({ isContextMenu = false }: { isContextMenu?: boolean }) {
   const context = useContext(ActionsContext);
   if (!context) return null;
   const { item, actions } = context;
+  const { t } = actions;
 
   const Item = isContextMenu ? ContextMenuItem : DropdownMenuItem;
   const Separator = isContextMenu ? ContextMenuSeparator : DropdownMenuSeparator;
@@ -207,10 +219,10 @@ function MenuItemsList({ isContextMenu = false }: { isContextMenu?: boolean }) {
   return (
     <>
       <Label className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-        {actions.isMaterial ? "Material Actions" : "Folder Actions"}
+        {actions.isMaterial ? t("materialActions") : t("folderActions")}
       </Label>
 
-      {actions.isMaterial && !isCreated && (
+      {actions.isMaterial && !actions.isRestricted && (
         <>
           <Item
             onClick={() => downloadMaterial(item.id)}
@@ -218,7 +230,7 @@ function MenuItemsList({ isContextMenu = false }: { isContextMenu?: boolean }) {
             className="cursor-pointer"
           >
             {isDownloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            <span>Download</span>
+            <span>{t("download")}</span>
           </Item>
           {canPrint && (
             <Item
@@ -227,33 +239,33 @@ function MenuItemsList({ isContextMenu = false }: { isContextMenu?: boolean }) {
               className="cursor-pointer"
             >
               {isPrinting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-              <span>Print</span>
+              <span>{t("print")}</span>
             </Item>
           )}
           {context.onAddAttachment && (
             <Item onClick={context.onAddAttachment} className="cursor-pointer">
               <Paperclip className="mr-2 h-4 w-4" />
-              <span>Add Attachment</span>
+              <span>{t("addAttachment")}</span>
             </Item>
           )}
           <Separator />
         </>
       )}
 
-      {!isCreated && (
+      {!actions.isRestricted && (
         <>
           <Item onClick={() => actions.setEditDialogOpen(true)} className="cursor-pointer">
-            <Edit className="mr-2 h-4 w-4" />
-            <span>Edit</span>
+            <Edit2 className="mr-2 h-4 w-4" />
+            <span>{t("edit")}</span>
           </Item>
           <Item onClick={actions.handleShare} className="cursor-pointer">
-            <Share2 className="mr-2 h-4 w-4" />
-            <span>Copy Link</span>
+            <LinkIcon className="mr-2 h-4 w-4" />
+            <span>{t("copyLink")}</span>
           </Item>
         </>
       )}
 
-      {actions.isMaterial && !isStaged && (
+      {actions.isMaterial && !actions.isRestricted && (
         <div onClick={(e) => e.stopPropagation()}>
           <FlagButton
             targetType="material"
@@ -273,7 +285,7 @@ function MenuItemsList({ isContextMenu = false }: { isContextMenu?: boolean }) {
         className="cursor-pointer"
       >
         <Trash2 className="mr-2 h-4 w-4" />
-        <span>{isCreated ? "Discard Draft" : "Delete"}</span>
+        <span>{isCreated ? t("discardDraft") : t("delete")}</span>
       </Item>
     </>
   );
@@ -293,6 +305,7 @@ export function ItemActionsMenu({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { staged, isExternal, ...rest } = item;
   const actions = useItemActions(item);
+  const { t } = actions;
 
   return (
     <ActionsContext.Provider value={{ item, actions, onAddAttachment }}>
@@ -317,19 +330,19 @@ export function ItemActionsMenu({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
-              <Trash2 className="h-5 w-5" />
-              {item.staged === "created" ? "Discard Draft" : `Delete ${actions.isMaterial ? "Material" : "Folder"}`}
+              <ShieldAlert className="h-5 w-5" />
+              {item.staged === "created" ? t("discardDraft") : t("deleteTitle", { type: actions.isMaterial ? t("material") : t("folder") })}
             </DialogTitle>
             <DialogDescription>
               {item.staged === "created"
-                ? `Are you sure you want to discard this staged ${item.type}? All unsaved changes will be lost.`
-                : <>Are you sure you want to permanently delete <span className="font-semibold text-foreground">{actions.title}</span>?</>
+                ? t("discardDraftConfirm", { type: item.type === "material" ? t("material") : t("folder") })
+                : <>{t("deletePermanentlyConfirm")} <span className="font-semibold text-foreground">{actions.title}</span>?</>
               }
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0 mt-6">
             <Button variant="ghost" onClick={() => actions.setDeleteDialogOpen(false)} disabled={actions.deleting} className="sm:mr-auto">
-              Cancel
+              {t("cancel")}
             </Button>
 
             {item.staged !== "created" && (
@@ -340,7 +353,7 @@ export function ItemActionsMenu({
                 className="gap-2 border-dashed border-destructive/40 text-destructive hover:bg-destructive/5 hover:border-destructive/60"
               >
                 <Plus className="h-4 w-4" />
-                Draft
+                {t("draft")}
               </Button>
             )}
 
@@ -351,7 +364,7 @@ export function ItemActionsMenu({
               className="gap-2 shadow-sm"
             >
               {actions.deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : (item.staged === "created" ? <Trash2 className="h-4 w-4" /> : <Send className="h-4 w-4" />)}
-              {item.staged === "created" ? "Discard" : "Delete Now"}
+              {item.staged === "created" ? t("discard") : t("deleteNow")}
             </Button>
           </DialogFooter>
         </DialogContent>

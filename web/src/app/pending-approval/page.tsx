@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 
+import { useTranslations } from "next-intl";
+
 export default function PendingApprovalPage() {
+    const t = useTranslations("PendingApproval");
     const { user, isAuthenticated, isLoading, logout } = useAuth();
     const router = useRouter();
 
@@ -38,9 +41,9 @@ export default function PendingApprovalPage() {
 
                 {/* Heading */}
                 <div className="space-y-2">
-                    <h1 className="text-3xl font-bold tracking-tight">Awaiting Approval</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">{t("title")}</h1>
                     <p className="text-muted-foreground">
-                        Your account has been created and is pending review by a platform administrator.
+                        {t("description")}
                     </p>
                 </div>
 
@@ -49,15 +52,13 @@ export default function PendingApprovalPage() {
                     <div className="flex items-start gap-3">
                         <Mail className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                         <div>
-                            <p className="font-medium text-sm">Registered as</p>
+                            <p className="font-medium text-sm">{t("registeredAs")}</p>
                             <p className="text-sm text-muted-foreground">{user?.email ?? "—"}</p>
                         </div>
                     </div>
                     <div className="border-t pt-4">
                         <p className="text-sm text-muted-foreground leading-relaxed">
-                            An administrator has been notified and will review your request shortly.
-                            You&apos;ll receive access as soon as your account is approved.
-                            No further action is required from you.
+                            {t("info")}
                         </p>
                     </div>
                 </div>
@@ -70,7 +71,7 @@ export default function PendingApprovalPage() {
                         onClick={handleLogout}
                     >
                         <LogOut className="mr-2 h-4 w-4" />
-                        Sign out
+                        {t("signOut")}
                     </Button>
                 </div>
             </div>

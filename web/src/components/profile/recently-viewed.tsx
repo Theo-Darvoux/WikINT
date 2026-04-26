@@ -22,6 +22,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api-client";
 import type React from "react";
+import { useTranslations } from "next-intl";
 
 interface RecentMaterial {
     id: string;
@@ -41,14 +42,14 @@ interface Visuals {
     label: string;
 }
 
-const MATERIAL_TYPES: Record<string, Visuals> = {
-    polycopie:  { icon: FileText,       color: "text-blue-600 dark:text-blue-400",    bg: "bg-blue-100 dark:bg-blue-950/50",    label: "Polycopié" },
-    annal:      { icon: FileText,       color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-100 dark:bg-orange-950/50", label: "Annale" },
-    cheatsheet: { icon: FileText,       color: "text-green-600 dark:text-green-400",  bg: "bg-green-100 dark:bg-green-950/50",  label: "Cheatsheet" },
-    tip:        { icon: Lightbulb,      color: "text-yellow-600 dark:text-yellow-400", bg: "bg-yellow-100 dark:bg-yellow-950/50", label: "Tip" },
-    review:     { icon: ClipboardCheck, color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-100 dark:bg-purple-950/50", label: "Review" },
-    discussion: { icon: MessageSquare,  color: "text-pink-600 dark:text-pink-400",    bg: "bg-pink-100 dark:bg-pink-950/50",    label: "Discussion" },
-    video:      { icon: Video,          color: "text-red-600 dark:text-red-400",      bg: "bg-red-100 dark:bg-red-950/50",      label: "Video" },
+const MATERIAL_TYPES: Record<string, Omit<Visuals, "label"> & { labelKey: string }> = {
+    polycopie:  { icon: FileText,       color: "text-blue-600 dark:text-blue-400",    bg: "bg-blue-100 dark:bg-blue-950/50",    labelKey: "polycopie" },
+    annal:      { icon: FileText,       color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-100 dark:bg-orange-950/50", labelKey: "annal" },
+    cheatsheet: { icon: FileText,       color: "text-green-600 dark:text-green-400",  bg: "bg-green-100 dark:bg-green-950/50",  labelKey: "cheatsheet" },
+    tip:        { icon: Lightbulb,      color: "text-yellow-600 dark:text-yellow-400", bg: "bg-yellow-100 dark:bg-yellow-950/50", labelKey: "tip" },
+    review:     { icon: ClipboardCheck, color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-100 dark:bg-purple-950/50", labelKey: "review" },
+    discussion: { icon: MessageSquare,  color: "text-pink-600 dark:text-pink-400",    bg: "bg-pink-100 dark:bg-pink-950/50",    labelKey: "discussion" },
+    video:      { icon: Video,          color: "text-red-600 dark:text-red-400",      bg: "bg-red-100 dark:bg-red-950/50",      labelKey: "video" },
 };
 
 const EXT_VISUALS: Record<string, Visuals> = {
@@ -68,20 +69,22 @@ const EXT_VISUALS: Record<string, Visuals> = {
     epub: { icon: FileText,        color: "text-teal-600 dark:text-teal-400",    bg: "bg-teal-100 dark:bg-teal-950/50",    label: "EPUB" },
 };
 
-const DEFAULT_VIS: Visuals = { icon: File, color: "text-slate-500 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800/50", label: "File" };
+const DEFAULT_VIS: Omit<Visuals, "label"> & { labelKey: string } = { icon: File, color: "text-slate-500 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800/50", labelKey: "file" };
 
-function getVisuals(type: string, slug: string): Visuals {
+function getVisuals(type: string, slug: string): Visuals | (Omit<Visuals, "label"> & { labelKey: string }) {
     if (MATERIAL_TYPES[type]) return MATERIAL_TYPES[type];
     const ext = slug.split(".").pop()?.toLowerCase();
     if (ext && EXT_VISUALS[ext]) return EXT_VISUALS[ext];
     if (type && type !== "document" && type !== "other")
-        return { ...DEFAULT_VIS, label: type.charAt(0).toUpperCase() + type.slice(1) };
+        return { ...DEFAULT_VIS, labelKey: "file", label: type.charAt(0).toUpperCase() + type.slice(1) } as any;
     return DEFAULT_VIS;
 }
 
 /* ── Component ── */
 
 export function RecentlyViewed() {
+    const t = useTranslations("Profile");
+    const tMat = useTranslations("MaterialTypes");
     const [materials, setMaterials] = useState<RecentMaterial[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -115,9 +118,9 @@ export function RecentlyViewed() {
                 <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
                     <Clock className="h-5 w-5 text-muted-foreground/50" />
                 </div>
-                <p className="text-sm font-medium text-muted-foreground">No recent history</p>
+                <p className="text-sm font-medium text-muted-foreground">{t("noRecentHistory")}</p>
                 <p className="mt-1 text-xs text-muted-foreground/80">
-                    Materials you view will appear here.
+                    {t("recentHistoryDesc")}
                 </p>
             </div>
         );
@@ -155,7 +158,7 @@ export function RecentlyViewed() {
                                 </div>
 
                                 <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${vis.color} ${vis.bg}`}>
-                                    {vis.label}
+                                    {"labelKey" in vis ? tMat(vis.labelKey as any) : (vis as any).label}
                                 </span>
 
                                 <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-all group-hover:text-muted-foreground/70 group-hover:translate-x-0.5" />

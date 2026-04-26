@@ -20,6 +20,7 @@ import {
     Loader2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useTranslations } from "next-intl";
 
 const OP_ICONS: Record<string, React.ElementType> = {
     create_material: FilePlus,
@@ -46,6 +47,8 @@ interface DirectoryOpenPRsProps {
 }
 
 export function DirectoryOpenPRs({ directoryId }: DirectoryOpenPRsProps) {
+    const t = useTranslations("Browse");
+    const tPRs = useTranslations("PRs");
     const [prs, setPrs] = useState<PR[]>([]);
     const [totalCount, setTotalCount] = useState(0);
     const [page, setPage] = useState(1);
@@ -112,8 +115,8 @@ export function DirectoryOpenPRs({ directoryId }: DirectoryOpenPRsProps) {
                 <div className="flex items-center gap-2">
                     <Send className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                     <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-                        {totalCount} open contribution
-                        {totalCount !== 1 ? "s" : ""} in this folder
+                        {t("openContributionCount", { count: totalCount })}{" "}
+                        <span className="opacity-70">{t("inThisFolder")}</span>
                     </span>
                 </div>
                 {isExpanded ? (
@@ -160,15 +163,7 @@ export function DirectoryOpenPRs({ directoryId }: DirectoryOpenPRsProps) {
                                                         {Icon && (
                                                             <Icon className="h-2.5 w-2.5" />
                                                         )}
-                                                        {t
-                                                            .split("_")
-                                                            .map(
-                                                                (w) =>
-                                                                    w.charAt(0)
-                                                                        .toUpperCase() +
-                                                                    w.slice(1),
-                                                            )
-                                                            .join(" ")}
+                                                        {tPRs.has(`operations.${t}`) ? tPRs(`operations.${t}`) : t.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
                                                     </Badge>
                                                 );
                                             })}
@@ -179,7 +174,7 @@ export function DirectoryOpenPRs({ directoryId }: DirectoryOpenPRsProps) {
                                                 new Date(pr.created_at),
                                                 { addSuffix: true },
                                             )}{" "}
-                                            by{" "}
+                                            {t("by")}{" "}
                                             {pr.author?.display_name || "[deleted]"}
                                         </p>
                                     </div>
@@ -199,11 +194,11 @@ export function DirectoryOpenPRs({ directoryId }: DirectoryOpenPRsProps) {
                                 className="text-amber-700 dark:text-amber-400 hover:bg-amber-100/50 dark:hover:bg-amber-900/20 h-8 gap-1"
                             >
                                 <ChevronLeft className="h-4 w-4" />
-                                Previous
+                                {t("previous")}
                             </Button>
                             
                             <span className="text-[10px] font-medium text-amber-800/60 dark:text-amber-300/60">
-                                Page {page} of {totalPages}
+                                {t("pageOf", { page, total: totalPages })}
                             </span>
 
                             <Button
@@ -213,7 +208,7 @@ export function DirectoryOpenPRs({ directoryId }: DirectoryOpenPRsProps) {
                                 onClick={(e) => { e.stopPropagation(); handlePageChange(page + 1); }}
                                 className="text-amber-700 dark:text-amber-400 hover:bg-amber-100/50 dark:hover:bg-amber-900/20 h-8 gap-1"
                             >
-                                Next
+                                {t("next")}
                                 <ChevronRight className="h-4 w-4" />
                             </Button>
                         </div>

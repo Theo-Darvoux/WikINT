@@ -11,6 +11,7 @@ import {
 } from "@/components/annotations/annotation-thread";
 import { useAnnotationsContext } from "@/hooks/use-annotations";
 import { useAuthStore } from "@/lib/stores";
+import { useTranslations } from "next-intl";
 
 interface SidebarTarget {
   type: "directory" | "material";
@@ -20,11 +21,13 @@ interface SidebarTarget {
 
 interface AnnotationsTabProps {
   target: SidebarTarget | null;
+  disabled?: boolean;
 }
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-export function AnnotationsTab({ target }: AnnotationsTabProps) {
+export function AnnotationsTab({ target, disabled = false }: AnnotationsTabProps) {
+  const t = useTranslations("Sidebar");
   const { user } = useAuthStore();
   const ctx = useAnnotationsContext();
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -35,7 +38,7 @@ export function AnnotationsTab({ target }: AnnotationsTabProps) {
     return (
       <div className="p-4">
         <p className="text-sm text-muted-foreground">
-          Annotations are only available for materials.
+          {t("annotationsOnlyForMaterials")}
         </p>
       </div>
     );
@@ -50,30 +53,33 @@ export function AnnotationsTab({ target }: AnnotationsTabProps) {
   } = ctx;
 
   const handleReply = (annotationId: string) => {
+    if (disabled) return;
     setReplyingTo(annotationId);
     setEditingId(null);
   };
 
   const handleSubmitReply = async (body: string) => {
-    if (!replyingTo) return;
+    if (!replyingTo || disabled) return;
     await createAnnotation(body, undefined, undefined, undefined, replyingTo);
     setReplyingTo(null);
   };
 
   const handleStartEdit = (id: string, body: string) => {
+    if (disabled) return;
     setEditingId(id);
     setEditBody(body);
     setReplyingTo(null);
   };
 
   const handleSaveEdit = async () => {
-    if (!editingId || !editBody.trim()) return;
+    if (!editingId || !editBody.trim() || disabled) return;
     await editAnnotation(editingId, editBody.trim());
     setEditingId(null);
     setEditBody("");
   };
 
   const handleDelete = async (id: string) => {
+    if (disabled) return;
     await deleteAnnotation(id);
   };
 
@@ -101,10 +107,10 @@ export function AnnotationsTab({ target }: AnnotationsTabProps) {
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <MessageCircle className="mb-3 h-8 w-8 text-muted-foreground/50" />
               <p className="text-sm text-muted-foreground">
-                No annotations yet.
+                {t("noAnnotationsYet")}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Select text in the document to start annotating.
+                {t("selectTextToAnnotate")}
               </p>
             </div>
           )}
@@ -125,8 +131,8 @@ export function AnnotationsTab({ target }: AnnotationsTabProps) {
                   <div className="ml-4 mt-2">
                     <AnnotationForm
                       onSubmit={handleSubmitReply}
-                      placeholder="Write a reply..."
-                      submitLabel="Reply"
+                      placeholder={t("writeAReply")}
+                      submitLabel={t("reply")}
                     />
                     <Button
                       variant="ghost"
@@ -134,7 +140,7 @@ export function AnnotationsTab({ target }: AnnotationsTabProps) {
                       className="mt-1"
                       onClick={() => setReplyingTo(null)}
                     >
-                      Cancel
+                      {t("cancel")}
                     </Button>
                   </div>
                 )}
@@ -163,7 +169,7 @@ export function AnnotationsTab({ target }: AnnotationsTabProps) {
                     onClick={handleSaveEdit}
                     disabled={!editBody.trim() || editBody.length > 1000}
                   >
-                    Save Changes
+                    {t("saveChanges")}
                   </Button>
                   <Button
                     variant="ghost"
@@ -173,7 +179,7 @@ export function AnnotationsTab({ target }: AnnotationsTabProps) {
                       setEditBody("");
                     }}
                   >
-                    Cancel
+                    {t("cancel")}
                   </Button>
                 </div>
               </div>

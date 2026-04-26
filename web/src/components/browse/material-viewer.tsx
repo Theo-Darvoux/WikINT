@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Download,
@@ -140,6 +140,7 @@ import { useAnnotations, AnnotationsContext } from "@/hooks/use-annotations";
 import { ItemActionsMenu, ItemActionsDropdownTrigger, type ItemData } from "@/components/browse/item-actions-menu";
 import { useDownload } from "@/hooks/use-download";
 import { usePrint } from "@/hooks/use-print";
+import { useTranslations } from "next-intl";
 
 interface MaterialViewerProps {
   material: Record<string, unknown>;
@@ -152,8 +153,12 @@ export function MaterialViewer({
   material,
   breadcrumbs = [],
 }: MaterialViewerProps) {
+  const t = useTranslations("Browse");
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
+
+  const isRestricted = (material.id as string)?.startsWith("$") || !!searchParams.get("preview_pr");
 
   // Derive the parent folder URL by dropping the last path segment
   const parentFolderHref = (() => {
@@ -288,7 +293,7 @@ export function MaterialViewer({
                 size="icon"
                 className="shrink-0"
                 onClick={() => router.push(parentFolderHref)}
-                title="Back to parent folder"
+                title={t("backToParentFolder")}
               >
                 <ArrowLeft className="h-5 w-5" />
               </Button>
@@ -316,7 +321,7 @@ export function MaterialViewer({
                 size="icon"
                 className="shrink-0"
                 onClick={() => setMaterialActionsOpen(true)}
-                aria-label="Document actions"
+                aria-label={t("documentActions")}
               >
                 <MoreVertical className="h-5 w-5" />
               </Button>
@@ -338,7 +343,7 @@ export function MaterialViewer({
                           className="h-8 w-8 shrink-0"
                           onClick={() => print()}
                           disabled={isPrinting}
-                          title="Print document"
+                          title={t("printDocument")}
                         >
                           {isPrinting ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -353,7 +358,7 @@ export function MaterialViewer({
                         className="h-8 w-8 shrink-0"
                         onClick={() => downloadMaterial(materialId)}
                         disabled={isDownloading}
-                        title="Download document"
+                        title={t("downloadDocument")}
                       >
                         {isDownloading ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -368,7 +373,7 @@ export function MaterialViewer({
                   variant={sidebarOpen ? "secondary" : "outline"}
                   size="icon"
                   className="h-8 w-8 shrink-0"
-                  title={sidebarOpen ? "Close inspector" : "Open inspector"}
+                  title={sidebarOpen ? t("closeInspector") : t("openInspector")}
                   onClick={() => {
                     if (sidebarOpen) {
                       closeSidebar();
@@ -463,6 +468,7 @@ export function MaterialViewer({
             <AnnotationSelectionTooltip
               containerRef={viewerContainerRef}
               onSubmit={handleAnnotationSubmit}
+              disabled={isRestricted}
             />
           </div>
         </div>

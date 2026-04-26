@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Folder, FileBox, LayoutList } from "lucide-react";
+import { Folder, FileBox, Loader2, ShieldAlert } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
+import { Card } from "@/components/ui/card";
 
 interface DirectoryItem {
     id: string;
@@ -15,14 +17,20 @@ interface DirectoryItem {
 }
 
 export default function ModeratorDirectoriesPage() {
+    const t = useTranslations("Moderator.directories");
     const [directories, setDirectories] = useState<DirectoryItem[]>([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
+    const fetchDirectories = () => {
         apiFetch<DirectoryItem[]>("/moderator/directories")
             .then(setDirectories)
-            .catch(() => toast.error("Failed to load directories"))
+            .catch(() => toast.error(t("loadError")))
             .finally(() => setLoading(false));
+    };
+
+    useEffect(() => {
+        fetchDirectories();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const buildTree = (items: DirectoryItem[], parentId: string | null = null): React.ReactNode[] => {
@@ -43,7 +51,7 @@ export default function ModeratorDirectoriesPage() {
                     </span>
                     {child.is_system && (
                         <span className="text-[10px] font-medium bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
-                            System
+                            {t("system")}
                         </span>
                     )}
                 </div>
@@ -53,23 +61,41 @@ export default function ModeratorDirectoriesPage() {
     };
 
     if (loading) {
-        return <div className="p-6 text-center text-muted-foreground">Loading directories...</div>;
+        return (
+            <div className="flex items-center justify-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-muted-foreground">{t("loading")}</span>
+            </div>
+        );
     }
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-6">
             <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold flex items-center gap-2">
-                    <LayoutList className="h-5 w-5" />
-                    Directory Structure
-                </h2>
-                <div className="text-sm text-muted-foreground">Read-only view</div>
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">{t("title")}</h1>
+                    <p className="text-muted-foreground">
+                        {t("readOnly")}
+                    </p>
+                </div>
             </div>
+
+            <Card className="p-4 border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900/50">
+                <div className="flex items-start gap-3">
+                    <ShieldAlert className="h-5 w-5 text-amber-600 mt-0.5" />
+                    <div className="text-sm text-amber-800 dark:text-amber-300">
+                        <span className="font-bold uppercase tracking-wider text-[10px] bg-amber-200 dark:bg-amber-800 px-1.5 py-0.5 rounded mr-2">
+                            {t("system")}
+                        </span>
+                        {t("readOnly")}
+                    </div>
+                </div>
+            </Card>
 
             <div className="rounded-lg border bg-card p-4 overflow-x-auto min-h-[300px]">
                 {directories.length === 0 ? (
                     <div className="text-center text-muted-foreground py-12">
-                        No directories found.
+                        {t("empty")}
                     </div>
                 ) : (
                     <div className="-ml-6">

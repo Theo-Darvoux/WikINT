@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pikepdf
 import pytest
 
+from app.config import settings
 from app.core.file_security import (
     CompressResultPath,
     SvgSecurityError,
@@ -577,13 +578,14 @@ class TestScannerPathBased:
 
         scanner = MalwareScanner()
         scanner._scan_yara_path = AsyncMock(return_value="EICAR_test_file")  # type: ignore[method-assign]
-        scanner._check_malwarebazaar = AsyncMock(return_value=None)  # type: ignore[method-assign]
+        scanner.check_malwarebazaar = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
         test_file = tmp_path / "malware.bin"
         test_file.write_bytes(b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR")
 
-        with pytest.raises(BadRequestError, match="ERR_MALWARE_DETECTED"):
-            await scanner.scan_file_path(test_file, "malware.bin")
+        with patch.object(settings, "bazaar_async_enabled", False):
+            with pytest.raises(BadRequestError, match="ERR_MALWARE_DETECTED"):
+                await scanner.scan_file_path(test_file, "malware.bin")
 
     @pytest.mark.asyncio
     async def test_scan_file_path_bazaar_threat_raises(self, tmp_path):
@@ -593,13 +595,14 @@ class TestScannerPathBased:
 
         scanner = MalwareScanner()
         scanner._scan_yara_path = AsyncMock(return_value=None)  # type: ignore[method-assign]
-        scanner._check_malwarebazaar = AsyncMock(return_value="Emotet")  # type: ignore[method-assign]
+        scanner.check_malwarebazaar = AsyncMock(return_value="Emotet")  # type: ignore[method-assign]
 
         test_file = tmp_path / "emotet.doc"
         test_file.write_bytes(b"\xd0\xcf\x11\xe0" + b"\x00" * 50)
 
-        with pytest.raises(BadRequestError, match="ERR_MALWARE_DETECTED"):
-            await scanner.scan_file_path(test_file, "emotet.doc")
+        with patch.object(settings, "bazaar_async_enabled", False):
+            with pytest.raises(BadRequestError, match="ERR_MALWARE_DETECTED"):
+                await scanner.scan_file_path(test_file, "emotet.doc")
 
     @pytest.mark.asyncio
     async def test_scan_file_path_yara_error_fails_closed(self, tmp_path):
@@ -609,13 +612,14 @@ class TestScannerPathBased:
 
         scanner = MalwareScanner()
         scanner._scan_yara_path = AsyncMock(side_effect=RuntimeError("YARA crashed"))  # type: ignore[method-assign]
-        scanner._check_malwarebazaar = AsyncMock(return_value=None)  # type: ignore[method-assign]
+        scanner.check_malwarebazaar = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
         test_file = tmp_path / "file.bin"
         test_file.write_bytes(b"content")
 
-        with pytest.raises(ServiceUnavailableError, match="fail-closed"):
-            await scanner.scan_file_path(test_file, "file.bin")
+        with patch.object(settings, "bazaar_async_enabled", False):
+            with pytest.raises(ServiceUnavailableError, match="fail-closed"):
+                await scanner.scan_file_path(test_file, "file.bin")
 
     @pytest.mark.asyncio
     async def test_scan_file_path_bazaar_error_fails_closed(self, tmp_path):
@@ -625,15 +629,16 @@ class TestScannerPathBased:
 
         scanner = MalwareScanner()
         scanner._scan_yara_path = AsyncMock(return_value=None)  # type: ignore[method-assign]
-        scanner._check_malwarebazaar = AsyncMock(  # type: ignore[method-assign]
+        scanner.check_malwarebazaar = AsyncMock(  # type: ignore[method-assign]
             side_effect=ServiceUnavailableError("Bazaar down")
         )
 
         test_file = tmp_path / "file.bin"
         test_file.write_bytes(b"content")
 
-        with pytest.raises(ServiceUnavailableError, match="fail-closed"):
-            await scanner.scan_file_path(test_file, "file.bin")
+        with patch.object(settings, "bazaar_async_enabled", False):
+            with pytest.raises(ServiceUnavailableError, match="fail-closed"):
+                await scanner.scan_file_path(test_file, "file.bin")
 
     @pytest.mark.asyncio
     async def test_scan_file_path_uses_provided_hash(self, tmp_path):
@@ -642,16 +647,17 @@ class TestScannerPathBased:
 
         scanner = MalwareScanner()
         scanner._scan_yara_path = AsyncMock(return_value=None)  # type: ignore[method-assign]
-        scanner._check_malwarebazaar = AsyncMock(return_value=None)  # type: ignore[method-assign]
+        scanner.check_malwarebazaar = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
         test_file = tmp_path / "file.bin"
         test_file.write_bytes(b"content")
 
         precomputed_hash = "a" * 64
-        await scanner.scan_file_path(test_file, "file.bin", bazaar_hash=precomputed_hash)
+        with patch.object(settings, "bazaar_async_enabled", False):
+            await scanner.scan_file_path(test_file, "file.bin", bazaar_hash=precomputed_hash)
 
         # MalwareBazaar must have been called with the precomputed hash
-        scanner._check_malwarebazaar.assert_called_once_with(precomputed_hash, "file.bin")
+        scanner.check_malwarebazaar.assert_called_once_with(precomputed_hash, "file.bin")
 
     @pytest.mark.asyncio
     async def test_yara_path_not_initialized_raises(self, tmp_path):

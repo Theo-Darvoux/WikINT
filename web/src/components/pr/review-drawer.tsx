@@ -41,7 +41,6 @@ import {
 import { toast } from "sonner";
 import {
     useStagingStore,
-    opLabel,
     type StagedOperation,
     isExpired,
     isExpiringSoon,
@@ -55,6 +54,7 @@ import { StagedItemEditDialog } from "./staged-item-edit-dialog";
 import { useBrowseRefreshStore } from "@/lib/stores";
 import { PreviewDialog } from "./preview-dialog";
 import { apiFetch } from "@/lib/api-client";
+import { useTranslations } from "next-intl";
 
 const OP_ICONS: Record<string, React.ElementType> = {
     create_material: FilePlus,
@@ -82,13 +82,16 @@ function OperationCard({
     onRemove,
     onEdit,
     onPreview,
+    tCommon,
 }: {
     staged: StagedOperation;
     index: number;
     onRemove: (i: number) => void;
     onEdit: (i: number) => void;
     onPreview: (i: number) => void;
+    tCommon: any;
 }) {
+    const t = useTranslations("Staging");
     const op = unwrapOp(staged);
     const Icon = OP_ICONS[op.op] ?? FilePlus;
     const color = OP_COLORS[op.op] ?? "";
@@ -96,6 +99,11 @@ function OperationCard({
     const expired = isExpired(staged);
     const expiringSoon = isExpiringSoon(staged);
     const remaining = msUntilExpiry(staged);
+
+    const label = t(`labels.${op.op}`, {
+        name: (op as any).title || (op as any).name || (op as any).target_title || (op as any).target_name || "",
+        type: (op as any).target_type === "directory" ? t("labels.folder") : t("labels.material")
+    });
 
     return (
         <div className={`rounded-lg border transition-colors ${expired ? "border-red-300 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20" : expiringSoon ? "border-amber-300 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20" : ""}`}>
@@ -105,18 +113,18 @@ function OperationCard({
                 </div>
                 <div className="min-w-0 flex-1">
                     <p className={`text-sm font-medium leading-tight ${expired ? "line-through text-muted-foreground" : ""}`}>
-                        {opLabel(op)}
+                        {label}
                     </p>
                     {expired && hasFileKey(op) && (
                         <p className="text-[11px] text-red-500 flex items-center gap-1 mt-0.5">
                             <AlertTriangle className="h-3 w-3" />
-                            Expired file — remove this item
+                            {t("expiredFile")}
                         </p>
                     )}
                     {expiringSoon && remaining !== null && (
                         <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1 mt-0.5">
                             <Clock className="h-3 w-3" />
-                            Expires in {formatTimeRemaining(remaining)}
+                            {t("expiresIn", { time: formatTimeRemaining(remaining, t) })}
                         </p>
                     )}
                 </div>
@@ -127,7 +135,7 @@ function OperationCard({
                             size="icon"
                             className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
                             onClick={() => onPreview(index)}
-                            aria-label="File preview"
+                            aria-label={t("preview")}
                         >
                             <Eye className="h-3.5 w-3.5" />
                         </Button>
@@ -138,7 +146,7 @@ function OperationCard({
                             size="icon"
                             className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
                             onClick={() => onEdit(index)}
-                            aria-label="Edit"
+                            aria-label={tCommon("edit")}
                         >
                             <FilePenLine className="h-3.5 w-3.5" />
                         </Button>
@@ -148,7 +156,7 @@ function OperationCard({
                         size="icon"
                         className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
                         onClick={() => onRemove(index)}
-                        aria-label="Remove"
+                        aria-label={tCommon("remove")}
                     >
                         <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -159,6 +167,9 @@ function OperationCard({
 }
 
 export function ReviewDrawer() {
+    const t = useTranslations("Staging");
+    const tCommon = useTranslations("Common");
+    const tAuto = useTranslations("AutoTitle");
     const router = useRouter();
     const triggerBrowseRefresh = useBrowseRefreshStore((s) => s.triggerBrowseRefresh);
     const operations = useStagingStore((s) => s.operations) ?? [];
@@ -192,7 +203,7 @@ export function ReviewDrawer() {
                 setPreviewMime(op.file_mime_type || undefined);
             }
         } catch (e) {
-            toast.error((e as Error).message || "Unable to preview this file.");
+            toast.error((e as Error).message || t("unableToPreview"));
         }
     };
 
@@ -204,7 +215,7 @@ export function ReviewDrawer() {
         
         // Auto-title if empty
         if (title === "") {
-            setTitle(autoTitle(ops));
+            setTitle(autoTitle(ops, tAuto));
         }
 
         // Auto-description with path if empty
@@ -226,7 +237,7 @@ export function ReviewDrawer() {
                         } catch { /* ignore */ }
                     } else if (op.op === "move_item") {
                         dirId = op.new_parent_id;
-                        itemName = op.target_title || op.target_name || "item";
+                        itemName = op.target_title || op.target_name || t("item");
                     } else if (op.op === "create_material") {
                         dirId = op.directory_id;
                         itemName = op.title;
@@ -274,7 +285,8 @@ export function ReviewDrawer() {
         const result = await submitDirectOperations(
             operations.map(unwrapOp),
             title,
-            description
+            description,
+            tAuto
         );
         setSubmitting(false);
 
@@ -299,7 +311,7 @@ export function ReviewDrawer() {
         setDescription("");
         setShowDiscardConfirm(false);
         setReviewOpen(false);
-        toast("Draft discarded");
+        toast(t("draftDiscarded"));
     };
 
     // Summarize operation types
@@ -327,13 +339,13 @@ export function ReviewDrawer() {
                 <SheetContent side="right" className="flex w-full flex-col overflow-hidden sm:max-w-lg">
                     <SheetHeader className="space-y-1">
                         <SheetTitle className="flex items-center gap-2">
-                            Contribution Draft
+                            {t("title")}
                             <Badge variant="secondary" className="text-xs">
-                                {operations.length} change{operations.length !== 1 ? "s" : ""}
+                                {t("changesCount", { count: operations.length })}
                             </Badge>
                         </SheetTitle>
                         <SheetDescription>
-                            Review your changes before submitting for review.
+                            {t("description")}
                         </SheetDescription>
                     </SheetHeader>
 
@@ -365,10 +377,10 @@ export function ReviewDrawer() {
                             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
                             <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium text-red-700 dark:text-red-400">
-                                    {expiredCount} expired file{expiredCount !== 1 ? "s" : ""}
+                                    {t("expiredBannerTitle", { count: expiredCount })}
                                 </p>
                                 <p className="text-xs text-red-600/80 dark:text-red-400/70 mt-0.5">
-                                    Uploaded files are deleted after 72 hours. Remove expired items or re-upload them.
+                                    {t("expiredBannerText")}
                                 </p>
                                 <Button
                                     variant="outline"
@@ -376,11 +388,11 @@ export function ReviewDrawer() {
                                     className="mt-2 h-7 text-xs border-red-300 text-red-600 hover:bg-red-100 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950/50"
                                     onClick={() => {
                                         const removed = purgeExpired();
-                                        toast(`${removed} item${removed !== 1 ? "s" : ""} removed`);
+                                        toast(t("itemsRemoved", { count: removed }));
                                     }}
                                 >
                                     <Trash2 className="mr-1.5 h-3 w-3" />
-                                    Remove expired
+                                    {t("removeExpired")}
                                 </Button>
                             </div>
                         </div>
@@ -389,7 +401,7 @@ export function ReviewDrawer() {
                         <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/30 my-4">
                             <Clock className="h-4 w-4 shrink-0 text-amber-500" />
                             <p className="text-xs text-amber-700 dark:text-amber-400">
-                                {expiringSoonCount} file{expiringSoonCount !== 1 ? "s" : ""} expiring soon — submit before they expire
+                                {t("expiringSoonBanner", { count: expiringSoonCount })}
                             </p>
                         </div>
                     )}
@@ -405,11 +417,12 @@ export function ReviewDrawer() {
                                     onRemove={removeOperation}
                                     onEdit={setEditingIndex}
                                     onPreview={handlePreview}
+                                    tCommon={tCommon}
                                 />
                             ))}
                             {operations.length === 0 && (
                                 <p className="py-8 text-center text-sm text-muted-foreground">
-                                    No pending changes.
+                                    {t("noPendingChanges")}
                                 </p>
                             )}
                         </div>
@@ -424,11 +437,11 @@ export function ReviewDrawer() {
                                 htmlFor="pr-title"
                                 className="text-sm font-medium"
                             >
-                                Contribution Title
+                                {t("contributionTitle")}
                             </label>
                             <Input
                                 id="pr-title"
-                                placeholder="Describe your changes…"
+                                placeholder={t("contributionTitlePlaceholder")}
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
                                 maxLength={300}
@@ -439,14 +452,14 @@ export function ReviewDrawer() {
                                 htmlFor="pr-desc"
                                 className="text-sm font-medium"
                             >
-                                Note for moderators{" "}
+                                {t("moderatorNote")}{" "}
                                 <span className="text-muted-foreground">
-                                    (optional)
+                                    {t("optional")}
                                 </span>
                             </label>
                             <Textarea
                                 id="pr-desc"
-                                placeholder="Additional context…"
+                                placeholder={t("moderatorNotePlaceholder")}
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
                                 maxLength={1000}
@@ -466,7 +479,7 @@ export function ReviewDrawer() {
                             ) : (
                                 <Send className="h-4 w-4" />
                             )}
-                            Submit Contribution
+                            {t("submitContribution")}
                         </Button>
                         <Button
                             variant="ghost"
@@ -474,7 +487,7 @@ export function ReviewDrawer() {
                             disabled={operations.length === 0 || submitting}
                             className="w-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         >
-                            Discard all changes
+                            {t("discardAll")}
                         </Button>
                     </div>
                 </SheetContent>
@@ -487,11 +500,10 @@ export function ReviewDrawer() {
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="text-destructive">
-                            Discard draft?
+                            {t("discardDraftTitle")}
                         </DialogTitle>
                         <DialogDescription>
-                            You are about to permanently delete {operations.length}{" "}
-                            pending change{operations.length !== 1 ? "s" : ""}. This action cannot be undone.
+                            {t("discardDraftDescription", { count: operations.length })}
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter className="gap-2 sm:gap-0 mt-2">
@@ -499,7 +511,7 @@ export function ReviewDrawer() {
                             variant="ghost"
                             onClick={() => setShowDiscardConfirm(false)}
                         >
-                            Back
+                            {t("back")}
                         </Button>
                         <Button
                             variant="destructive"
@@ -507,7 +519,7 @@ export function ReviewDrawer() {
                             onClick={handleClear}
                         >
                             <Trash2 className="h-4 w-4" />
-                            Delete
+                            {t("delete")}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

@@ -31,13 +31,14 @@ import {
     DrawerHeader,
     DrawerTitle,
 } from "@/components/ui/drawer";
+import { useTranslations } from "next-intl";
 
 const REASONS = [
-    { value: "inappropriate", label: "Inappropriate content" },
-    { value: "copyright", label: "Copyright violation" },
-    { value: "spam", label: "Spam" },
-    { value: "incorrect", label: "Incorrect information" },
-    { value: "other", label: "Other" },
+    { value: "inappropriate", labelKey: "reasons.inappropriate" },
+    { value: "copyright", labelKey: "reasons.copyright" },
+    { value: "spam", labelKey: "reasons.spam" },
+    { value: "incorrect", labelKey: "reasons.incorrect" },
+    { value: "other", labelKey: "reasons.other" },
 ] as const;
 
 interface FlagButtonProps {
@@ -48,9 +49,11 @@ interface FlagButtonProps {
     className?: string;
     iconClassName?: string;
     hideText?: boolean;
+    disabled?: boolean;
 }
 
-export function FlagButton({ targetType, targetId, variant = "ghost", size = "sm", className, iconClassName = "h-3.5 w-3.5", hideText = false }: FlagButtonProps) {
+export function FlagButton({ targetType, targetId, variant = "ghost", size = "sm", className, iconClassName = "h-3.5 w-3.5", hideText = false, disabled = false }: FlagButtonProps) {
+    const t = useTranslations("Flags");
     const [open, setOpen] = useState(false);
     const isMobile = useIsMobile();
 
@@ -60,10 +63,11 @@ export function FlagButton({ targetType, targetId, variant = "ghost", size = "sm
             size={size}
             className={className}
             onClick={() => setOpen(true)}
-            title="Report"
+            title={t("report")}
+            disabled={disabled}
         >
             <Flag className={iconClassName} />
-            {size !== "icon" && !hideText && <span className="ml-1">Report</span>}
+            {size !== "icon" && !hideText && <span className="ml-1">{t("report")}</span>}
         </Button>
     );
 
@@ -109,6 +113,7 @@ interface FlagFormProps {
 }
 
 function FlagForm({ targetType, targetId, onClose, isDrawer }: FlagFormProps) {
+    const t = useTranslations("Flags");
     const [reason, setReason] = useState("");
     const [description, setDescription] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -126,10 +131,10 @@ function FlagForm({ targetType, targetId, onClose, isDrawer }: FlagFormProps) {
                     description: description.trim() || undefined,
                 }),
             });
-            toast.success("Report submitted");
+            toast.success(t("reportSubmitted"));
             onClose();
         } catch {
-            toast.error("Failed to submit report");
+            toast.error(t("failedToSubmit"));
         } finally {
             setSubmitting(false);
         }
@@ -143,23 +148,23 @@ function FlagForm({ targetType, targetId, onClose, isDrawer }: FlagFormProps) {
     return (
         <>
             <Header>
-                <Title>Report content</Title>
+                <Title>{t("reportContent")}</Title>
                 <Description>
-                    Help us keep the platform safe by reporting inappropriate content.
+                    {t("reportDescription")}
                 </Description>
             </Header>
 
             <div className="space-y-4 px-4 py-2 sm:px-0 overflow-y-auto max-h-[50vh] sm:max-h-none">
                 <div className="space-y-2">
-                    <Label htmlFor="flag-reason">Reason</Label>
+                    <Label htmlFor="flag-reason">{t("reason")}</Label>
                     <Select value={reason} onValueChange={setReason}>
                         <SelectTrigger id="flag-reason">
-                            <SelectValue placeholder="Select a reason" />
+                            <SelectValue placeholder={t("selectReason")} />
                         </SelectTrigger>
                         <SelectContent className="z-[80]">
                             {REASONS.map((r) => (
                                 <SelectItem key={r.value} value={r.value}>
-                                    {r.label}
+                                    {t(r.labelKey as any)}
                                 </SelectItem>
                             ))}
                         </SelectContent>
@@ -167,12 +172,12 @@ function FlagForm({ targetType, targetId, onClose, isDrawer }: FlagFormProps) {
                 </div>
 
                 <div className="space-y-2">
-                    <Label htmlFor="flag-description">Description (optional)</Label>
+                    <Label htmlFor="flag-description">{t("descriptionOptional")}</Label>
                     <Textarea
                         id="flag-description"
                         value={description}
                         onChange={(e) => setDescription(e.target.value.slice(0, 500))}
-                        placeholder="Provide additional details..."
+                        placeholder={t("additionalDetails")}
                         className="min-h-[100px]"
                     />
                 </div>
@@ -180,14 +185,14 @@ function FlagForm({ targetType, targetId, onClose, isDrawer }: FlagFormProps) {
 
             <Footer className={isDrawer ? "mb-6" : ""}>
                 <Button variant="outline" onClick={onClose}>
-                    Cancel
+                    {t("cancel")}
                 </Button>
                 <Button
                     variant="destructive"
                     onClick={handleSubmit}
                     disabled={!reason || submitting}
                 >
-                    {submitting ? "Submitting..." : "Submit report"}
+                    {submitting ? t("submitting") : t("submitReport")}
                 </Button>
             </Footer>
         </>

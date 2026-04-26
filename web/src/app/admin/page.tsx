@@ -16,6 +16,7 @@ import {
     RefreshCw,
     Mail
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api-client";
 import { Badge } from "@/components/ui/badge";
@@ -56,19 +57,41 @@ interface HealthData {
     };
 }
 
+interface OrphanObject {
+    key: string;
+    size: number;
+}
+
+interface ReconciliationData {
+    stats: {
+        total_s3_bytes: number;
+        total_s3_objects: number;
+        orphaned_bytes: number;
+    };
+    orphans: {
+        cas: OrphanObject[];
+        thumbnails: OrphanObject[];
+    };
+    missing: {
+        cas: string[];
+        thumbnails: string[];
+    };
+}
+
 function StorageReconciliationModal() {
+    const t = useTranslations("Admin.Dashboard.reconciliation");
     const [reconciling, setReconciling] = useState(false);
-    const [data, setData] = useState<any>(null);
+    const [data, setData] = useState<ReconciliationData | null>(null);
     const [pruning, setPruning] = useState(false);
 
     const runReconcile = async () => {
         setReconciling(true);
         try {
-            const res = await apiFetch<any>("/admin/storage/reconcile");
+            const res = await apiFetch<ReconciliationData>("/admin/storage/reconcile");
             setData(res);
         } catch (err) {
             console.error(err);
-            toast.error("Reconciliation failed");
+            toast.error(t("failed"));
         } finally {
             setReconciling(false);
         }
@@ -77,12 +100,12 @@ function StorageReconciliationModal() {
     const prune = async () => {
         if (!data?.orphans) return;
         const keys = [
-            ...data.orphans.cas.map((o: any) => o.key),
-            ...data.orphans.thumbnails.map((o: any) => o.key)
+            ...data.orphans.cas.map((o) => o.key),
+            ...data.orphans.thumbnails.map((o) => o.key)
         ];
         
         if (keys.length === 0) {
-            toast.info("No orphans to prune");
+            toast.info(t("noOrphans"));
             return;
         }
 
@@ -92,11 +115,11 @@ function StorageReconciliationModal() {
                 method: "POST",
                 body: JSON.stringify(keys)
             });
-            toast.success(`Successfully pruned ${keys.length} objects`);
+            toast.success(t("success", { count: keys.length }));
             setData(null);
         } catch (err) {
             console.error(err);
-            toast.error("Pruning failed");
+            toast.error(t("pruneFailed"));
         } finally {
             setPruning(false);
         }
@@ -110,69 +133,95 @@ function StorageReconciliationModal() {
             <DialogTrigger asChild>
                 <Button variant="outline" size="sm" className="w-full mt-4 h-8 text-[11px] font-bold uppercase tracking-wider gap-2 hover:bg-primary/5 hover:text-primary transition-all">
                     <RefreshCw className={cn("h-3 w-3", reconciling && "animate-spin")} />
-                    Integrity Check
+                    {t("button")}
                 </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl bg-card border-muted">
+            <DialogContent className="max-w-2xl bg-card/95 backdrop-blur-xl border-muted shadow-2xl">
                 <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <HardDrive className="h-5 w-5 text-primary" />
-                        Storage Reconciliation
+                    <DialogTitle className="flex items-center gap-2 text-2xl font-black">
+                        <HardDrive className="h-6 w-6 text-primary" />
+                        {t("title")}
                     </DialogTitle>
-                    <DialogDescription>
-                        Compare S3-compatible storage with database records to find orphaned or missing files.
+                    <DialogDescription className="text-sm font-medium opacity-80">
+                        {t("description")}
                     </DialogDescription>
                 </DialogHeader>
 
                 {!data ? (
-                    <div className="py-12 flex flex-col items-center justify-center gap-4">
-                        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                            <Search className="h-6 w-6 text-primary" />
+                    <div className="py-16 flex flex-col items-center justify-center gap-6">
+                        <div className="relative">
+                            <div className="absolute inset-0 animate-ping rounded-full bg-primary/20" />
+                            <div className="relative h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20">
+                                <Search className="h-8 w-8 text-primary" />
+                            </div>
                         </div>
-                        <div className="text-center">
-                            <p className="text-sm font-medium text-foreground">Ready to scan storage</p>
-                            <p className="text-xs text-muted-foreground">This will list all objects in your S3 bucket.</p>
+                        <div className="text-center space-y-1">
+                            <p className="text-base font-bold text-foreground">{t("ready.title")}</p>
+                            <p className="text-xs text-muted-foreground max-w-[280px]">
+                                {t("ready.description")}
+                            </p>
                         </div>
-                        <Button onClick={runReconcile} disabled={reconciling} className="gap-2">
-                            {reconciling ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
-                            Start Scan
+                        <Button onClick={runReconcile} disabled={reconciling} className="gap-2 px-8 h-11 rounded-full font-bold shadow-lg shadow-primary/20">
+                            {reconciling ? <RefreshCw className="h-5 w-5 animate-spin" /> : <Activity className="h-5 w-5" />}
+                            {reconciling ? t("ready.scanning") : t("ready.start")}
                         </Button>
                     </div>
                 ) : (
                     <div className="space-y-6">
                         <div className="grid grid-cols-3 gap-4">
-                            <div className="p-3 rounded-xl bg-muted/30 border border-muted/50">
-                                <p className="text-[10px] font-bold uppercase text-muted-foreground/70">S3 Total</p>
-                                <p className="text-lg font-bold">{formatBytes(data.stats.total_s3_bytes)}</p>
-                                <p className="text-[10px] text-muted-foreground">{data.stats.total_s3_objects} objects</p>
+                            <div className="relative overflow-hidden p-4 rounded-2xl bg-muted/40 border border-muted/50 group transition-all hover:bg-muted/60">
+                                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/60 mb-1">{t("stats.s3Total")}</p>
+                                <p className="text-xl font-black">{formatBytes(data.stats.total_s3_bytes)}</p>
+                                <p className="text-[10px] font-bold text-muted-foreground opacity-70">{t("stats.objects", { count: data.stats.total_s3_objects })}</p>
                             </div>
-                            <div className={cn("p-3 rounded-xl border", totalOrphans > 0 ? "bg-amber-500/5 border-amber-500/20" : "bg-muted/30 border-muted/50")}>
-                                <p className="text-[10px] font-bold uppercase text-muted-foreground/70">Orphans</p>
-                                <p className={cn("text-lg font-bold", totalOrphans > 0 && "text-amber-500")}>{formatBytes(data.stats.orphaned_bytes)}</p>
-                                <p className="text-[10px] text-muted-foreground">{totalOrphans} unused files</p>
+                            <div className={cn(
+                                "relative overflow-hidden p-4 rounded-2xl border transition-all group",
+                                totalOrphans > 0 
+                                    ? "bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/15" 
+                                    : "bg-muted/40 border-muted/50 hover:bg-muted/60"
+                            )}>
+                                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/60 mb-1">{t("stats.orphans")}</p>
+                                <p className={cn("text-xl font-black", totalOrphans > 0 && "text-amber-500")}>{formatBytes(data.stats.orphaned_bytes)}</p>
+                                <p className="text-[10px] font-bold text-muted-foreground opacity-70">{t("stats.unused", { count: totalOrphans })}</p>
                             </div>
-                            <div className={cn("p-3 rounded-xl border", totalMissing > 0 ? "bg-red-500/5 border-red-500/20" : "bg-muted/30 border-muted/50")}>
-                                <p className="text-[10px] font-bold uppercase text-muted-foreground/70">Missing</p>
-                                <p className={cn("text-lg font-bold", totalMissing > 0 && "text-red-500")}>{totalMissing}</p>
-                                <p className="text-[10px] text-muted-foreground">Broken records</p>
+                            <div className={cn(
+                                "relative overflow-hidden p-4 rounded-2xl border transition-all group",
+                                totalMissing > 0 
+                                    ? "bg-red-500/10 border-red-500/30 hover:bg-red-500/15" 
+                                    : "bg-muted/40 border-muted/50 hover:bg-muted/60"
+                            )}>
+                                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/60 mb-1">{t("stats.missing")}</p>
+                                <p className={cn("text-xl font-black", totalMissing > 0 && "text-red-500")}>{totalMissing}</p>
+                                <p className="text-[10px] font-bold text-muted-foreground opacity-70">{t("stats.broken")}</p>
                             </div>
                         </div>
 
                         {totalOrphans > 0 && (
-                            <div className="space-y-2">
-                                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Orphaned Files (Ready to Prune)</p>
-                                <ScrollArea className="h-[200px] w-full rounded-md border border-muted/50 bg-muted/10 p-2">
-                                    <div className="space-y-1">
-                                        {data.orphans.cas.map((o: any) => (
-                                            <div key={o.key} className="flex items-center justify-between p-2 rounded hover:bg-muted/20 transition-colors">
-                                                <span className="text-xs font-mono text-muted-foreground truncate flex-1 mr-4">{o.key}</span>
-                                                <Badge variant="outline" className="text-[9px]">{formatBytes(o.size)}</Badge>
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between px-1">
+                                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t("orphans.title")}</p>
+                                    <Badge variant="outline" className="h-5 text-[9px] font-bold bg-amber-500/5 text-amber-500 border-amber-500/20 uppercase tracking-tighter">
+                                        {t("orphans.actionRequired")}
+                                    </Badge>
+                                </div>
+                                <ScrollArea className="h-[240px] w-full rounded-2xl border border-muted/50 bg-muted/20 p-2 shadow-inner">
+                                    <div className="space-y-1 pr-3">
+                                        {data.orphans.cas.map((o) => (
+                                            <div key={o.key} className="flex items-center justify-between p-2.5 rounded-xl hover:bg-muted/40 transition-all group border border-transparent hover:border-muted/50">
+                                                <div className="flex flex-col gap-0.5 flex-1 min-w-0 mr-4">
+                                                    <span className="text-[11px] font-mono font-medium text-foreground/80 truncate">{o.key}</span>
+                                                    <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground/50">{t("orphans.cas")}</span>
+                                                </div>
+                                                <Badge variant="outline" className="h-6 text-[10px] font-black bg-background/50 border-muted/50 tabular-nums">{formatBytes(o.size)}</Badge>
                                             </div>
                                         ))}
-                                        {data.orphans.thumbnails.map((o: any) => (
-                                            <div key={o.key} className="flex items-center justify-between p-2 rounded hover:bg-muted/20 transition-colors">
-                                                <span className="text-xs font-mono text-muted-foreground truncate flex-1 mr-4">{o.key}</span>
-                                                <Badge variant="outline" className="text-[9px]">{formatBytes(o.size)}</Badge>
+                                        {data.orphans.thumbnails.map((o) => (
+                                            <div key={o.key} className="flex items-center justify-between p-2.5 rounded-xl hover:bg-muted/40 transition-all group border border-transparent hover:border-muted/50">
+                                                <div className="flex flex-col gap-0.5 flex-1 min-w-0 mr-4">
+                                                    <span className="text-[11px] font-mono font-medium text-foreground/80 truncate">{o.key}</span>
+                                                    <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground/50">{t("orphans.thumbnails")}</span>
+                                                </div>
+                                                <Badge variant="outline" className="h-6 text-[10px] font-black bg-background/50 border-muted/50 tabular-nums">{formatBytes(o.size)}</Badge>
                                             </div>
                                         ))}
                                     </div>
@@ -181,29 +230,35 @@ function StorageReconciliationModal() {
                         )}
 
                         {totalMissing > 0 && (
-                            <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/10">
-                                <div className="flex items-center gap-2 text-red-500 mb-1">
-                                    <AlertTriangle className="h-4 w-4" />
-                                    <p className="text-xs font-bold uppercase">Critical Warnings</p>
+                            <div className="relative overflow-hidden p-4 rounded-2xl bg-red-500/5 border border-red-500/20 group">
+                                <div className="absolute -right-4 -top-4 h-16 w-16 opacity-5 group-hover:scale-110 transition-transform">
+                                    <AlertTriangle className="h-full w-full text-red-500" />
                                 </div>
-                                <p className="text-[11px] text-red-500/80 leading-relaxed">
-                                    {totalMissing} files are referenced in the database but missing from S3. These materials will fail to download/view.
+                                <div className="flex items-center gap-3 text-red-500 mb-2">
+                                    <div className="h-8 w-8 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
+                                        <AlertTriangle className="h-4 w-4" />
+                                    </div>
+                                    <p className="text-xs font-black uppercase tracking-widest">{t("critical.title")}</p>
+                                </div>
+                                <p className="text-[11px] text-foreground/70 leading-relaxed font-medium">
+                                    {t("critical.description", { count: totalMissing })}
                                 </p>
                             </div>
                         )}
                     </div>
                 )}
 
-                <DialogFooter className="gap-2 sm:gap-0">
+                <DialogFooter className="gap-3 pt-2">
+                    <div className="flex-1" />
+                    <Button variant="ghost" onClick={() => setData(null)} disabled={reconciling || pruning} className="h-10 px-6 rounded-full font-bold">
+                        {t("reset")}
+                    </Button>
                     {data && totalOrphans > 0 && (
-                        <Button variant="destructive" onClick={prune} disabled={pruning} className="gap-2">
-                            {pruning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
-                            Prune Orphans
+                        <Button variant="destructive" onClick={prune} disabled={pruning} className="h-10 px-6 rounded-full font-black uppercase tracking-tighter gap-2 shadow-lg shadow-destructive/20">
+                            {pruning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <HardDrive className="h-4 w-4" />}
+                            {pruning ? t("pruning") : t("prune")}
                         </Button>
                     )}
-                    <Button variant="ghost" onClick={() => setData(null)} disabled={reconciling || pruning}>
-                        Reset
-                    </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
@@ -211,6 +266,7 @@ function StorageReconciliationModal() {
 }
 
 export default function AdminDashboard() {
+    const t = useTranslations("Admin.Dashboard");
     const [health, setHealth] = useState<HealthData | null>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -220,10 +276,10 @@ export default function AdminDashboard() {
         try {
             const data = await apiFetch<HealthData>("/admin/health");
             setHealth(data);
-            if (showToast) toast.success("System status updated");
+            if (showToast) toast.success(t("status.updated"));
         } catch (err) {
             console.error("Failed to fetch health", err);
-            if (showToast) toast.error("Failed to refresh status");
+            if (showToast) toast.error(t("status.refreshFailed"));
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -240,20 +296,20 @@ export default function AdminDashboard() {
         {
             href: "/admin/users",
             icon: Users,
-            title: "User Management",
-            description: "Manage user roles and approve pending access requests.",
+            title: t("sections.users.title"),
+            description: t("sections.users.description"),
         },
         {
             href: "/admin/dlq",
             icon: AlertTriangle,
-            title: "Dead Letter Queue",
-            description: "Inspect failed background jobs, retry or dismiss them.",
+            title: t("sections.dlq.title"),
+            description: t("sections.dlq.description"),
         },
         {
             href: "/admin/config",
             icon: Settings,
-            title: "Configuration",
-            description: "Configure authentication, storage, and platform settings.",
+            title: t("sections.config.title"),
+            description: t("sections.config.description"),
         },
     ];
 
@@ -304,12 +360,12 @@ export default function AdminDashboard() {
                                 )}></span>
                             </div>
                             <h1 className="text-3xl font-bold tracking-tight">
-                                {health?.status === "healthy" ? "All Systems Operational" : health?.status === "degraded" ? "Partial Degradation" : "Service Disruption Detected"}
+                                {health?.status === "healthy" ? t("status.healthy") : health?.status === "degraded" ? t("status.degraded") : t("status.unhealthy")}
                             </h1>
                         </div>
                         <div className="flex items-center gap-4">
                             <p className="text-muted-foreground font-medium">
-                                Last updated: {new Date(health?.timestamp || "").toLocaleTimeString()}
+                                {t("status.lastUpdated", { time: new Date(health?.timestamp || "").toLocaleTimeString() })}
                             </p>
                             <Button 
                                 variant="ghost" 
@@ -319,29 +375,29 @@ export default function AdminDashboard() {
                                 disabled={refreshing}
                             >
                                 <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
-                                {refreshing ? "Refreshing..." : "Refresh"}
+                                {refreshing ? t("status.refreshing") : t("status.refresh")}
                             </Button>
                         </div>
                     </div>
                     
                     <div className="flex flex-wrap gap-4 md:gap-8">
                         <div className="space-y-1">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Pending Jobs</p>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{t("metrics.pendingJobs")}</p>
                             <p className="text-3xl font-black tabular-nums">{health?.metrics.pending_jobs || 0}</p>
                         </div>
                         <div className="hidden h-12 w-px bg-border/50 md:block" />
                         <div className="space-y-1">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Total Users</p>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{t("metrics.totalUsers")}</p>
                             <p className="text-3xl font-black tabular-nums">{health?.metrics.total_users || 0}</p>
                         </div>
                         <div className="hidden h-12 w-px bg-border/50 md:block" />
                         <div className="space-y-1">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Materials</p>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{t("metrics.materials")}</p>
                             <p className="text-3xl font-black tabular-nums">{health?.metrics.total_materials || 0}</p>
                         </div>
                         <div className="hidden h-12 w-px bg-border/50 md:block" />
                         <div className="space-y-1">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Max Upload</p>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{t("metrics.maxUpload")}</p>
                             <p className="text-3xl font-black tabular-nums">{health?.metrics.max_upload_size_mb || 0} MB</p>
                         </div>
                     </div>
@@ -351,27 +407,27 @@ export default function AdminDashboard() {
             {/* Service Grid */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <ServiceCard 
-                    name="Database" 
+                    name={t("services.database.name")} 
                     icon={Database} 
                     data={health?.services.database} 
-                    description="Primary PostgreSQL storage"
+                    description={t("services.database.description")}
                 />
                 <ServiceCard 
-                    name="Redis" 
+                    name={t("services.redis.name")} 
                     icon={Activity} 
                     data={health?.services.redis} 
-                    description="Cache & event bus"
+                    description={t("services.redis.description")}
                 />
                 <ServiceCard 
-                    name="S3 Storage" 
+                    name={t("services.storage.name")} 
                     icon={HardDrive} 
                     data={health?.services.storage} 
-                    description="Object & file storage"
+                    description={t("services.storage.description")}
                 >
                     {health?.services.storage.metadata?.max_storage_bytes && (
                         <div className="mt-4 space-y-1.5">
                             <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
-                                <span>Capacity Used</span>
+                                <span>{t("services.storage.capacityUsed")}</span>
                                 <span>{Math.round(((health.services.storage.metadata.usage_bytes as number || 0) / (health.services.storage.metadata.max_storage_bytes as number)) * 100)}%</span>
                             </div>
                             <Progress 
@@ -383,40 +439,40 @@ export default function AdminDashboard() {
                     <StorageReconciliationModal />
                 </ServiceCard>
                 <ServiceCard 
-                    name="Email (SMTP)" 
+                    name={t("services.email.name")} 
                     icon={Mail} 
                     data={health?.services.email} 
-                    description="SMTP relay service"
+                    description={t("services.email.description")}
                     metadata={[
-                        { label: "Host", value: health?.services.email.metadata?.host },
-                        { label: "User", value: health?.services.email.metadata?.user || "Anonymous" },
-                        { label: "Google OAuth", value: health?.metrics.google_auth_enabled ? "Active" : "Disabled" }
+                        { label: t("services.email.host"), value: health?.services.email.metadata?.host },
+                        { label: t("services.email.user"), value: health?.services.email.metadata?.user || t("services.email.anonymous") },
+                        { label: t("services.email.googleAuth"), value: health?.metrics.google_auth_enabled ? t("services.email.active") : t("services.email.disabled") }
                     ]}
                 />
                 <ServiceCard 
-                    name="Search" 
+                    name={t("services.search.name")} 
                     icon={Search} 
                     data={health?.services.search} 
-                    description="MeiliSearch indexing"
+                    description={t("services.search.description")}
                 />
                 <ServiceCard 
-                    name="Workers" 
+                    name={t("services.workers.name")} 
                     icon={Cpu} 
                     data={health?.services.workers} 
-                    description="ARQ background pipeline"
+                    description={t("services.workers.description")}
                 />
                 <ServiceCard 
-                    name="Scanner" 
+                    name={t("services.scanner.name")} 
                     icon={ShieldCheck} 
                     data={health?.services.scanner} 
-                    description="YARA malware engine"
+                    description={t("services.scanner.description")}
                 />
             </div>
 
             {/* Quick Links / Navigation */}
             <div className="space-y-6 pt-4">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-bold tracking-tight">Administrative Sections</h3>
+                    <h3 className="text-xl font-bold tracking-tight">{t("sections.title")}</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-3">
                     {sections.map((s) => (
@@ -458,6 +514,9 @@ function ServiceCard({
     metadata?: { label: string, value: string | number | undefined }[],
     children?: React.ReactNode
 }) {
+    const t = useTranslations("Admin.Dashboard.services.common");
+    const tWorkers = useTranslations("Admin.Dashboard.services.workers");
+    const tScanner = useTranslations("Admin.Dashboard.services.scanner");
     return (
         <Card className="group relative overflow-hidden bg-card/40 transition-all hover:bg-card/60">
             <CardHeader className="pb-3">
@@ -481,16 +540,16 @@ function ServiceCard({
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Current Status</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{t("currentStatus")}</span>
                     <Badge variant={data?.status === "healthy" ? "default" : data?.status === "degraded" ? "secondary" : "destructive"} className="h-5 text-[10px] font-black uppercase tracking-tighter">
-                        {data?.status || "Unknown"}
+                        {data?.status ? t(data.status as any) : t("unknown")}
                     </Badge>
                 </div>
                 
                 {typeof data?.latency_ms === "number" ? (
                     <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Response Time</span>
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{t("responseTime")}</span>
                             <span className="text-xs font-black tabular-nums">{data.latency_ms.toFixed(1)}ms</span>
                         </div>
                         <Progress 
@@ -500,7 +559,7 @@ function ServiceCard({
                     </div>
                 ) : (
                     <div className="h-[34px] flex items-center">
-                         <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 italic">No latency metrics</span>
+                         <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 italic">{t("noMetrics")}</span>
                     </div>
                 )}
 
@@ -509,13 +568,13 @@ function ServiceCard({
                     <div className="grid grid-cols-2 gap-2 pt-2 border-t border-muted/50">
                         {data.metadata.usage_bytes !== undefined && (
                             <div className="space-y-0.5">
-                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">Storage Usage</p>
+                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">{t("storageUsage")}</p>
                                 <p className="text-xs font-bold">{formatBytes(data.metadata.usage_bytes)}</p>
                             </div>
                         )}
                         {data.metadata.active_queues !== undefined && (
                             <div className="space-y-1.5 col-span-2">
-                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">Pool Status</p>
+                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">{tWorkers("poolStatus")}</p>
                                 <div className="flex flex-col gap-1.5">
                                     {(data.metadata.active_queues as string[]).map(q => {
                                         const counts = data.metadata?.queue_counts as Record<string, number> | undefined;
@@ -530,7 +589,7 @@ function ServiceCard({
                                                     "h-4 text-[9px] px-1.5 font-bold transition-colors",
                                                     count > 0 ? "bg-amber-500/10 text-amber-500 border-amber-500/20" : "bg-muted text-muted-foreground border-transparent"
                                                 )}>
-                                                    {count} {count === 1 ? 'job' : 'jobs'}
+                                                    {tWorkers("job", { count })}
                                                 </Badge>
                                             </div>
                                         );
@@ -541,7 +600,7 @@ function ServiceCard({
                                                 <div className="h-1 w-1 rounded-full bg-red-500" />
                                                 <span className="text-[11px] font-bold text-red-500">{q.replace('arq:', '')}</span>
                                             </div>
-                                            <span className="text-[9px] font-bold uppercase text-red-500/70">Offline</span>
+                                            <span className="text-[9px] font-bold uppercase text-red-500/70">{tWorkers("offline")}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -549,13 +608,13 @@ function ServiceCard({
                         )}
                         {data.metadata.active_workers !== undefined && (
                             <div className="space-y-0.5">
-                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">Active Workers</p>
+                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">{tWorkers("activeWorkers")}</p>
                                 <p className="text-xs font-bold">{data.metadata.active_workers}</p>
                             </div>
                         )}
                         {data.metadata.pending_scans !== undefined && (
                             <div className="space-y-0.5">
-                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">Pending Scans</p>
+                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">{tScanner("pendingScans")}</p>
                                 <p className={cn("text-xs font-bold", data.metadata.pending_scans > 0 && "text-amber-500")}>
                                     {data.metadata.pending_scans}
                                 </p>
@@ -563,34 +622,34 @@ function ServiceCard({
                         )}
                         {data.metadata.yara_enabled !== undefined && (
                             <div className="space-y-0.5">
-                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">YARA Engine</p>
-                                <p className="text-xs font-bold text-green-500">Initialized</p>
+                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">{tScanner("yaraEngine")}</p>
+                                <p className="text-xs font-bold text-green-500">{tScanner("initialized")}</p>
                             </div>
                         )}
                         {data.metadata.malwarebazaar_enabled !== undefined && (
                             <div className="space-y-0.5">
-                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">Bazaar API</p>
+                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">{tScanner("bazaarApi")}</p>
                                 <p className={cn("text-xs font-bold", data.metadata.malwarebazaar_enabled ? "text-green-500" : "text-muted-foreground")}>
-                                    {data.metadata.malwarebazaar_enabled ? "Active" : "Disabled"}
+                                    {data.metadata.malwarebazaar_enabled ? t("enabled") : t("disabled")}
                                 </p>
                             </div>
                         )}
                         {data.metadata.max_storage_bytes !== undefined && (
                             <div className="space-y-0.5">
-                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">Storage Limit</p>
+                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">{t("storageLimit")}</p>
                                 <p className="text-xs font-bold">{(data.metadata.max_storage_bytes as number) / (1024*1024*1024)} GB</p>
                             </div>
                         )}
                         {data.metadata.bucket && (
                             <div className="space-y-0.5">
-                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">Bucket</p>
+                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">{t("bucket")}</p>
                                 <p className="text-xs font-mono opacity-80 truncate">{data.metadata.bucket}</p>
                             </div>
                         )}
                         {data.metadata.ssl !== undefined && (
                             <div className="space-y-0.5">
-                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">SSL</p>
-                                <p className="text-xs font-bold">{data.metadata.ssl ? "Enabled" : "Disabled"}</p>
+                                <p className="text-[9px] font-bold uppercase text-muted-foreground/70">{t("ssl")}</p>
+                                <p className="text-xs font-bold">{data.metadata.ssl ? t("enabled") : t("disabled")}</p>
                             </div>
                         )}
                     </div>

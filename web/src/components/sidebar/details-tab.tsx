@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Folder,
   FileText,
@@ -26,9 +27,10 @@ import {
   getFileBadgeLabel,
 } from "@/lib/file-utils";
 import { apiFetch } from "@/lib/api-client";
-import { toast } from "sonner";
 import { ExpandableText } from "@/components/ui/expandable-text";
 import { useUIStore, useBrowseRefreshStore } from "@/lib/stores";
+import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 
 /* -------------------------------------------------------------------------- */
 /*  Reusable primitives for a card-sectioned sidebar                          */
@@ -124,6 +126,7 @@ interface InteractionBarProps {
   initialIsLiked: boolean;
   initialIsFavourited: boolean;
   initialLikeCount: number;
+  disabled?: boolean;
 }
 
 function InteractionBar({
@@ -132,6 +135,7 @@ function InteractionBar({
   initialIsLiked,
   initialIsFavourited,
   initialLikeCount,
+  disabled = false,
 }: InteractionBarProps) {
   const [isLiked, setIsLiked] = useState(initialIsLiked);
   const [isFavourited, setIsFavourited] = useState(initialIsFavourited);
@@ -139,6 +143,7 @@ function InteractionBar({
   const [isLiking, setIsLiking] = useState(false);
   const [isFavouriting, setIsFavouriting] = useState(false);
   const { updateSidebarData } = useUIStore();
+  const t = useTranslations("Sidebar");
   const triggerBrowseRefresh = useBrowseRefreshStore(
     (s) => s.triggerBrowseRefresh,
   );
@@ -150,7 +155,7 @@ function InteractionBar({
   }, [targetId, initialIsLiked, initialIsFavourited, initialLikeCount]);
 
   const handleLike = async () => {
-    if (isLiking) return;
+    if (isLiking || disabled) return;
     const next = !isLiked;
     const nextCount = likeCount + (next ? 1 : -1);
     setIsLiked(next);
@@ -167,14 +172,14 @@ function InteractionBar({
     } catch {
       setIsLiked(!next);
       setLikeCount(likeCount);
-      toast.error("Failed to update like");
+      toast.error(t("failedToUpdateLike"));
     } finally {
       setIsLiking(false);
     }
   };
 
   const handleFavourite = async () => {
-    if (isFavouriting) return;
+    if (isFavouriting || disabled) return;
     const next = !isFavourited;
     setIsFavourited(next);
     setIsFavouriting(true);
@@ -188,7 +193,7 @@ function InteractionBar({
       triggerBrowseRefresh();
     } catch {
       setIsFavourited(!next);
-      toast.error("Failed to update favourite");
+      toast.error(t("failedToUpdateFavourite"));
     } finally {
       setIsFavouriting(false);
     }
@@ -198,7 +203,7 @@ function InteractionBar({
     <div className="grid grid-cols-2 gap-2">
       <button
         onClick={handleLike}
-        disabled={isLiking}
+        disabled={isLiking || disabled}
         className={cn(
           "flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60",
           isLiked
@@ -216,13 +221,13 @@ function InteractionBar({
             )}
           />
         )}
-        <span>{isLiked ? "Liked" : "Like"}</span>
+        <span>{isLiked ? t("liked") : t("like")}</span>
         <span className="text-xs font-normal opacity-70">· {likeCount}</span>
       </button>
 
       <button
         onClick={handleFavourite}
-        disabled={isFavouriting}
+        disabled={isFavouriting || disabled}
         className={cn(
           "flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60",
           isFavourited
@@ -240,7 +245,7 @@ function InteractionBar({
             )}
           />
         )}
-        <span>{isFavourited ? "Saved" : "Save"}</span>
+        <span>{isFavourited ? t("saved") : t("save")}</span>
       </button>
     </div>
   );
@@ -251,6 +256,7 @@ function InteractionBar({
 /* -------------------------------------------------------------------------- */
 
 function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
+  const t = useTranslations("Sidebar");
   const name = String(data.name ?? "");
   const description = data.description ? String(data.description) : null;
   const dirType = String(data.type ?? "folder");
@@ -276,6 +282,8 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
   const isLiked = Boolean(data.is_liked);
   const likeCount = Number(data.like_count ?? 0);
   const isFavourited = Boolean(data.is_favourited);
+  const searchParams = useSearchParams();
+  const isRestricted = (String(data.id ?? "").startsWith("$")) || !!searchParams.get("preview_pr");
 
   return (
     <div className="space-y-3">
@@ -292,7 +300,7 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
             </p>
           )}
           <Badge variant="outline" className="mt-1.5 text-xs capitalize">
-            {isModule ? "Module" : "Folder"}
+            {isModule ? t("module") : t("folder")}
           </Badge>
         </div>
       </div>
@@ -303,6 +311,7 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
         initialIsLiked={isLiked}
         initialIsFavourited={isFavourited}
         initialLikeCount={likeCount}
+        disabled={isRestricted}
       />
 
       {/* Description */}
@@ -319,12 +328,12 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
       <SidebarSection className="space-y-2">
         <MetaRow
           icon={FileText}
-          label="Items"
-          value={`${totalCount} ${totalCount === 1 ? "item" : "items"}`}
+          label={t("items")}
+          value={t("itemsCount", { count: totalCount })}
         />
         {isModule && difficulty !== null && (
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Difficulty</span>
+            <span className="text-muted-foreground">{t("difficulty")}</span>
             <span className="ml-auto">
               <DifficultyDots level={difficulty} />
             </span>
@@ -343,7 +352,7 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
               className="flex items-center gap-2 text-sm text-primary hover:underline"
             >
               <ExternalLink className="h-3.5 w-3.5" />
-              Syllabus
+              {t("syllabus")}
             </a>
           )}
           {examFormatFileKey && (
@@ -352,7 +361,7 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
               className="flex items-center gap-2 text-sm text-primary hover:underline"
             >
               <FileText className="h-3.5 w-3.5" />
-              Exam Format
+              {t("examFormat")}
             </a>
           )}
         </SidebarSection>
@@ -363,7 +372,7 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
         <div className="space-y-1.5">
           <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             <Tag className="h-3 w-3" />
-            Tags
+            {t("tags")}
           </div>
           <div className="flex flex-wrap gap-1">
             {tags.map((tag) => (
@@ -383,6 +392,7 @@ function DirectoryDetails({ data }: { data: Record<string, unknown> }) {
 /* -------------------------------------------------------------------------- */
 
 function AuthorName({ authorId }: { authorId: string | null }) {
+  const t = useTranslations("Sidebar");
   const [name, setName] = useState<string | null>(null);
 
   useEffect(() => {
@@ -390,17 +400,17 @@ function AuthorName({ authorId }: { authorId: string | null }) {
     let active = true;
     apiFetch<{ display_name: string | null }>(`/users/${authorId}`)
       .then((u) => {
-        if (active) setName(u.display_name ?? "Unknown");
+        if (active) setName(u.display_name ?? t("unknown"));
       })
       .catch(() => {
-        if (active) setName("Unknown");
+        if (active) setName(t("unknown"));
       });
     return () => {
       active = false;
     };
   }, [authorId]);
 
-  if (!authorId) return <span>[deleted]</span>;
+  if (!authorId) return <span>{t("deletedUser")}</span>;
   if (!name)
     return <span className="animate-pulse text-muted-foreground">…</span>;
   return (
@@ -414,6 +424,7 @@ function AuthorName({ authorId }: { authorId: string | null }) {
 }
 
 function MaterialDetails({ data }: { data: Record<string, unknown> }) {
+  const t = useTranslations("Sidebar");
   const id = String(data.id ?? "");
   const title = String(data.title ?? "");
   const description = data.description ? String(data.description) : null;
@@ -443,6 +454,8 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
   const isLiked = Boolean(data.is_liked);
   const likeCount = Number(data.like_count ?? 0);
   const isFavourited = Boolean(data.is_favourited);
+  const searchParams = useSearchParams();
+  const isRestricted = (String(data.id ?? "").startsWith("$")) || !!searchParams.get("preview_pr");
 
   return (
     <div className="space-y-3">
@@ -469,6 +482,7 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
         initialIsLiked={isLiked}
         initialIsFavourited={isFavourited}
         initialLikeCount={likeCount}
+        disabled={isRestricted}
       />
 
       {/* Description */}
@@ -485,20 +499,20 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
       <SidebarSection className="space-y-2.5">
         <MetaRow
           icon={User}
-          label="Author"
+          label={t("author")}
           value={<AuthorName authorId={authorId} />}
         />
         {fileSize > 0 && (
           <MetaRow
             icon={HardDrive}
-            label="Size"
+            label={t("size")}
             value={formatFileSize(fileSize)}
           />
         )}
-        <MetaRow icon={Download} label="Downloads" value={downloadCount} />
+        <MetaRow icon={Download} label={t("downloads")} value={downloadCount} />
         <MetaRow
           icon={Eye}
-          label="Total Views"
+          label={t("totalViews")}
           value={
             <div className="flex items-center gap-1.5 justify-end">
               {Number(data.total_views ?? 0)}
@@ -507,7 +521,7 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
                   variant="outline"
                   className="h-4 px-1 text-[9px] font-bold border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-400"
                 >
-                  +{Number(data.views_today)} today
+                  +{Number(data.views_today)} {t("today")}
                 </Badge>
               )}
             </div>
@@ -516,7 +530,7 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
         {createdAt && (
           <MetaRow
             icon={Calendar}
-            label="Created"
+            label={t("created")}
             value={createdAt.toLocaleDateString()}
           />
         )}
@@ -527,7 +541,7 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
         <div className="space-y-1.5">
           <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             <Tag className="h-3 w-3" />
-            Tags
+            {t("tags")}
           </div>
           <div className="flex flex-wrap gap-1">
             {tags.map((tag) => (
@@ -551,7 +565,7 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-violet-900 dark:text-violet-200">
-                Attachments
+                {t("attachments")}
               </span>
               {attachmentCount > 0 && (
                 <Badge
@@ -564,8 +578,8 @@ function MaterialDetails({ data }: { data: Record<string, unknown> }) {
             </div>
             <p className="text-xs text-muted-foreground">
               {attachmentCount > 0
-                ? `${attachmentCount} supplementary file${attachmentCount !== 1 ? "s" : ""}`
-                : "Add supplementary files"}
+                ? t("supplementaryFilesCount", { count: attachmentCount })
+                : t("addSupplementaryFiles")}
             </p>
           </div>
           <ExternalLink className="h-3.5 w-3.5 text-violet-400 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -588,12 +602,13 @@ interface DetailsTabProps {
 }
 
 export function DetailsTab({ target }: DetailsTabProps) {
+  const t = useTranslations("Sidebar");
   if (!target || !target.data) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
         <Info className="mb-3 h-8 w-8 opacity-20" />
-        <p className="text-sm font-medium">No item selected</p>
-        <p className="text-xs">Select an item to view its details here.</p>
+        <p className="text-sm font-medium">{t("noItemSelected")}</p>
+        <p className="text-xs">{t("selectItemToViewDetails")}</p>
       </div>
     );
   }

@@ -4,12 +4,14 @@ import { use, useCallback, useEffect, useState } from "react";
 import { ProfileView, ProfileSkeleton, type UserProfile } from "@/components/profile/profile-view";
 import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 export default function PublicProfilePage({
     params,
 }: {
     params: Promise<{ id: string }>;
 }) {
+    const t = useTranslations("Profile");
     const { id } = use(params);
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [notFound, setNotFound] = useState(false);
@@ -21,7 +23,7 @@ export default function PublicProfilePage({
         } catch {
             queueMicrotask(() => {
                 setNotFound(true);
-                toast.error("User not found");
+                toast.error(t("notFound"));
             });
         }
     }, [id]);
@@ -33,9 +35,9 @@ export default function PublicProfilePage({
     if (notFound) {
         return (
             <div className="flex flex-col items-center justify-center p-20 text-center">
-                <p className="text-lg font-medium text-muted-foreground">User not found</p>
+                <p className="text-lg font-medium text-muted-foreground">{t("notFound")}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                    This profile doesn&apos;t exist or has been deleted.
+                    {t("notFoundDescription")}
                 </p>
             </div>
         );

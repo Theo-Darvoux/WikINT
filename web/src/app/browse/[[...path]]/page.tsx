@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { apiFetch } from "@/lib/api-client";
 import { AuthGuard } from "@/components/auth-guard";
 import { DirectoryListing } from "@/components/browse/directory-listing";
@@ -11,8 +12,8 @@ import { useIsDesktop } from "@/hooks/use-media-query";
 import { useUIStore, useBrowseRefreshStore } from "@/lib/stores";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { useTranslations } from "next-intl";
 import { Eye, X } from "lucide-react";
-import Link from "next/link";
 import type { Operation } from "@/lib/staging-store";
 
 interface BrowseResponse {
@@ -96,6 +97,7 @@ function BrowseContent() {
   const { sidebarOpen, setSidebarTarget } = useUIStore();
   const refreshCount = useBrowseRefreshStore((s) => s.refreshCount);
 
+  const t = useTranslations("Browse");
   const path = params.path
     ? Array.isArray(params.path)
       ? params.path.join("/")
@@ -150,7 +152,7 @@ function BrowseContent() {
         setData(result);
       } catch (err) {
         if (!isBackground) {
-          setError(err instanceof Error ? err.message : "Failed to load");
+          setError(err instanceof Error ? err.message : t("loadError"));
           setData(null);
         }
       } finally {
@@ -185,7 +187,7 @@ function BrowseContent() {
           type: "directory",
           id: "root",
           data: {
-            name: "Home",
+            name: t("home"),
             type: "folder",
             child_directory_count: data.directories?.length ?? 0,
             child_material_count: data.materials?.length ?? 0,
@@ -202,7 +204,7 @@ function BrowseContent() {
       } else if (data.directory) {
         document.title = `${data.directory.name as string} • WikINT`;
       } else if (path === "") {
-        document.title = "Course Materials • WikINT";
+        document.title = `${t("courseMaterials")} • WikINT`;
       }
     }
   }, [data, path]);
@@ -225,7 +227,7 @@ function BrowseContent() {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-20 px-4 text-muted-foreground">
-        <p className="text-lg font-medium">Not found</p>
+        <p className="text-lg font-medium">{t("notFound")}</p>
         <p className="text-sm">{error}</p>
       </div>
     );
@@ -257,7 +259,7 @@ function BrowseContent() {
               </div>
               <div className="min-w-0">
                 <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200">
-                  Contribution preview
+                  {t("contributionPreview")}
                 </h3>
                 <p className="text-xs text-muted-foreground truncate">
                   {previewPr.title}
@@ -272,7 +274,7 @@ function BrowseContent() {
             >
               <Link href={path ? `/browse/${path}` : "/browse"}>
                 <X className="h-4 w-4" />
-                Exit preview
+                {t("exitPreview")}
               </Link>
             </Button>
           </div>

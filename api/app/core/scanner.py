@@ -68,12 +68,14 @@ class MalwareScanner:
 
         if settings.bazaar_async_enabled:
             # Async mode: YARA-only gate — Bazaar runs in background after promotion.
-            yara_result = await self._scan_yara(file_bytes, filename)
-            if isinstance(yara_result, Exception):
-                logger.error("YARA scan failed for %s: %s", filename, yara_result)
+            try:
+                yara_result = await self._scan_yara(file_bytes, filename)
+            except Exception as e:
+                logger.error("YARA scan failed for %s: %s", filename, e)
                 raise ServiceUnavailableError(
                     "Malware scan is temporarily unavailable (fail-closed). Please retry in a few moments."
                 )
+
             if yara_result is not None:
                 logger.warning("YARA match in %s: %s", filename, yara_result)
                 raise BadRequestError(f"ERR_MALWARE_DETECTED: {yara_result}")
@@ -144,12 +146,14 @@ class MalwareScanner:
 
         if settings.bazaar_async_enabled:
             # Async mode: YARA-only gate — Bazaar runs in background after promotion.
-            yara_result = await self._scan_yara_path(file_path, filename)
-            if isinstance(yara_result, Exception):
-                logger.error("YARA scan failed for %s: %s", filename, yara_result)
+            try:
+                yara_result = await self._scan_yara_path(file_path, filename)
+            except Exception as e:
+                logger.error("YARA scan failed for %s: %s", filename, e)
                 raise ServiceUnavailableError(
                     "Malware scan is temporarily unavailable (fail-closed). Please retry in a few moments."
                 )
+
             if yara_result is not None:
                 logger.warning("YARA match in %s: %s", filename, yara_result)
                 raise BadRequestError(f"ERR_MALWARE_DETECTED: {yara_result}")

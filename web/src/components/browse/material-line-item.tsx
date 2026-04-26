@@ -12,6 +12,7 @@ import { ItemActionsMenu, ItemActionsDropdownTrigger } from "./item-actions-menu
 import { useIsMobile } from "@/hooks/use-media-query";
 import { useUIStore } from "@/lib/stores";
 import { EXT_BADGE_COLORS, getFileBadgeLabel, getFileExtension } from "@/lib/file-utils";
+import { useTranslations } from "next-intl";
 
 const TYPE_COLORS: Record<string, string> = {
     polycopie: "bg-blue-100 text-blue-800",
@@ -24,16 +25,6 @@ const TYPE_COLORS: Record<string, string> = {
     other: "bg-gray-100 text-gray-800",
 };
 
-const TYPE_LABELS: Record<string, string> = {
-    polycopie: "Polycopié",
-    annal: "Annale",
-    cheatsheet: "Cheatsheet",
-    tip: "Tip",
-    review: "Review",
-    discussion: "Discussion",
-    video: "Video",
-    other: "Other",
-};
 
 export const TYPE_ICONS: Record<string, React.ElementType> = {
     polycopie: FileText,
@@ -118,6 +109,8 @@ export function MaterialLineItem({
     onAddAttachment,
     draftAttachmentCount,
 }: MaterialLineItemProps) {
+    const t = useTranslations("Browse");
+    const tTypes = useTranslations("MaterialTypes");
     const isMobile = useIsMobile();
     const { openSidebar } = useUIStore();
     const pathname = usePathname();
@@ -152,7 +145,7 @@ export function MaterialLineItem({
 
     let badgeColor = TYPE_COLORS[type] ?? TYPE_COLORS.other;
 
-    let badgeLabel = TYPE_LABELS[type] ?? type;
+    let badgeLabel = tTypes.has(type as any) ? tTypes(type as any) : type;
     let Icon = TYPE_ICONS[type] ?? File;
 
     if (type === "document") {
@@ -237,7 +230,9 @@ export function MaterialLineItem({
                     ? `text-${themeColor}-700 dark:text-${themeColor}-400`
                     : "";
 
-    return (
+        const isRestricted = !!staged || !!previewPrId;
+
+        return (
         <ItemActionsMenu 
             item={{ id, type: "material", data: material, staged, isExternal }}
             onAddAttachment={onAddAttachment}
@@ -278,14 +273,14 @@ export function MaterialLineItem({
                                 }`}
                             >
                                 {staged === "deleted"
-                                    ? "Deleting"
+                                    ? t("deleting") || "Deleting"
                                     : staged === "moved"
-                                        ? "Moving"
+                                        ? t("moving") || "Moving"
                                         : staged === "created"
                                             ? isExternal
-                                                ? "Contribution"
-                                                : "Draft"
-                                            : "Edited"}
+                                                ? t("contribution") || "Contribution"
+                                                : t("draft") || "Draft"
+                                            : t("edited") || "Edited"}
                             </span>
                         )}
                     </div>
@@ -304,20 +299,20 @@ export function MaterialLineItem({
 
                 {!isMobile && likeCount > 0 && (
                     <div className="flex flex-col items-end justify-center px-2 text-[11px] leading-tight text-muted-foreground opacity-80">
-                        <span className="flex items-center gap-1" title="Likes">
+                        <span className="flex items-center gap-1" title={t("likes")}>
                             {likeCount}
                             <ThumbsUp className={`h-3 w-3 ${isLiked ? "fill-primary text-primary" : ""}`} />
                         </span>
                     </div>
                 )}
                     <div className="flex shrink-0 items-center gap-1">
-                        {!staged ? (
+                        {!isRestricted ? (
                             <>
                                 <button
                                     onClick={handleChat}
                                     className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                                    title="Chat"
-                                    aria-label={`Chat about ${title}`}
+                                    title={t("chat")}
+                                    aria-label={t("chatAbout", { title })}
                                 >
                                     <MessageSquare className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
                                 </button>
@@ -326,8 +321,8 @@ export function MaterialLineItem({
                         <button
                             onClick={handleDetails}
                             className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                            title="Details"
-                            aria-label={`View details for ${title}`}
+                            title={t("details")}
+                            aria-label={t("viewDetailsFor", { title })}
                         >
                             <Info className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
                         </button>
@@ -338,7 +333,7 @@ export function MaterialLineItem({
                                 onAddAttachment();
                             }}
                             className="rounded-md p-2 hover:bg-violet-50 text-violet-600 dark:hover:bg-violet-950/40 dark:text-violet-400 active:scale-95 transition-transform"
-                            title="Add attachment"
+                            title={t("addAttachment")}
                         >
                             <Paperclip className={`${isMobile ? "h-5 w-5" : "h-4 w-4"}`} />
                         </button>
@@ -347,7 +342,7 @@ export function MaterialLineItem({
                     <Link
                         href={buildPath()}
                         className="rounded-md p-2 hover:bg-muted active:scale-95 transition-transform"
-                        title={isMobile ? "View" : "Preview"}
+                        title={isMobile ? t("view") || "View" : t("preview") || "Preview"}
                         onClick={(e) => {
                             if (onNavigate) {
                                 e.preventDefault();
@@ -357,7 +352,7 @@ export function MaterialLineItem({
                                 e.stopPropagation();
                             }
                         }}
-                        aria-label={`${isMobile ? "View" : "Preview"} ${title}`}
+                        aria-label={t("viewOrPreviewFor", { title, action: isMobile ? (t("view") || "View") : (t("preview") || "Preview") })}
                     >
                         <Eye className={`${isMobile ? "h-5 w-5" : "h-4 w-4"} text-muted-foreground`} />
                     </Link>

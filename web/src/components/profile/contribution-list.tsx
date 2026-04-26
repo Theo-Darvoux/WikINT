@@ -28,6 +28,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api-client";
+import { useTranslations } from "next-intl";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /*  Types                                                                     */
@@ -69,14 +70,14 @@ interface ItemVisuals {
     label: string;
 }
 
-const MATERIAL_TYPES: Record<string, ItemVisuals> = {
-    polycopie:  { icon: FileText,       color: "text-blue-600 dark:text-blue-400",    bg: "bg-blue-100 dark:bg-blue-950/50",    label: "Polycopié" },
-    annal:      { icon: FileText,       color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-100 dark:bg-orange-950/50", label: "Annale" },
-    cheatsheet: { icon: FileText,       color: "text-green-600 dark:text-green-400",  bg: "bg-green-100 dark:bg-green-950/50",  label: "Cheatsheet" },
-    tip:        { icon: Lightbulb,      color: "text-yellow-600 dark:text-yellow-400", bg: "bg-yellow-100 dark:bg-yellow-950/50", label: "Tip" },
-    review:     { icon: ClipboardCheck, color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-100 dark:bg-purple-950/50", label: "Review" },
-    discussion: { icon: MessageSquare,  color: "text-pink-600 dark:text-pink-400",    bg: "bg-pink-100 dark:bg-pink-950/50",    label: "Discussion" },
-    video:      { icon: Video,          color: "text-red-600 dark:text-red-400",      bg: "bg-red-100 dark:bg-red-950/50",      label: "Video" },
+const MATERIAL_TYPES: Record<string, Omit<ItemVisuals, "label"> & { labelKey: string }> = {
+    polycopie:  { icon: FileText,       color: "text-blue-600 dark:text-blue-400",    bg: "bg-blue-100 dark:bg-blue-950/50",    labelKey: "polycopie" },
+    annal:      { icon: FileText,       color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-100 dark:bg-orange-950/50", labelKey: "annal" },
+    cheatsheet: { icon: FileText,       color: "text-green-600 dark:text-green-400",  bg: "bg-green-100 dark:bg-green-950/50",  labelKey: "cheatsheet" },
+    tip:        { icon: Lightbulb,      color: "text-yellow-600 dark:text-yellow-400", bg: "bg-yellow-100 dark:bg-yellow-950/50", labelKey: "tip" },
+    review:     { icon: ClipboardCheck, color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-100 dark:bg-purple-950/50", labelKey: "review" },
+    discussion: { icon: MessageSquare,  color: "text-pink-600 dark:text-pink-400",    bg: "bg-pink-100 dark:bg-pink-950/50",    labelKey: "discussion" },
+    video:      { icon: Video,          color: "text-red-600 dark:text-red-400",      bg: "bg-red-100 dark:bg-red-950/50",      labelKey: "video" },
 };
 
 const EXT_VISUALS: Record<string, ItemVisuals> = {
@@ -107,9 +108,9 @@ const EXT_VISUALS: Record<string, ItemVisuals> = {
     epub: { icon: FileText,        color: "text-teal-600 dark:text-teal-400",    bg: "bg-teal-100 dark:bg-teal-950/50",    label: "EPUB" },
 };
 
-const DEFAULT_MATERIAL: ItemVisuals = { icon: File, color: "text-slate-500 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800/50", label: "File" };
+const DEFAULT_MATERIAL: Omit<ItemVisuals, "label"> & { labelKey: string } = { icon: File, color: "text-slate-500 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800/50", labelKey: "file" };
 
-function getMaterialVisuals(type?: string, slug?: string, title?: string): ItemVisuals {
+function getMaterialVisuals(type?: string, slug?: string, title?: string): ItemVisuals | (Omit<ItemVisuals, "label"> & { labelKey: string }) {
     if (type && MATERIAL_TYPES[type]) return MATERIAL_TYPES[type];
 
     /* For "document" or unknown types, detect from slug or title extension */
@@ -121,7 +122,7 @@ function getMaterialVisuals(type?: string, slug?: string, title?: string): ItemV
     }
 
     if (type && type !== "document" && type !== "other") {
-        return { ...DEFAULT_MATERIAL, label: type.charAt(0).toUpperCase() + type.slice(1) };
+        return { ...DEFAULT_MATERIAL, labelKey: "file", label: type.charAt(0).toUpperCase() + type.slice(1) } as any;
     }
 
     return DEFAULT_MATERIAL;
@@ -131,14 +132,14 @@ function getMaterialVisuals(type?: string, slug?: string, title?: string): ItemV
 /*  PR status visuals                                                         */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-function getPRVisuals(status?: string) {
+function getPRVisuals(status: string | undefined, t: any) {
     const s = status?.toLowerCase();
     if (s === "open")
-        return { icon: CircleDashed, color: "text-green-600 dark:text-green-400", bg: "bg-green-100 dark:bg-green-950/50", label: "Open", pillClass: "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400" };
+        return { icon: CircleDashed, color: "text-green-600 dark:text-green-400", bg: "bg-green-100 dark:bg-green-950/50", label: t("statusOpen"), pillClass: "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400" };
     if (s === "merged" || s === "approved")
-        return { icon: CheckCircle2, color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-100 dark:bg-purple-950/50", label: "Merged", pillClass: "bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-400" };
+        return { icon: CheckCircle2, color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-100 dark:bg-purple-950/50", label: t("statusMerged"), pillClass: "bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-400" };
     if (s === "closed" || s === "rejected")
-        return { icon: XCircle, color: "text-red-600 dark:text-red-400", bg: "bg-red-100 dark:bg-red-950/50", label: "Closed", pillClass: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400" };
+        return { icon: XCircle, color: "text-red-600 dark:text-red-400", bg: "bg-red-100 dark:bg-red-950/50", label: t("statusClosed"), pillClass: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400" };
     return { icon: GitPullRequest, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-100 dark:bg-blue-950/50", label: status ?? "", pillClass: "bg-muted text-muted-foreground" };
 }
 
@@ -147,6 +148,7 @@ function getPRVisuals(status?: string) {
 /* ────────────────────────────────────────────────────────────────────────── */
 
 function MaterialRow({ item, index }: { item: ContributionItem; index: number }) {
+    const t = useTranslations("MaterialTypes");
     const vis = getMaterialVisuals(item.type, item.slug, item.title);
     const Icon = vis.icon;
     const title = item.title || item.id;
@@ -178,7 +180,7 @@ function MaterialRow({ item, index }: { item: ContributionItem; index: number })
             </div>
 
             <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${vis.color} ${vis.bg}`}>
-                {vis.label}
+                {"labelKey" in vis ? t(vis.labelKey as any) : (vis as any).label}
             </span>
 
             <ChevronNav className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-all group-hover:text-muted-foreground/70 group-hover:translate-x-0.5" />
@@ -190,7 +192,8 @@ function MaterialRow({ item, index }: { item: ContributionItem; index: number })
 }
 
 function PRRow({ item, index }: { item: ContributionItem; index: number }) {
-    const vis = getPRVisuals(item.status);
+    const t = useTranslations("Profile");
+    const vis = getPRVisuals(item.status, t);
     const Icon = vis.icon;
     const title = item.title || item.id;
     const date = item.created_at ? new Date(item.created_at) : null;
@@ -270,6 +273,7 @@ const EMPTY_CONFIG = {
 /* ────────────────────────────────────────────────────────────────────────── */
 
 export function ContributionList({ userId, type }: ContributionListProps) {
+    const t = useTranslations("Profile");
     const [items, setItems] = useState<ContributionItem[]>([]);
     const [page, setPage] = useState(1);
     const [pages, setPages] = useState(1);
@@ -321,6 +325,11 @@ export function ContributionList({ userId, type }: ContributionListProps) {
 
     /* Empty state */
     if (items.length === 0) {
+        const EMPTY_CONFIG: Record<string, { icon: any, label: string }> = {
+            prs: { icon: GitPullRequest, label: t("noContributionsYet") },
+            materials: { icon: FileText, label: t("noMaterialsYet") },
+            annotations: { icon: MessageSquare, label: t("noAnnotationsYet") },
+        };
         const empty = EMPTY_CONFIG[type];
         const EmptyIcon = empty.icon;
         return (
@@ -348,8 +357,9 @@ export function ContributionList({ userId, type }: ContributionListProps) {
             {pages > 1 && (
                 <div className="flex items-center justify-between border-t bg-muted/30 px-4 py-2.5">
                     <p className="text-xs text-muted-foreground">
-                        {total} {type === "prs" ? "contribution" : type === "annotations" ? "annotation" : "material"}
-                        {total !== 1 ? "s" : ""}
+                        {type === "prs" ? t("totalContributions", { count: total }) : 
+                         type === "annotations" ? t("totalAnnotations", { count: total }) : 
+                         t("totalMaterials", { count: total })}
                     </p>
                     <div className="flex items-center gap-1">
                         <Button

@@ -3,41 +3,43 @@ import { type Operation } from "@/lib/staging-store";
 import { toast } from "sonner";
 
 /** Generate a sensible auto-title from one or multiple operations. */
-export function autoTitle(ops: Operation[]): string {
-    if (ops.length === 0) return "Brouillon de contribution";
+export function autoTitle(ops: Operation[], t: any): string {
+    if (ops.length === 0) return t("draft");
     if (ops.length > 1) {
         // e.g. "Deleted 3 items", "Moved 5 items"
         const types = new Set(ops.map((o) => o.op));
         if (types.size === 1) {
             const type = Array.from(types)[0];
             if (type.startsWith("delete_"))
-                return `Suppression de ${ops.length} éléments`;
+                return t("deletedItems", { count: ops.length });
             if (type === "move_item")
-                return `Déplacement de ${ops.length} éléments`;
+                return t("movedItems", { count: ops.length });
         }
-        return `Modification de ${ops.length} éléments`;
+        return t("modifiedItems", { count: ops.length });
     }
 
     const op = ops[0];
     switch (op.op) {
         case "create_material":
-            return op.title ? `Ajout : « ${op.title} »` : "Ajout d'un document";
+            return op.title ? t("addMaterial", { name: op.title }) : t("addMaterialGeneric");
         case "edit_material":
             return op.title
-                ? `Modification : « ${op.title} »`
-                : "Modification d'un document";
+                ? t("editMaterial", { name: op.title })
+                : t("editMaterialGeneric");
         case "delete_material":
-            return "Suppression d'un document";
+            return t("deleteMaterial");
         case "create_directory":
-            return op.name ? `Nouveau dossier : « ${op.name} »` : "Création d'un dossier";
+            return op.name ? t("createDirectory", { name: op.name }) : t("createDirectoryGeneric");
         case "edit_directory":
-            return op.name ? `Renommage : « ${op.name} »` : "Modification d'un dossier";
+            return op.name ? t("editDirectory", { name: op.name }) : t("editDirectoryGeneric");
         case "delete_directory":
-            return "Suppression d'un dossier";
+            return t("deleteDirectory");
         case "move_item":
-            return `Déplacement d'un ${
-                op.target_type === "directory" ? "dossier" : "document"
-            }`;
+            return t("moveItem", {
+                type: op.target_type === "directory" ? t("folder") : t("material")
+            });
+        default:
+            return t("draft");
     }
 }
 
@@ -47,12 +49,13 @@ export function autoTitle(ops: Operation[]): string {
  */
 export async function submitDirectOperations(
     ops: Operation[],
-    manualTitle?: string,
-    manualDescription?: string | null
+    manualTitle: string | undefined,
+    manualDescription: string | null | undefined,
+    t: any
 ): Promise<{ id: string; status: string } | null> {
     if (ops.length === 0) return null;
 
-    const title = manualTitle || autoTitle(ops);
+    const title = manualTitle || autoTitle(ops, t);
 
     const promise = apiFetch<{ id: string; status: string }>(
         "/pull-requests",
@@ -67,14 +70,14 @@ export async function submitDirectOperations(
     );
 
     toast.promise(promise, {
-        loading: "Création de la contribution...",
+        loading: t("submitting"),
         success: (result) => {
             if (result.status === "approved") {
-                return "Modifications publiées immédiatement";
+                return t("published");
             }
-            return "Contribution envoyée — en attente de validation";
+            return t("submitted");
         },
-        error: (err) => (err instanceof Error ? err.message : "Échec de l'envoi"),
+        error: (err) => (err instanceof Error ? err.message : t("failed")),
     });
 
     try {

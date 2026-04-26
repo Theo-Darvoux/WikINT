@@ -26,25 +26,33 @@ export const metadata: Metadata = {
 };
 
 
-export default function RootLayout({
+import { getMessages, getLocale } from 'next-intl/server';
+import { LocaleProvider } from '@/components/locale-provider';
+
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const messages = await getMessages();
+  const locale = await getLocale();
+
   return (
-    <html lang="fr" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <body className={`${inter.variable} font-sans`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <ConfigProvider>
-            <LayoutShell>{children}</LayoutShell>
-          </ConfigProvider>
-          <Toaster position="bottom-left" expand richColors />
-        </ThemeProvider>
+        <LocaleProvider initialLocale={locale} initialMessages={messages}>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <ConfigProvider>
+              <LayoutShell>{children}</LayoutShell>
+            </ConfigProvider>
+            <Toaster position="bottom-left" expand richColors />
+          </ThemeProvider>
+        </LocaleProvider>
       </body>
     </html>
   );

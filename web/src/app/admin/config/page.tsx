@@ -13,6 +13,7 @@ import { apiFetch } from "@/lib/api-client";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfigStore } from "@/lib/stores";
+import { useTranslations } from "next-intl";
 
 // Extracted Components
 import { AuthConfigTab } from "./components/AuthConfigTab";
@@ -65,9 +66,17 @@ interface AuthConfig {
     primary_color: string;
     footer_text: string;
     organization_url: string | null;
+    legal_name: string | null;
+    legal_address: string | null;
+    legal_siret: string | null;
+    contact_email: string | null;
+    dpo_email: string | null;
+    dpo_address: string | null;
+    data_transfers: string | null;
 }
 
 export default function AdminConfigPage() {
+    const t = useTranslations("Admin.Config");
     const [config, setConfig] = useState<AuthConfig | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -79,11 +88,11 @@ export default function AdminConfigPage() {
             const data = await apiFetch<AuthConfig>("/admin/auth-config");
             setConfig(data);
         } catch {
-            toast.error("Failed to load configuration");
+            toast.error(t("errors.load"));
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [t]);
 
     useEffect(() => {
         fetchConfig();
@@ -106,7 +115,7 @@ export default function AdminConfigPage() {
             
             return updated;
         } catch {
-            toast.error("Failed to save configuration");
+            toast.error(t("errors.save"));
             throw new Error("Save failed");
         } finally {
             setSaving(false);
@@ -132,35 +141,35 @@ export default function AdminConfigPage() {
                         className="flex items-center gap-2 px-6 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all font-medium"
                     >
                         <Shield className="h-4 w-4" />
-                        Authentication
+                        {t("tabs.authentication")}
                     </TabsTrigger>
                     <TabsTrigger 
                         value="email" 
                         className="flex items-center gap-2 px-6 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all font-medium"
                     >
                         <Mail className="h-4 w-4" />
-                        Email
+                        {t("tabs.email")}
                     </TabsTrigger>
                     <TabsTrigger 
                         value="storage" 
                         className="flex items-center gap-2 px-6 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all font-medium"
                     >
                         <HardDrive className="h-4 w-4" />
-                        Storage
+                        {t("tabs.storage")}
                     </TabsTrigger>
                     <TabsTrigger 
                         value="files" 
                         className="flex items-center gap-2 px-6 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all font-medium"
                     >
                         <FileCode className="h-4 w-4" />
-                        Files
+                        {t("tabs.files")}
                     </TabsTrigger>
                     <TabsTrigger 
                         value="branding" 
                         className="flex items-center gap-2 px-6 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all font-medium"
                     >
                         <Palette className="h-4 w-4" />
-                        Branding
+                        {t("tabs.branding")}
                     </TabsTrigger>
                 </TabsList>
 

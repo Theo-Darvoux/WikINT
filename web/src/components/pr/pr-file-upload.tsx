@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { MAX_FILE_SIZE, MAX_FILE_SIZE_MB, ACCEPTED_FILE_TYPES, formatFileSize } from "@/lib/file-utils";
 import { uploadFile, logicalFileSize, type UploadResult } from "@/lib/upload-client";
 import { ApiError } from "@/lib/api-client";
+import { useTranslations } from "next-intl";
 
 interface UploadCompleteResult {
     fileKey: string;
@@ -16,24 +17,15 @@ interface UploadCompleteResult {
     mimeType: string;
 }
 
-// Machine-readable code → friendly message
-const ERROR_CODE_MESSAGES: Record<string, string> = {
-    ERR_FILE_TOO_LARGE: `File exceeds the size limit.`,
-    ERR_TYPE_NOT_ALLOWED: "This file type is not supported.",
-    ERR_MIME_MISMATCH: "File extension doesn't match its actual content.",
-    ERR_SVG_UNSAFE: "This SVG contains unsafe content and cannot be uploaded.",
-    ERR_SVG_MALFORMED: "This SVG is malformed and cannot be processed.",
-    ERR_MALWARE_DETECTED: "This file was flagged as malicious and cannot be uploaded.",
-    ERR_SCAN_UNAVAILABLE: "File scanning is temporarily unavailable. Please try again.",
-    ERR_QUOTA_EXCEEDED: "Upload limit reached. Wait for current uploads to complete, then try again.",
-    ERR_INTENT_EXPIRED: "Upload session expired. Please try again.",
-};
-
-function friendlyError(raw: string, code?: string): string {
-    if (code && ERROR_CODE_MESSAGES[code]) return ERROR_CODE_MESSAGES[code];
-    // Fallback: substring match for legacy plain-text errors
-    for (const [key, msg] of Object.entries(ERROR_CODE_MESSAGES)) {
-        if (raw.includes(key)) return msg;
+function friendlyError(raw: string, t: any, code?: string): string {
+    if (code) {
+        const key = `errors.${code}`;
+        // next-intl doesn't have a simple hasKey, but we can try to translate and see
+        try {
+            return t(key);
+        } catch {
+            // ignore
+        }
     }
     return raw;
 }
@@ -56,10 +48,11 @@ export function PRFileUpload({
 }: {
     onUploadComplete: (result: UploadCompleteResult) => void;
 }) {
+    const t = useTranslations("Upload");
     const [file, setFile] = useState<File | null>(null);
     const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
     const [progress, setProgress] = useState(0);
-    const [processingStatus, setProcessingStatus] = useState("Processing…");
+    const [processingStatus, setProcessingStatus] = useState(t("processing"));
     const [stageIndex, setStageIndex] = useState<number | undefined>(undefined);
     const [stageTotal, setStageTotal] = useState<number | undefined>(undefined);
     const [errorMsg, setErrorMsg] = useState("");
@@ -86,7 +79,7 @@ export function PRFileUpload({
     const selectFile = useCallback((selected: File) => {
         if (selected.size > MAX_FILE_SIZE) {
             setStatus("error");
-            setErrorMsg(`File exceeds the ${MAX_FILE_SIZE_MB} MiB size limit`);
+            setErrorMsg(t("errors.fileExceedsLimit", { limit: MAX_FILE_SIZE_MB }));
             return;
         }
         setFile(selected);
@@ -118,7 +111,7 @@ export function PRFileUpload({
         e.stopPropagation();
         setIsDragging(false);
         if (e.dataTransfer.files.length > 1) {
-            toast.warning("Only the first file will be uploaded in single-file mode.");
+            toast.warning(t("onlyFirstFile"));
         }
         const dropped = e.dataTransfer.files[0];
         if (dropped) selectFile(dropped);
@@ -134,7 +127,7 @@ export function PRFileUpload({
         setStatus("uploading");
         setProgress(0);
         setErrorMsg("");
-        setProcessingStatus("Preparing…");
+        setProcessingStatus(t("preparing"));
         setStageIndex(undefined);
         setStageTotal(undefined);
 
@@ -147,6 +140,7 @@ export function PRFileUpload({
                     setStageTotal(st);
                 },
                 signal: controller.signal,
+                t: t,
             });
 
             setUploadResult(result);
@@ -163,9 +157,9 @@ export function PRFileUpload({
                 return;
             }
             setStatus("error");
-            const raw = err instanceof ApiError ? err.message : (err as Error).message || "Upload failed";
+            const raw = err instanceof ApiError ? err.message : (err as Error).message || t("errorGeneric");
             const code = extractErrorCode(err);
-            setErrorMsg(friendlyError(raw, code));
+            setErrorMsg(friendlyError(raw, t, code));
         } finally {
             abortRef.current = null;
         }
@@ -196,7 +190,7 @@ export function PRFileUpload({
                       : ""
             }`}
             role="region"
-            aria-label="File upload drop zone"
+            aria-label={t("dropZone")}
             tabIndex={0}
             onClick={() => {
                 if (status === "idle") fileInputRef.current?.click();
@@ -213,9 +207,9 @@ export function PRFileUpload({
         >
             {/* Live region for screen readers */}
             <div aria-live="polite" aria-atomic="true" className="sr-only">
-                {status === "uploading" ? (progress >= 80 ? processingStatus : `Uploading ${Math.min(Math.round(progress * 100 / 80), 100)}%`) : ""}
-                {status === "success" ? "Upload complete" : ""}
-                {status === "error" ? `Upload failed: ${errorMsg}` : ""}
+                {status === "uploading" ? (progress >= 80 ? processingStatus : `${t("uploading")} ${Math.min(Math.round(progress * 100 / 80), 100)}%`) : ""}
+                {status === "success" ? t("complete") : ""}
+                {status === "error" ? `${t("failed")}: ${errorMsg}` : ""}
             </div>
 
             {status === "idle" && (
@@ -228,16 +222,16 @@ export function PRFileUpload({
                             onChange={handleFileChange}
                             accept={ACCEPTED_FILE_TYPES}
                             className="hidden"
-                            aria-label="Select file to upload"
+                            aria-label={t("selectFile")}
                         />
                         {!file && (
                             <p className="text-sm font-medium text-muted-foreground mt-2">
-                                Drag a file here, or press Enter to select.
+                                {t("dragDrop")}
                             </p>
                         )}
                         {file && (
                             <p className="text-sm font-medium text-foreground mt-2">
-                                Selected: {file.name}
+                                {t("selected", { filename: file.name })}
                             </p>
                         )}
                     </div>
@@ -247,9 +241,9 @@ export function PRFileUpload({
                                 e.stopPropagation();
                                 void handleUpload();
                             }}
-                            aria-label={`Upload ${file.name}`}
+                            aria-label={t("selected", { filename: file.name })}
                         >
-                            Start Upload
+                            {t("startUpload")}
                         </Button>
                     )}
                 </>
@@ -262,7 +256,7 @@ export function PRFileUpload({
                     {/* Upload / transfer bar */}
                     <div className="space-y-1">
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>Upload</span>
+                            <span>{t("uploading")}</span>
                             <span>{Math.min(Math.round(progress * 100 / 80), 100)}%</span>
                         </div>
                         <div
@@ -271,7 +265,7 @@ export function PRFileUpload({
                             aria-valuenow={Math.min(Math.round(progress * 100 / 80), 100)}
                             aria-valuemin={0}
                             aria-valuemax={100}
-                            aria-label="Upload transfer progress"
+                            aria-label={t("uploading")}
                         >
                             <div
                                 className="h-full bg-primary transition-all duration-300"
@@ -285,7 +279,7 @@ export function PRFileUpload({
                         <div className="space-y-1">
                             <div className="flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
                                 <Loader2 className="h-3 w-3 animate-spin shrink-0" aria-hidden="true" />
-                                <span className="truncate">{processingStatus || "Processing…"}</span>
+                                <span className="truncate">{processingStatus || t("processing")}</span>
                                 {stageIndex != null && stageTotal != null && (
                                     <span className="ml-auto shrink-0 font-normal text-muted-foreground text-[10px]">
                                         {stageIndex + 1}/{stageTotal}
@@ -298,7 +292,7 @@ export function PRFileUpload({
                                 aria-valuenow={Math.min((progress - 80) * 5, 100)}
                                 aria-valuemin={0}
                                 aria-valuemax={100}
-                                aria-label="Processing progress"
+                                aria-label={t("processingProgress")}
                             >
                                 <div
                                     className="h-full bg-amber-500 dark:bg-amber-400 animate-pulse transition-all duration-500"
@@ -306,7 +300,7 @@ export function PRFileUpload({
                                 />
                             </div>
                             {elapsedSec > 0 && (
-                                <p className="text-[10px] text-muted-foreground text-center">{elapsedSec}s elapsed</p>
+                                <p className="text-[10px] text-muted-foreground text-center">{t("elapsed", { count: elapsedSec })}</p>
                             )}
                         </div>
                     )}
@@ -315,9 +309,9 @@ export function PRFileUpload({
                         variant="outline"
                         size="sm"
                         onClick={handleCancel}
-                        aria-label="Cancel upload"
+                        aria-label={t("cancel")}
                     >
-                        Cancel
+                        {t("cancel")}
                     </Button>
                 </div>
             )}
@@ -326,7 +320,7 @@ export function PRFileUpload({
                 <div className="space-y-3">
                     <AlertCircle className="w-10 h-10 mx-auto text-red-500" aria-hidden="true" />
                     <div className="text-sm font-bold text-red-500" role="alert">
-                        Upload Failed
+                        {t("failed")}
                     </div>
                     <div className="text-xs text-muted-foreground">{errorMsg}</div>
                     <div className="flex gap-2 justify-center">
@@ -339,11 +333,11 @@ export function PRFileUpload({
                                     void handleUpload(file);
                                 }}
                             >
-                                Try Again
+                                {t("tryAgain")}
                             </Button>
                         )}
                         <Button variant="outline" onClick={handleReset}>
-                            Choose Different File
+                            {t("chooseDifferent")}
                         </Button>
                     </div>
                 </div>
@@ -352,17 +346,17 @@ export function PRFileUpload({
             {status === "success" && uploadResult && (
                 <div className="space-y-3">
                     <CheckCircle2 className="w-10 h-10 mx-auto text-green-500" aria-hidden="true" />
-                    <div className="text-sm font-bold text-green-500">Upload Complete</div>
+                    <div className="text-sm font-bold text-green-500">{t("complete")}</div>
                     <div className="text-xs text-muted-foreground">
                         {uploadResult.correctedName} &middot; {formatFileSize(uploadResult.size)}
                         {uploadResult.wasCompressed && (
                             <span className="ml-1 italic">
-                                (compressed from {formatFileSize(uploadResult.original_size)})
+                                ({t("compressedFrom", { size: formatFileSize(uploadResult.original_size) })})
                             </span>
                         )}
                     </div>
                     <Button variant="outline" size="sm" onClick={handleReset}>
-                        Upload another file
+                        {t("uploadAnother")}
                     </Button>
                 </div>
             )}

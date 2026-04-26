@@ -118,6 +118,12 @@ async def get_full_auth_config(db: AsyncSession, redis: Redis) -> dict[str, Any]
             "primary_color": settings.primary_color,
             "footer_text": settings.footer_text,
             "organization_url": settings.organization_url,
+            "legal_name": settings.legal_name,
+            "legal_address": settings.legal_address,
+            "contact_email": settings.contact_email,
+            "dpo_email": settings.dpo_email,
+            "dpo_address": settings.dpo_address,
+            "data_transfers": settings.data_transfers,
             "domains": _FALLBACK_DOMAINS,
         }
     else:
@@ -168,6 +174,13 @@ async def get_full_auth_config(db: AsyncSession, redis: Redis) -> dict[str, Any]
             "primary_color": config_row.primary_color if config_row.primary_color is not None else settings.primary_color,
             "footer_text": config_row.footer_text if config_row.footer_text is not None else settings.footer_text,
             "organization_url": config_row.organization_url if config_row.organization_url is not None else settings.organization_url,
+            "legal_name": config_row.legal_name if config_row.legal_name is not None else settings.legal_name,
+            "legal_address": config_row.legal_address if config_row.legal_address is not None else settings.legal_address,
+            "legal_siret": config_row.legal_siret if config_row.legal_siret is not None else settings.legal_siret,
+            "contact_email": config_row.contact_email if config_row.contact_email is not None else settings.contact_email,
+            "dpo_email": config_row.dpo_email if config_row.dpo_email is not None else settings.dpo_email,
+            "dpo_address": config_row.dpo_address if config_row.dpo_address is not None else settings.dpo_address,
+            "data_transfers": config_row.data_transfers if config_row.data_transfers is not None else settings.data_transfers,
             "domains": domains if domains else _FALLBACK_DOMAINS,
         }
 

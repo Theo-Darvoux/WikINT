@@ -11,7 +11,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, BadRequestError
 from app.core.redis import get_redis
 from app.dependencies.auth import CurrentUser, security
 from app.dependencies.rate_limit import rate_limit_downloads
@@ -75,7 +75,7 @@ async def get_material_download_url(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[None, Depends(rate_limit_downloads)],
-) -> dict[str, str]:
+) -> dict[str, Any]:
     await increment_download_count(db, material_id)
     data = await get_material_with_version(db, material_id)
     version = data.get("current_version_info")
@@ -101,7 +101,7 @@ async def get_material_download_url(
         filename=version.get("file_name"),
         content_type=version.get("file_mime_type"),
     )
-    return {"url": url}
+    return {"url": url, "filename": version.get("file_name")}
 
 
 @router.get("/{material_id}/inline")
@@ -109,7 +109,7 @@ async def inline_material(
     material_id: str,
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict[str, str]:
+) -> dict[str, Any]:
     from app.services.material import check_material_access, get_material_with_version
 
     data = await get_material_with_version(db, material_id)
@@ -137,7 +137,7 @@ async def inline_material(
         filename=version.get("file_name"),
         content_type=version.get("file_mime_type"),
     )
-    return {"url": url}
+    return {"url": url, "filename": version.get("file_name")}
 
 
 @router.get("/{material_id}/thumbnail")
@@ -145,7 +145,7 @@ async def thumbnail_material(
     material_id: str,
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """
     Generate a presigned URL for a material version's thumbnail.
     Returns {"url": ..., "thumbnail_type": "webp" | "fallback"}.
@@ -298,7 +298,7 @@ async def get_version_download_url(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[None, Depends(rate_limit_downloads)],
-) -> dict[str, str]:
+) -> dict[str, Any]:
     version = await get_material_version(db, material_id, version_number)
     if not version.file_key:
         from app.core.exceptions import NotFoundError
@@ -322,7 +322,7 @@ async def get_version_download_url(
         filename=version.file_name,
         content_type=version.file_mime_type,
     )
-    return {"url": url}
+    return {"url": url, "filename": version.file_name}
 
 
 @router.get("/{material_id}/attachments", response_model=list[MaterialDetail])
@@ -351,7 +351,11 @@ async def like_material(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, Any]:
-    liked = await toggle_like(db, user.id, uuid.UUID(material_id))
+    try:
+        uid = uuid.UUID(material_id)
+    except ValueError:
+        raise BadRequestError(f"Invalid material ID: {material_id}")
+    liked = await toggle_like(db, user.id, uid)
     await db.commit()
     return {"liked": liked}
 
@@ -362,7 +366,11 @@ async def favourite_material(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, Any]:
-    favourited = await toggle_favourite(db, user.id, uuid.UUID(material_id))
+    try:
+        uid = uuid.UUID(material_id)
+    except ValueError:
+        raise BadRequestError(f"Invalid material ID: {material_id}")
+    favourited = await toggle_favourite(db, user.id, uid)
     await db.commit()
     return {"favourited": favourited}
 

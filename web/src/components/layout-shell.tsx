@@ -18,14 +18,16 @@ import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { useUIStore } from "@/lib/stores";
+import { useTranslations } from "next-intl";
 
 export function LayoutShell({ children }: { children: ReactNode }) {
+  const t = useTranslations("Layout");
   const { user, isAuthenticated, isLoading, fetchMe } = useAuth();
   const { hideFooter } = useUIStore();
   const pathname = usePathname();
   const router = useRouter();
 
-  const isPublicPage = pathname === "/login" || pathname === "/login/verify" || pathname === "/privacy";
+  const isPublicPage = pathname === "/login" || pathname === "/login/verify" || pathname === "/privacy" || pathname === "/terms";
   const isOnboardingPage = pathname === "/onboarding";
   const isPendingPage = pathname === "/pending-approval";
 
@@ -86,7 +88,7 @@ export function LayoutShell({ children }: { children: ReactNode }) {
         )}
       >
         <WifiOff className="h-3.5 w-3.5" />
-        You appear to be offline. Some features may not work.
+        {t("offlineWarning")}
       </div>
       {!shouldHideContent && <Navbar />}
       <main className="flex-1 w-full grid grid-cols-1 min-h-0 overflow-y-auto overflow-x-hidden">
@@ -94,7 +96,7 @@ export function LayoutShell({ children }: { children: ReactNode }) {
           <div className="flex flex-col items-center justify-center min-h-[50vh] animate-in fade-in duration-500">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4" />
             <p className="text-sm text-muted-foreground font-medium animate-pulse">
-              {(user && !user.onboarded) ? "Redirecting to setup..." : "Récupération de la session..."}
+              {(user && !user.onboarded) ? t("redirectingToSetup") : t("recoveringSession")}
             </p>
           </div>
         ) : (

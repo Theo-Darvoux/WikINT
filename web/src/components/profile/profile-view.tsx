@@ -37,6 +37,7 @@ import { ContributionList } from "@/components/profile/contribution-list";
 import { RecentlyViewed } from "@/components/profile/recently-viewed";
 import { apiFetch, API_BASE } from "@/lib/api-client";
 import { toast } from "sonner";
+import { useTranslations, useLocale } from "next-intl";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /*  Types                                                                     */
@@ -299,6 +300,7 @@ function EditProfileForm({
   onSave: () => void;
   onCancel: () => void;
 }) {
+  const t = useTranslations("Profile");
   const [name, setName] = useState(profile.display_name ?? "");
   const [bio, setBio] = useState(profile.bio ?? "");
   const [year, setYear] = useState(profile.academic_year ?? "");
@@ -316,10 +318,10 @@ function EditProfileForm({
           academic_year: year || undefined,
         }),
       });
-      toast.success("Profile updated");
+      toast.success(t("profileUpdated"));
       onSave();
     } catch {
-      toast.error("Failed to update profile");
+      toast.error(t("profileUpdateFailed"));
     } finally {
       setSaving(false);
     }
@@ -332,7 +334,7 @@ function EditProfileForm({
       style={{ animation: "pf-fade-up 0.35s ease-out" }}
     >
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">Edit profile</h3>
+        <h3 className="font-semibold">{t("editProfile")}</h3>
         <Button
           type="button"
           variant="ghost"
@@ -344,7 +346,7 @@ function EditProfileForm({
         </Button>
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="displayName">Display name</Label>
+        <Label htmlFor="displayName">{t("displayName")}</Label>
         <Input
           id="displayName"
           value={name}
@@ -352,23 +354,23 @@ function EditProfileForm({
         />
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="bio">Bio</Label>
+        <Label htmlFor="bio">{t("bio")}</Label>
         <Textarea
           id="bio"
           value={bio}
           onChange={(e) => setBio(e.target.value.slice(0, 500))}
           className="min-h-[80px] resize-none"
-          placeholder="Tell us about yourself..."
+          placeholder={t("bioPlaceholder")}
         />
         <p className="text-right text-[10px] text-muted-foreground">
           {bio.length}/500
         </p>
       </div>
       <div className="space-y-1.5">
-        <Label>Academic year</Label>
+        <Label>{t("academicYear")}</Label>
         <Select value={year} onValueChange={setYear}>
           <SelectTrigger>
-            <SelectValue placeholder="Select year" />
+            <SelectValue placeholder={t("selectYear")} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="1A">1A</SelectItem>
@@ -380,10 +382,10 @@ function EditProfileForm({
       <div className="flex gap-2 pt-1">
         <Button type="submit" size="sm" disabled={saving}>
           <Save className="mr-1.5 h-3.5 w-3.5" />
-          {saving ? "Saving\u2026" : "Save"}
+          {saving ? t("saving") : t("save")}
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-          Cancel
+          {t("cancel")}
         </Button>
       </div>
     </form>
@@ -439,6 +441,9 @@ export function ProfileView({
   showRecentlyViewed = false,
   isUploadingAvatar = false,
 }: ProfileViewProps) {
+  const t = useTranslations("Profile");
+  const tRoles = useTranslations("Roles");
+  const locale = useLocale();
   const [editing, setEditing] = useState(false);
   const [activeTab, setActiveTab] = useState("prs");
 
@@ -598,7 +603,7 @@ export function ProfileView({
                 variant="outline"
                 className={`capitalize text-xs ${getRoleBadgeClasses(profile.role)}`}
               >
-                {profile.role}
+                {tRoles(profile.role as any)}
               </Badge>
               <div
                 className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-sm font-semibold ${
@@ -626,7 +631,7 @@ export function ProfileView({
                   onClick={() => setEditing(true)}
                   className="mt-2 text-sm text-muted-foreground/80 italic hover:text-foreground transition-colors border-b border-dashed border-transparent hover:border-muted-foreground/50 pb-0.5"
                 >
-                  Add a bio...
+                  {t("addBio")}
                 </button>
               )
             )}
@@ -639,15 +644,16 @@ export function ProfileView({
               {profile.academic_year && (
                 <span className="flex items-center gap-1 text-foreground/80">
                   <GraduationCap className="h-4 w-4" />
-                  Year {profile.academic_year}
+                  {t("year", { year: profile.academic_year })}
                 </span>
               )}
               <span className="flex items-center gap-1 text-foreground/80">
                 <Calendar className="h-4 w-4" />
-                Joined{" "}
-                {joinDate.toLocaleDateString("en-US", {
-                  month: "short",
-                  year: "numeric",
+                {t("joined", { 
+                  date: joinDate.toLocaleDateString(locale, {
+                    month: "short",
+                    year: "numeric",
+                  }) 
                 })}
               </span>
             </div>
@@ -661,7 +667,7 @@ export function ProfileView({
                 onClick={() => setEditing(true)}
               >
                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                Edit profile
+                {t("editProfile")}
               </Button>
             )}
           </div>
@@ -681,18 +687,25 @@ export function ProfileView({
 
         {/* ── Stats ── */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {STATS.map((s, i) => (
+          {STATS.map((s, i) => {
+            const statKeys: Record<string, string> = {
+              prs_approved: "approved",
+              prs_total: "totalPrs",
+              annotations_count: "annotations",
+              comments_count: "comments",
+            };
+            return (
             <StatCard
               key={s.key}
               icon={s.icon}
-              label={s.label}
+              label={t(statKeys[s.key] as any)}
               value={profile[s.key]}
               color={s.color}
               bg={s.bg}
               bar={s.bar}
               delay={0.3 + i * 0.07}
             />
-          ))}
+          )})}
         </div>
 
         {/* ── Activity tabs ── */}
@@ -700,17 +713,17 @@ export function ProfileView({
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="flex w-full flex-wrap gap-1 rounded-xl p-1.5 !h-auto min-h-fit bg-muted/60 dark:bg-muted/30 sm:flex-nowrap sm:justify-start sm:gap-0 sm:overflow-x-auto sm:h-9">
               <TabsTrigger value="prs" className={cn(tabTrigger, "w-[calc(50%-2px)] sm:w-auto min-h-9")}>
-                Contributions
+                {t("contributions")}
               </TabsTrigger>
               <TabsTrigger value="materials" className={cn(tabTrigger, "w-[calc(50%-2px)] sm:w-auto min-h-9")}>
-                Materials
+                {t("materials")}
               </TabsTrigger>
               <TabsTrigger value="annotations" className={cn(tabTrigger, "w-[calc(50%-2px)] sm:w-auto min-h-9")}>
-                Annotations
+                {t("annotations")}
               </TabsTrigger>
               {showRecentlyViewed && (
                 <TabsTrigger value="recent" className={cn(tabTrigger, "w-[calc(50%-2px)] sm:w-auto min-h-9")}>
-                  Recently Viewed
+                  {t("recentlyViewed")}
                 </TabsTrigger>
               )}
             </TabsList>

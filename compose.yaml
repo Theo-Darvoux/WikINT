@@ -92,6 +92,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - wikint_backups:/var/lib/wikint
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 10s
@@ -188,3 +190,4 @@ volumes:
   onlyoffice_data:
   onlyoffice_log:
   eurooffice_log:
+  wikint_backups:
