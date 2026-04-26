@@ -17,12 +17,18 @@ import Link from "next/link";
 
 export default function OnboardingPage() {
     const t = useTranslations("Onboarding");
-    const { user, fetchMe } = useAuth();
+    const { user, fetchMe, isLoading } = useAuth();
     const [displayName, setDisplayName] = useState("");
     const [academicYear, setAcademicYear] = useState<string>("");
     const [gdprConsent, setGdprConsent] = useState(false);
     const [loading, setLoading] = useState(false);
     const router = useRouter();
+
+    useEffect(() => {
+        if (!isLoading && user?.onboarded) {
+            router.replace("/");
+        }
+    }, [isLoading, user, router]);
 
     const ACADEMIC_YEARS = [
         { value: "1A", label: t("years.1A.label"), description: t("years.1A.description") },

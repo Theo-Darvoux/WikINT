@@ -192,10 +192,19 @@ DB: uploads row (status=clean, sha256, final_key=cas/{hmac})
      - `increment_cas_ref` for the new MaterialVersion
      - Create `MaterialVersion` row with `file_key=cas/{hmac}`, `cas_sha256`
    - Create `Material` row with slug, tags, metadata
-4. Transaction commits
-5. Post-commit: ARQ jobs fire:
+4. `_cleanup_pr_resources(db, pr)` called before commit:
+   - Calls `_release_pr_upload_quota` which removes `quarantine_key` and `staging:{user_id}:{upload_id}` from Redis quota set
+   - Sets Upload.status to `applied`
+5. Transaction commits
+6. Post-commit: ARQ jobs fire:
    - `index_material` — Add to MeiliSearch
    - Staging upload cleanup (decrement CAS ref for the staging window)
+
+**Quota release contract:**
+- On **approval**: quota released immediately via `_release_pr_upload_quota`
+- On **rejection/cancellation**: quota released immediately via `_release_pr_upload_quota`
+- On **upload failure** (malware/error): quarantine key removed when quarantine file deleted; staging key removed by cleanup worker after 48h or auto-expired after 25h
+- **Auto-expiry**: every quota check removes entries older than 25h via `zremrangebyscore`
 
 **Final data state:**
 ```

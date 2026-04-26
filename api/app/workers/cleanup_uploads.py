@@ -94,7 +94,7 @@ async def cleanup_uploads(ctx: dict) -> None:
     async with async_session_factory() as db:
         from app.models.upload import Upload
 
-        terminal_statuses = ["clean", "failed", "malicious"]
+        terminal_statuses = ["clean", "failed", "malicious", "applied"]
         upload_result = await db.execute(
             select(Upload).where(
                 Upload.status.in_(terminal_statuses),

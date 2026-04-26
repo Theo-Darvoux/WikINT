@@ -62,7 +62,6 @@ async def _check_storage_limit(size_bytes: int, config: dict[str, Any]) -> None:
         )
 
 MAX_PENDING_UPLOADS = 50
-MAX_PENDING_UPLOADS_PRIVILEGED = 200
 LARGE_FILE_THRESHOLD = 50 * 1024 * 1024  # 50 MiB
 LARGE_SVG_THRESHOLD = LARGE_FILE_THRESHOLD  # alias used by tests
 
@@ -113,22 +112,27 @@ async def _check_pending_cap(
 ) -> None:
     """Raise if the user has hit the pending-upload ceiling.
 
+    Privileged users (moderators, bureau, vieux) are exempt from the count cap
+    and only subject to the global storage limit. The quota key is still written
+    so cleanup workers can track and expire their uploads normally.
+
     Optionally reserves ``reserve_key`` atomically to prevent TOCTOU races.
     Fail-closed: if Redis is unreachable, we reject the upload.
     """
-    cap = MAX_PENDING_UPLOADS_PRIVILEGED if privileged else MAX_PENDING_UPLOADS
     quota_key = f"{_QUOTA_KEY_PREFIX}{user_id}"
     try:
         cutoff = time.time() - (25 * 3600)
         await redis.zremrangebyscore(quota_key, "-inf", cutoff)
 
         if reserve_key:
-            async with redis.pipeline() as pipe:
-                pipe.zadd(quota_key, {reserve_key: time.time()})
-                pipe.zcard(quota_key)
-                results = await pipe.execute()
+            await redis.zadd(quota_key, {reserve_key: time.time()})
 
-            count = int(results[1])
+        if privileged:
+            return
+
+        cap = MAX_PENDING_UPLOADS
+        if reserve_key:
+            count = await redis.zcard(quota_key)
             if count > cap:
                 await redis.zrem(quota_key, reserve_key)
                 raise BadRequestError(
@@ -147,6 +151,8 @@ async def _check_pending_cap(
     except BadRequestError:
         raise
     except Exception as exc:
+        if privileged:
+            return
         logger.warning(
             "Redis quota check failed for %s -- falling back to DB count: %s",
             user_id,
@@ -167,9 +173,9 @@ async def _check_pending_cap(
                     )
                     or 0
                 )
-            if db_count >= cap:
+            if db_count >= MAX_PENDING_UPLOADS:
                 raise BadRequestError(
-                    f"Too many pending uploads ({cap} max). "
+                    f"Too many pending uploads ({MAX_PENDING_UPLOADS} max). "
                     "Submit a pull request or wait for existing uploads to expire.",
                     code=ERR_QUOTA_EXCEEDED,
                 )

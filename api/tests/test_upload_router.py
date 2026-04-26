@@ -208,20 +208,19 @@ async def test_quota_exceeded_rejected(
     assert "pending uploads" in resp.json()["detail"].lower()
 
 
-async def test_privileged_user_higher_quota(
+async def test_privileged_user_no_quota_cap(
     client: AsyncClient, db_session: AsyncSession, mock_redis: AsyncMock
 ) -> None:
-    """A privileged user is rejected only at their higher cap, not the default cap."""
-    from app.routers.upload.helpers import MAX_PENDING_UPLOADS, MAX_PENDING_UPLOADS_PRIVILEGED
+    """Privileged users are never blocked by the pending-upload count cap."""
+    from app.routers.upload.helpers import MAX_PENDING_UPLOADS
 
     user = await _create_user(db_session, UserRole.BUREAU)
     await db_session.commit()
 
-    # At the default cap but below the privileged cap — must NOT be rejected
-    mock_redis.zcard.return_value = MAX_PENDING_UPLOADS
+    # Well above the student cap — must NOT be rejected
+    mock_redis.zcard.return_value = MAX_PENDING_UPLOADS * 10
     mock_redis.pipeline.return_value.__aenter__.return_value.execute.side_effect = [
         [1, True, 1, True],  # rate limit pipeline
-        [1, MAX_PENDING_UPLOADS + 1],  # quota pipeline
     ]
 
     with patch("app.routers.upload.direct.get_s3_client") as ms3:
@@ -229,10 +228,7 @@ async def test_privileged_user_higher_quota(
         ms3.return_value.__aenter__.return_value = s3
 
         resp = await client.post("/api/upload", files=_pdf_file(), headers=_auth_headers(user))
-    assert resp.status_code == 202, (
-        f"Privileged user should not be blocked at {MAX_PENDING_UPLOADS} uploads "
-        f"(their cap is {MAX_PENDING_UPLOADS_PRIVILEGED})"
-    )
+    assert resp.status_code == 202, "Privileged user should never be blocked by pending-upload count"
 
 
 async def test_quota_redis_failure_is_permissive(

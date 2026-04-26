@@ -1,8 +1,11 @@
+import logging
 import re
 import typing
 import uuid
 from collections import defaultdict
 from datetime import UTC
+
+logger = logging.getLogger("wikint")
 
 from redis.asyncio import Redis
 from sqlalchemy import delete, func, select
@@ -88,14 +91,86 @@ def get_pr_staging_files(pr: PullRequest) -> list[str]:
     return staging_files
 
 
-async def _cleanup_pr_resources(db: AsyncSession, pr: PullRequest, delete_staging: bool = False) -> None:
+def get_pr_all_file_keys(pr: PullRequest) -> list[str]:
+    """Collect all file keys from a PR payload, regardless of prefix."""
+    keys: list[str] = []
+    for op in pr.payload:
+        fk = op.get("file_key")
+        if fk:
+            keys.append(str(fk))
+        attachments = op.get("attachments")
+        if isinstance(attachments, list):
+            for att in attachments:
+                att_fk = att.get("file_key") if isinstance(att, dict) else None
+                if att_fk:
+                    keys.append(str(att_fk))
+    return keys
+
+
+async def _release_pr_upload_quota(
+    db: AsyncSession, pr: PullRequest, redis: Redis, approved: bool = False
+) -> None:
+    """Find all uploads associated with the PR and remove them from the user's Redis quota.
+
+    If ``approved`` is True, also updates the Upload row status to 'applied'.
+    """
+    keys = get_pr_all_file_keys(pr)
+    if not keys:
+        return
+
+    # Find uploads by their quarantine or final keys
+    stmt = select(Upload).where(
+        (Upload.quarantine_key.in_(keys)) | (Upload.final_key.in_(keys))
+    )
+    result = await db.execute(stmt)
+    uploads = list(result.scalars().all())
+
+    if not uploads:
+        return
+
+    from app.routers.upload.helpers import _QUOTA_KEY_PREFIX
+
+    quota_key = f"{_QUOTA_KEY_PREFIX}{pr.author_id}"
+    keys_to_remove: list[str] = []
+
+    for upload in uploads:
+        if upload.quarantine_key:
+            keys_to_remove.append(upload.quarantine_key)
+        keys_to_remove.append(f"staging:{upload.user_id}:{upload.upload_id}")
+
+        if approved:
+            upload.status = "applied"
+
+    if keys_to_remove:
+        try:
+            await redis.zrem(quota_key, *keys_to_remove)
+        except Exception as exc:
+            logger.warning(
+                "Failed to release upload quota for PR %s: %s", pr.id, exc
+            )
+
+
+async def _cleanup_pr_resources(
+    db: AsyncSession, pr: PullRequest, delete_staging: bool = False, redis: Redis | None = None
+) -> None:
     """Release file claims and optionally schedule deletion of staging files."""
     await db.execute(delete(PRFileClaim).where(PRFileClaim.pr_id == pr.id))
+
+    # Release upload quota slots immediately
+    if redis is None:
+        from app.core.redis import redis_client
+        redis = redis_client
+
+    if redis:
+        # If delete_staging is False, it's likely an approval
+        await _release_pr_upload_quota(db, pr, redis, approved=not delete_staging)
 
     if delete_staging:
         uploads_to_delete = get_pr_staging_files(pr)
         if uploads_to_delete:
-            db.info.setdefault("post_commit_jobs", []).append(("delete_storage_objects", uploads_to_delete))
+            db.info.setdefault("post_commit_jobs", []).append(
+                ("delete_storage_objects", uploads_to_delete)
+            )
 
 
 def _slug_pattern(base: str) -> re.Pattern[str]:

@@ -68,6 +68,7 @@ class UploadStatus(StrEnum):
     CLEAN = "clean"
     MALICIOUS = "malicious"
     FAILED = "failed"
+    APPLIED = "applied"
 
 
 # ── Upload pipeline response schemas ──

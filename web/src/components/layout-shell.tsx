@@ -50,21 +50,30 @@ export function LayoutShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isLoading) return;
 
+    const isPublic = pathname === "/login" || pathname === "/login/verify" || pathname === "/privacy" || pathname === "/terms";
+    const isOnboarding = pathname === "/onboarding";
+    const isPending = pathname === "/pending-approval";
+
     if (!isAuthenticated) {
-      if (!isPublicPage) router.push("/login");
+      if (!isPublic) router.push("/login");
       return;
     }
 
     // Authenticated user checks
     if (!user) return; // Wait for user data
 
-    if (user.role === "pending" && !isPendingPage) {
+    if (user.role === "pending" && !isPending) {
       router.push("/pending-approval");
       return;
     }
 
-    if (!user.onboarded && !isOnboardingPage && !isPublicPage) {
+    if (!user.onboarded && !isOnboarding && !isPublic) {
       router.push("/onboarding");
+      return;
+    }
+
+    if (user.onboarded && isOnboarding) {
+      router.push("/");
     }
   }, [isLoading, isAuthenticated, user, pathname, router]);
 
@@ -72,6 +81,7 @@ export function LayoutShell({ children }: { children: ReactNode }) {
     isLoading ||
     !isAuthenticated ||
     (user && !user.onboarded && !isOnboardingPage) ||
+    (user && user.onboarded && isOnboardingPage) ||
     (user && user.role === "pending" && !isPendingPage)
   );
   const isOffline = useOffline();

@@ -83,6 +83,8 @@ Removes uploaded files that are no longer needed based on DB status, scans quara
    - Clean up synthetic staging quota entries from Redis.
 6. **Quarantine scan** — scan `quarantine/` prefix for objects older than 2 hours and delete them.
 7. **CAS orphan scan** — list `cas/` S3 objects and compare against Redis `upload:cas:*` keys. Objects without a Redis ref entry older than 48h are deleted.
+
+> **Note on the Admin `/api/admin/storage/reconcile` endpoint:** This is a separate, manually-triggered admin tool (`api/app/routers/admin_storage.py`). It determines "valid" CAS ids from three sources: (1) `MaterialVersion.cas_sha256` (approved materials), (2) `Upload.final_key` for non-failed uploads (clean uploads awaiting PR submission), and (3) open PR payload `cas/` keys. All three must be included — checking only MaterialVersion will incorrectly flag pending-upload CAS objects as orphans and delete them.
 8. **Legacy prefix cleanup** — scan any remaining `materials/` and `uploads/` S3 objects and delete them (V1 migration remnants).
 9. **Integrity check** — verify all CAS-backed MaterialVersions have existing S3 objects. Log warnings for any missing objects (manual investigation required).
 

@@ -9,6 +9,8 @@ from app.core.database import get_db
 from app.core.exceptions import BadRequestError
 from app.core.storage import delete_object, list_objects
 from app.models.material import MaterialVersion
+from app.models.pull_request import PRStatus, PullRequest
+from app.models.upload import Upload
 from app.routers.admin import AdminUser
 
 # Only objects under these prefixes may be pruned.  Active materials live under
@@ -37,6 +39,33 @@ async def reconcile_storage(
             db_cas_ids.add(cas_id)
         if thumbnail_key:
             db_thumbnail_keys.add(thumbnail_key)
+
+    # Protect CAS objects for uploads that have been processed but not yet approved
+    # into a MaterialVersion (clean uploads awaiting PR submission, open PRs).
+    # Without this, these objects are wrongly flagged as orphans and pruned.
+    upload_result = await db.execute(
+        select(Upload.final_key).where(
+            Upload.final_key.is_not(None),
+            Upload.final_key.like("cas/%"),
+            Upload.status.not_in(["failed", "malicious"]),
+        )
+    )
+    for (final_key,) in upload_result.all():
+        if final_key:
+            db_cas_ids.add(final_key.split("/")[-1])
+
+    # Protect CAS objects referenced by open PRs (not yet approved)
+    pr_result = await db.execute(
+        select(PullRequest).where(PullRequest.status == PRStatus.OPEN)
+    )
+    for pr in pr_result.scalars():
+        for op in pr.payload:
+            for fk in [op.get("file_key")] + [
+                att.get("file_key") if isinstance(att, dict) else None
+                for att in (op.get("attachments") or [])
+            ]:
+                if fk and str(fk).startswith("cas/"):
+                    db_cas_ids.add(str(fk).split("/")[-1])
 
     # 2. List all objects in S3
     s3_cas_ids = {} # cas_id -> size

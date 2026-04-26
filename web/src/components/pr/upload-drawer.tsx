@@ -1163,7 +1163,7 @@ export function UploadDrawer({
                                                 {/* Upload / transfer bar */}
                                                 <div className="flex flex-col gap-0.5">
                                                     <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                                                        <span>{t("Upload.uploading", { ns: "Upload" })}</span>
+                                                        <span>{tUpload("uploading")}</span>
                                                         {f.status !== "paused" && (
                                                             <span>
                                                                 {Math.min(Math.round(f.progress * 100 / 80), 100)}%
@@ -1186,7 +1186,7 @@ export function UploadDrawer({
                                                     <div className="flex flex-col gap-0.5">
                                                         <div className="flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
                                                             <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0" />
-                                                            <span className="truncate">{f.processingStatus || t("Upload.processing", { ns: "Upload" })}</span>
+                                                            <span className="truncate">{f.processingStatus || tUpload("processing")}</span>
                                                             {f.stageIndex != null && f.stageTotal != null && (
                                                                 <span className="ml-auto shrink-0 font-normal text-muted-foreground">
                                                                     {f.stageIndex + 1}/{f.stageTotal}

@@ -1364,6 +1364,7 @@
         "discard": "Annuler les modifications",
         "placeholders": {
           "host": "ex: smtp.gmail.com",
+          "ip": "ex: 1.2.3.4",
           "port": "ex: 587",
           "user": "ex: utilisateur@gmail.com",
           "password": "••••••••",

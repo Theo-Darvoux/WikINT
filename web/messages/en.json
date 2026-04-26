@@ -1364,6 +1364,7 @@
         "discard": "Discard Changes",
         "placeholders": {
           "host": "e.g. smtp.gmail.com",
+          "ip": "e.g. 1.2.3.4",
           "port": "e.g. 587",
           "user": "e.g. user@gmail.com",
           "password": "••••••••",
