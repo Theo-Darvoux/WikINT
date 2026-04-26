@@ -45,7 +45,7 @@ See [Data Model](../../architecture/data-model.md) for full schema.
 ### AuthConfig & AllowedDomain (`auth_config.py`)
 Dynamic configuration for authentication, storage, and file policies.
 - `AuthConfig`: Singleton row controlling:
-    - **Auth**: `totp_enabled`, `google_oauth_enabled`, `classic_auth_enabled`, `allow_all_domains` (replaced `open_registration`), and JWT expiry durations.
+    - **Auth**: `totp_enabled`, `google_oauth_enabled`, `classic_auth_enabled`, `allow_all_domains` (replaced `open_registration`), `auto_approve_all_domains` (auto-approves all users when `allow_all_domains=True`), and JWT expiry durations.
     - **Branding**: Site name, description, logo URL, favicon URL, primary theme color, footer text, and organization URL.
     - **SMTP**: Host, port, credentials, and TLS settings for outgoing mail.
     - **S3 Storage**: Endpoint, credentials, bucket, region, and SSL settings.

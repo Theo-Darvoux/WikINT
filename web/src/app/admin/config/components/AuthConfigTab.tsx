@@ -26,6 +26,7 @@ interface AuthConfig {
     google_client_id: string | null;
     classic_auth_enabled: boolean;
     allow_all_domains: boolean;
+    auto_approve_all_domains: boolean;
     jwt_access_expire_days: number;
     jwt_refresh_expire_days: number;
     domains: Domain[];
@@ -88,6 +89,7 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
             google_client_id: config.google_client_id,
             classic_auth_enabled: config.classic_auth_enabled,
             allow_all_domains: config.allow_all_domains,
+            auto_approve_all_domains: config.auto_approve_all_domains,
             jwt_access_expire_days: config.jwt_access_expire_days,
             jwt_refresh_expire_days: config.jwt_refresh_expire_days,
         });
@@ -159,6 +161,7 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
             google_client_id: config.google_client_id,
             classic_auth_enabled: config.classic_auth_enabled,
             allow_all_domains: config.allow_all_domains,
+            auto_approve_all_domains: config.auto_approve_all_domains,
             jwt_access_expire_days: config.jwt_access_expire_days,
             jwt_refresh_expire_days: config.jwt_refresh_expire_days,
         });
@@ -341,6 +344,32 @@ export function AuthConfigTab({ config, saving, patchConfig }: AuthConfigTabProp
                                     />
                                 </div>
                             </div>
+                            {(authForm.allow_all_domains ?? config.allow_all_domains) && (
+                                <div className="flex items-center justify-between gap-4 px-4 py-3 bg-amber-500/5 border-t border-amber-500/20">
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/10">
+                                            <Globe2 className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-sm font-bold text-amber-700 dark:text-amber-400">{t("domains.autoApproveAll.label")}</span>
+                                            <span className="text-[10px] text-muted-foreground">{t("domains.autoApproveAll.description")}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Badge variant="outline" className="text-[10px] font-mono whitespace-nowrap hidden sm:inline-flex">
+                                            AUTO_APPROVE_ALL
+                                        </Badge>
+                                        <Switch
+                                            checked={authForm.auto_approve_all_domains ?? config.auto_approve_all_domains}
+                                            disabled={saving}
+                                            onCheckedChange={() => {
+                                                setAuthForm(prev => ({ ...prev, auto_approve_all_domains: !prev.auto_approve_all_domains }));
+                                                setIsAuthModified(true);
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                             {domains.map((d) => (
                                 <div
                                     key={d.id}

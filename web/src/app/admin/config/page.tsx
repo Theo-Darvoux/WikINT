@@ -28,6 +28,7 @@ interface AuthConfig {
     google_client_id: string | null;
     classic_auth_enabled: boolean;
     allow_all_domains: boolean;
+    auto_approve_all_domains: boolean;
     jwt_access_expire_days: number;
     jwt_refresh_expire_days: number;
     domains: any[];

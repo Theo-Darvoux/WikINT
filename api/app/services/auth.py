@@ -82,6 +82,7 @@ async def get_full_auth_config(db: AsyncSession, redis: Redis) -> dict[str, Any]
             "google_oauth_enabled": False,
             "google_client_id": None,
             "allow_all_domains": False,
+            "auto_approve_all_domains": False,
             "classic_auth_enabled": True,
             "jwt_access_expire_days": settings.jwt_access_token_expire_days,
             "jwt_refresh_expire_days": settings.jwt_refresh_token_expire_days,
@@ -137,6 +138,7 @@ async def get_full_auth_config(db: AsyncSession, redis: Redis) -> dict[str, Any]
             "google_client_id": config_row.google_client_id,
             "classic_auth_enabled": config_row.classic_auth_enabled,
             "allow_all_domains": config_row.allow_all_domains,
+            "auto_approve_all_domains": config_row.auto_approve_all_domains,
             "jwt_access_expire_days": config_row.jwt_access_expire_days if config_row.jwt_access_expire_days is not None else settings.jwt_access_token_expire_days,
             "jwt_refresh_expire_days": config_row.jwt_refresh_expire_days if config_row.jwt_refresh_expire_days is not None else settings.jwt_refresh_token_expire_days,
             "smtp_host": config_row.smtp_host if config_row.smtp_host is not None else settings.smtp_host,
@@ -216,7 +218,7 @@ async def validate_email_for_auth(email: str, db: AsyncSession, redis: Redis) ->
             return bool(d["auto_approve"])
 
     if config.get("allow_all_domains"):
-        return False  # domain not in explicit list → allowed but pending manual review
+        return bool(config.get("auto_approve_all_domains", False))
 
     raise ValueError(f"Email domain @{domain} is not allowed")
 

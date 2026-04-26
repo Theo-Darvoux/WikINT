@@ -1317,6 +1317,10 @@
             "label": "Autoriser tous les domaines",
             "description": "Ignorer la liste blanche pour tous les fournisseurs"
           },
+          "autoApproveAll": {
+            "label": "Auto-approuver tous les utilisateurs",
+            "description": "Activer immédiatement tout utilisateur, quel que soit son domaine e-mail"
+          },
           "autoApprove": "Auto-approbation",
           "manualReview": "Revue manuelle",
           "add": {

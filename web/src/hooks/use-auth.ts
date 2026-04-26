@@ -73,9 +73,9 @@ export function useAuth() {
             if (err instanceof ApiError && err.status === 401) {
                 performLogout();
             } else if (err instanceof ApiError && err.status === 403 && err.error_code === "USER_PENDING") {
-                // User exists but is pending approval — keep them "authenticated" so the
-                // pending-approval page can render, but do NOT log them out.
-                // The auth-guard will redirect them away from protected pages.
+                // User exists but is pending approval — set a minimal pending state so
+                // isAuthenticated stays true and LayoutShell doesn't redirect to /login.
+                setUser({ id: "", email: "", display_name: null, avatar_url: null, role: "pending", onboarded: false, auto_approve: false });
                 if (typeof window !== "undefined" && !window.location.pathname.startsWith("/pending-approval")) {
                     window.location.replace("/pending-approval");
                 }

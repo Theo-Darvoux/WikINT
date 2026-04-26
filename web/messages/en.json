@@ -1317,6 +1317,10 @@
             "label": "Allow all domains",
             "description": "Bypass whitelist for all providers"
           },
+          "autoApproveAll": {
+            "label": "Auto-approve all users",
+            "description": "Immediately activate any user, regardless of their email domain"
+          },
           "autoApprove": "Auto-approve",
           "manualReview": "Manual review",
           "add": {

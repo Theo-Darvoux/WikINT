@@ -18,6 +18,7 @@ class AuthConfig(UUIDMixin, Base):
     google_client_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     classic_auth_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     allow_all_domains: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    auto_approve_all_domains: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     jwt_access_expire_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7")
     jwt_refresh_expire_days: Mapped[int] = mapped_column(Integer, default=31, server_default="31")
 
