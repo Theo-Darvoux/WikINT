@@ -90,11 +90,15 @@ def _check_per_type_size(
 
 
 def _sanitize_filename(raw: str) -> str:
-    """Sanitize a filename: strip control chars, Unicode trickery, shell-special chars."""
+    """Sanitize a filename: strip control chars, Unicode trickery, and path/shell-unsafe chars.
+
+    Preserved: accents, French letters, and the characters ' " - _ * $ = } ) ] @ [ ( { # \u20ac.
+    Stripped \u2192 underscore: whitespace, %, &, backslash, < > ? / ! : + ` | ^ ~.
+    """
     name = os.path.basename(raw)
     name = re.sub(r"[\x00-\x1f\x7f]", "", name)
     name = re.sub(r"[\u200b-\u200f\u2028-\u202f\u2060\ufeff]", "", name)
-    name = re.sub(r"[\s#%&{}\\<>*?/$!'\":@+`|=^~\[\]]", "_", name)
+    name = re.sub(r"[\s%&\\<>?/!:+`|^~]", "_", name)
     name = re.sub(r"_+", "_", name).strip("_.")
     return name
 

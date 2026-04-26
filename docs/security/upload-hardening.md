@@ -152,7 +152,8 @@ This ensures two concurrent uploads can't both pass the quota check.
 `_sanitize_filename()` strips:
 - Control characters (`\x00-\x1f`, `\x7f`)
 - Unicode trickery (zero-width spaces, bidirectional overrides, line/paragraph separators)
-- Shell-special characters (`# % & { } \ < > * ? / $ ! ' " : @ + \` | = ^ ~ [ ]`)
+- Path/shell-unsafe characters (`% & \ < > ? / ! : + \` | ^ ~`) → replaced with `_`
+- Preserved as-is: accents, French letters, and `' " - _ * $ = } ) ] @ [ ( { # €`
 - Path traversal (extracts basename, collapses multiple underscores, strips leading/trailing dots)
 
 **Length limit:** Filenames are capped at 255 characters (`_MAX_FILENAME_LENGTH`). This prevents filesystem-level issues (ext4 NAME_MAX is 255 bytes) and S3 key bloat. Exceeding this limit raises `BadRequestError` with `ERR_FILENAME_TOO_LONG`.

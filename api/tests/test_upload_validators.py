@@ -29,7 +29,8 @@ class TestSanitizeFilename:
         assert _sanitize_filename("file\u200bname\u202a.pdf") == "filename.pdf"
 
     def test_replaces_shell_special_chars(self):
-        assert _sanitize_filename("file name$test&foo.pdf") == "file_name_test_foo.pdf"
+        # & stripped, $ kept, space→_
+        assert _sanitize_filename("file name$test&foo.pdf") == "file_name$test_foo.pdf"
 
     def test_collapses_underscores(self):
         assert _sanitize_filename("file___name.pdf") == "file_name.pdf"
@@ -47,8 +48,17 @@ class TestSanitizeFilename:
         assert ".." not in result
 
     def test_empty_after_sanitization(self):
-        # All characters are stripped
-        assert _sanitize_filename("$$$") == ""
+        # $ is now kept, use chars that are still stripped
+        assert _sanitize_filename("!!!") == ""
+
+    def test_preserves_kept_special_chars(self):
+        assert _sanitize_filename("Cours #1 - L'essentiel (€5).pdf") == "Cours_#1_-_L'essentiel_(€5).pdf"
+        assert _sanitize_filename('notes "avancées" [2024].pdf') == 'notes_"avancées"_[2024].pdf'
+        assert _sanitize_filename("file$var=val@host{key}.pdf") == "file$var=val@host{key}.pdf"
+
+    def test_preserves_accents_and_capitalization(self):
+        assert _sanitize_filename("Théorème_de_Pythagore.pdf") == "Théorème_de_Pythagore.pdf"
+        assert _sanitize_filename("UPPERCASE_File.pdf") == "UPPERCASE_File.pdf"
 
 
 # ── _validate_filename ───────────────────────────────────────────────────
