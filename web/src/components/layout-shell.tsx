@@ -67,7 +67,7 @@ export function LayoutShell({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (!user.onboarded && !isOnboarding && !isPublic) {
+    if (user.role !== "pending" && !user.onboarded && !isOnboarding && !isPublic) {
       router.push("/onboarding");
       return;
     }
@@ -80,7 +80,7 @@ export function LayoutShell({ children }: { children: ReactNode }) {
   const shouldHideContent = !isPublicPage && (
     isLoading ||
     !isAuthenticated ||
-    (user && !user.onboarded && !isOnboardingPage) ||
+    (user && user.role !== "pending" && !user.onboarded && !isOnboardingPage) ||
     (user && user.onboarded && isOnboardingPage) ||
     (user && user.role === "pending" && !isPendingPage)
   );

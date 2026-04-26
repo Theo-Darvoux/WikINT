@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { useAuthStore, type UserBrief } from "@/lib/stores";
 import { apiFetch } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,8 @@ import Link from "next/link";
 
 export default function OnboardingPage() {
     const t = useTranslations("Onboarding");
-    const { user, fetchMe, isLoading } = useAuth();
+    const { user, isLoading } = useAuth();
+    const { setUser } = useAuthStore();
     const [displayName, setDisplayName] = useState("");
     const [academicYear, setAcademicYear] = useState<string>("");
     const [gdprConsent, setGdprConsent] = useState(false);
@@ -51,7 +53,7 @@ export default function OnboardingPage() {
         }
         setLoading(true);
         try {
-            await apiFetch("/users/me/onboard", {
+            const updated = await apiFetch<UserBrief>("/users/me/onboard", {
                 method: "POST",
                 body: JSON.stringify({
                     display_name: displayName,
@@ -59,7 +61,7 @@ export default function OnboardingPage() {
                     gdpr_consent: gdprConsent,
                 }),
             });
-            await fetchMe();
+            setUser(updated);
             router.push("/");
             toast.success(t("success"));
         } catch (err) {
